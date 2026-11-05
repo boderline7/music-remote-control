@@ -215,11 +215,15 @@ private fun LibHome(lib: RemoteClient.LibData, onOpen: (RemoteClient.LibEntry) -
         QuickRow(
             "每日推荐", "根据你的口味 · 每天 6:00 更新",
             Icons.Rounded.Today, Color(0xFFFF6A3D),
-        ) { onOpen(RemoteClient.LibEntry("daily", "每日推荐", 0)) }
+            onClick = { onOpen(RemoteClient.LibEntry("daily", "每日推荐", 0)) },
+            onPlay = { RemoteClient.playFromLibrary("daily", 0) },
+        )
         QuickRow(
             "心动模式", "根据红心推荐 · 边放边续",
             Icons.Rounded.Favorite, Color(0xFFD4145A),
-        ) { onOpen(RemoteClient.LibEntry("heartbeat", "心动模式", 0)) }
+            onClick = { onOpen(RemoteClient.LibEntry("heartbeat", "心动模式", 0)) },
+            onPlay = { RemoteClient.playFromLibrary("heartbeat", 0) },
+        )
 
         Spacer(Modifier.height(20.dp))
         SubTitle("我创建的歌单（${lib.playlists.size}）")
@@ -227,18 +231,13 @@ private fun LibHome(lib: RemoteClient.LibData, onOpen: (RemoteClient.LibEntry) -
             Text("还没有自己创建的歌单", color = Secondary, fontSize = 13.sp)
         }
         val shown = if (showAllPlaylists) lib.playlists else lib.playlists.take(COLLAPSE_MAX)
-        shown.forEach { p -> EntryRow(p, Icons.Rounded.QueueMusic, Accent) { onOpen(p) } }
-        if (lib.playlists.size > COLLAPSE_MAX) {
-            TextButton(
-                onClick = { showAllPlaylists = !showAllPlaylists },
-                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
-            ) {
-                Text(
-                    if (showAllPlaylists) "收起" else "展开全部（${lib.playlists.size} 个）",
-                    color = Accent,
-                    fontSize = 13.sp,
-                )
+        shown.forEach { p ->
+            EntryRow(p, Icons.Rounded.QueueMusic, Accent, { onOpen(p) }) {
+                RemoteClient.playFromLibrary(p.id, 0)
             }
+        }
+        if (lib.playlists.size > COLLAPSE_MAX) {
+            MoreToggle(showAllPlaylists, lib.playlists.size) { showAllPlaylists = !showAllPlaylists }
         }
         Spacer(Modifier.height(12.dp))
 
@@ -251,6 +250,7 @@ private fun LibHome(lib: RemoteClient.LibData, onOpen: (RemoteClient.LibEntry) -
 private fun CatalogSection(onOpen: (RemoteClient.LibEntry) -> Unit) {
     val cat by RemoteClient.catalog.collectAsState()
     var showAllRecs by remember { mutableStateOf(false) }
+    var showAllTops by remember { mutableStateOf(false) }
     // 首次进资料库才拉一次，来回切歌单不重复请求
     LaunchedEffect(Unit) {
         if (RemoteClient.catalog.value.top.isEmpty()) RemoteClient.requestCatalog()
@@ -264,23 +264,26 @@ private fun CatalogSection(onOpen: (RemoteClient.LibEntry) -> Unit) {
             }
         }
         cat.error?.let { Text(it, color = Warn, fontSize = 13.sp) }
-        cat.top.forEach { EntryRow(it, Icons.Rounded.Leaderboard, Color(0xFFE0334B)) { onOpen(it) } }
+        val tops = if (showAllTops) cat.top else cat.top.take(COLLAPSE_MAX)
+        tops.forEach { t ->
+            EntryRow(t, Icons.Rounded.Leaderboard, Color(0xFFE0334B), { onOpen(t) }) {
+                RemoteClient.playFromLibrary(t.id, 0)
+            }
+        }
+        if (cat.top.size > COLLAPSE_MAX) {
+            MoreToggle(showAllTops, cat.top.size) { showAllTops = !showAllTops }
+        }
 
         Spacer(Modifier.height(14.dp))
         SubTitle("推荐歌单")
         val recs = if (showAllRecs) cat.recommend else cat.recommend.take(COLLAPSE_MAX)
-        recs.forEach { EntryRow(it, Icons.Rounded.Whatshot, Color(0xFFFF9F0A)) { onOpen(it) } }
-        if (cat.recommend.size > COLLAPSE_MAX) {
-            TextButton(
-                onClick = { showAllRecs = !showAllRecs },
-                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
-            ) {
-                Text(
-                    if (showAllRecs) "收起" else "展开全部（${cat.recommend.size} 个）",
-                    color = Accent,
-                    fontSize = 13.sp,
-                )
+        recs.forEach { r ->
+            EntryRow(r, Icons.Rounded.Whatshot, Color(0xFFFF9F0A), { onOpen(r) }) {
+                RemoteClient.playFromLibrary(r.id, 0)
             }
+        }
+        if (cat.recommend.size > COLLAPSE_MAX) {
+            MoreToggle(showAllRecs, cat.recommend.size) { showAllRecs = !showAllRecs }
         }
         if (!cat.loading && cat.top.isEmpty() && cat.recommend.isEmpty() && cat.error == null) {
             Text("车机那边没返回榜单，下拉重进试试", color = Secondary, fontSize = 13.sp)
@@ -301,6 +304,21 @@ private fun SubTitle(text: String, modifier: Modifier = Modifier) {
     )
 }
 
+/** 折叠区底部那行「展开全部／收起」，歌单、榜单、推荐三处共用。 */
+@Composable
+private fun MoreToggle(expanded: Boolean, total: Int, onToggle: () -> Unit) {
+    TextButton(
+        onClick = onToggle,
+        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
+    ) {
+        Text(
+            if (expanded) "收起" else "展开全部（$total 个）",
+            color = Accent,
+            fontSize = 13.sp,
+        )
+    }
+}
+
 /**
  * 每日推荐 / 心动模式的入口行：没有固定首数（点进去现拉），所以副标题放说明文字而不是「N 首」。
  */
@@ -311,6 +329,7 @@ private fun QuickRow(
     icon: ImageVector,
     tint: Color,
     onClick: () -> Unit,
+    onPlay: () -> Unit,
 ) {
     Row(
         Modifier
@@ -318,7 +337,7 @@ private fun QuickRow(
             .padding(vertical = 4.dp)
             .background(Card, RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -334,16 +353,23 @@ private fun QuickRow(
             Text(title, color = Color.White, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(subtitle, color = Secondary, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+        PlayDot(onPlay)
+        Spacer(Modifier.width(2.dp))
         Text("›", color = Secondary, fontSize = 17.sp)
     }
 }
 
+/**
+ * 一个入口行：点整行进列表看曲目，点右边的小圆钮直接从头顺序播。
+ * Compose 里内层 IconButton 会消费掉点击，不会冒泡到外层的 clickable，不用手动拦。
+ */
 @Composable
 private fun EntryRow(
     entry: RemoteClient.LibEntry,
     icon: ImageVector,
     tint: Color,
     onClick: () -> Unit,
+    onPlay: () -> Unit,
 ) {
     Row(
         Modifier
@@ -351,7 +377,7 @@ private fun EntryRow(
             .padding(vertical = 4.dp)
             .background(Card, RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 13.dp),
+            .padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -367,7 +393,24 @@ private fun EntryRow(
             Text(entry.name, color = Color.White, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${entry.count} 首", color = Secondary, fontSize = 12.sp)
         }
-        Icon(Icons.Rounded.PlayArrow, null, tint = Secondary, modifier = Modifier.size(22.dp))
+        PlayDot(onPlay)
+        Spacer(Modifier.width(2.dp))
+        Text("›", color = Secondary, fontSize = 17.sp)
+    }
+}
+
+/** 行内的「顺序播放」圆钮，和网页那个 .pl 保持一致。 */
+@Composable
+private fun PlayDot(onPlay: () -> Unit) {
+    IconButton(onClick = onPlay, modifier = Modifier.size(36.dp)) {
+        Box(
+            Modifier
+                .size(32.dp)
+                .background(Color.White.copy(alpha = 0.08f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Rounded.PlayArrow, "顺序播放", tint = Secondary, modifier = Modifier.size(20.dp))
+        }
     }
 }
 

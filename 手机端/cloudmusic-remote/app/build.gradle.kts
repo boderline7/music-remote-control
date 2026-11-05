@@ -14,8 +14,8 @@ android {
         applicationId = "com.carremote.client"
         minSdk = 26
         targetSdk = 35
-        versionCode = 15
-        versionName = "1.8.6"
+        versionCode = 16
+        versionName = "1.8.7"
     }
 
     // 自有签名库：与车机端共用一份，debug / release 都用它

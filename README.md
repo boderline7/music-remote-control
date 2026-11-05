@@ -8,8 +8,8 @@
 
 | 文件 | 说明 |
 |---|---|
-| `cloudmusic-car-v2.2.1-遥控-debug.apk` | 车机端（播放器 + 遥控模块），versionCode 32 |
-| `车机遥控-v1.8.6.apk` | 手机端遥控（可选，网页也能用），versionCode 15 |
+| `cloudmusic-car-v2.2.2-遥控-debug.apk` | 车机端（播放器 + 遥控模块），versionCode 33 |
+| `车机遥控-v1.8.7.apk` | 手机端遥控（可选，网页也能用），versionCode 16 |
 
 都是本地构建产物，`dist/` 不入库。现成的安装包见 [Releases](https://github.com/boderline7/music-remote-control/releases)，装哪端看你的场景。
 

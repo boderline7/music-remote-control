@@ -123,6 +123,10 @@
   .row .n { flex: 1; min-width: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row .c { font-size: 12px; color: var(--faint); flex: none; }
   .row .chev { color: var(--faint); font-size: 17px; flex: none; }
+  /* 行内「顺序播放」：整行是入口，这个小圆钮不进去，直接从头播整列 */
+  .row .pl { flex: none; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--dim); background: rgba(255,255,255,.08); }
+  .row .pl svg { width: 17px; height: 17px; fill: currentColor; }
+  .row .pl:active { background: var(--red); color: #fff; }
   /* 带副标题的行（每日推荐 / 心动模式）：主标题在上，说明在下 */
   .row .t { flex: 1; min-width: 0; }
   .row .sub { margin-top: 3px; font-size: 12px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -235,10 +239,12 @@
     <div class="rows" id="quick">
       <button class="row" id="dailyRow">
         <div class="t"><div class="n">每日推荐</div><div class="sub">根据你的口味 · 每天 6:00 更新</div></div>
+        <span class="pl" id="dailyPlay" role="button" aria-label="顺序播放每日推荐"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
         <span class="chev">›</span>
       </button>
       <button class="row" id="hbRow">
         <div class="t"><div class="n">心动模式</div><div class="sub">根据红心推荐 · 边放边续</div></div>
+        <span class="pl" id="hbPlay" role="button" aria-label="顺序播放心动模式"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
         <span class="chev">›</span>
       </button>
     </div>
@@ -285,7 +291,7 @@
    'volumeRow', 'vol', 'volVal', 'volUp', 'volDown', 'q', 'go', 'reload', 'likedName', 'likedCount',
    'cloudName', 'cloudCount', 'playlists', 'tops', 'recs', 'libHint', 'plHint', 'topHint', 'recHint',
    'sheet', 'sheetTitle', 'sheetSub', 'sheetBody', 'back', 'toast', 'host', 'tileLiked', 'tileCloud', 'scroll',
-   'dailyRow', 'hbRow', 'quickHint'
+   'dailyRow', 'hbRow', 'quickHint', 'dailyPlay', 'hbPlay'
   ].forEach(function (id) { el[id] = document.getElementById(id); });
 
   var ws = null;
@@ -309,6 +315,7 @@
   var COLLAPSE_MAX = 5;
   var plExpanded = false;
   var recExpanded = false;
+  var topExpanded = false;
 
   el.host.textContent = location.host;
 
@@ -373,13 +380,30 @@
     return n;
   }
 
-  function row(name, count, onClick) {
+  /**
+   * 一个入口行：点整行进列表看曲目，点右边的小圆钮直接从头顺序播。
+   * 圆钮用 span 不用 button —— button 里套 button 是非法结构，浏览器会把内层拆出去。
+   */
+  function row(name, count, onClick, onPlay) {
     var b = el_('button', 'row');
     b.appendChild(el_('span', 'n', name));
     if (count != null) b.appendChild(el_('span', 'c', count + ' 首'));
+    if (onPlay) b.appendChild(playBtn('顺序播放 ' + name, onPlay));
     b.appendChild(el_('span', 'chev', '›'));
     b.addEventListener('click', onClick);
     return b;
+  }
+
+  function playBtn(label, onPlay) {
+    var s = el_('span', 'pl');
+    s.setAttribute('role', 'button');
+    s.setAttribute('aria-label', label);
+    s.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+    s.addEventListener('click', function (e) {
+      e.stopPropagation();   // 别让整行的 click 把列表也打开了
+      onPlay();
+    });
+    return s;
   }
 
   // ---------- 渲染：正在播放 ----------
@@ -463,7 +487,13 @@
       el.recHint.textContent = '读取中…';
       return;
     }
-    fillRows(el.tops, el.topHint, cat.top, '榜单读取失败');
+    var tops = cat.top || [];
+    el.topHint.textContent = tops.length ? tops.length + ' 个' : '';
+    fillEntries(el.tops, tops, topExpanded, function () {
+      topExpanded = !topExpanded;
+      paintCatalog();
+    }, '榜单读取失败');
+
     var recs = cat.recommend || [];
     el.recHint.textContent = recs.length ? recs.length + ' 个' : '';
     fillEntries(el.recs, recs, recExpanded, function () {
@@ -472,22 +502,10 @@
     }, '暂无推荐');
   }
 
-  function fillRows(box, hint, items, emptyText) {
-    clear(box);
-    items = items || [];
-    hint.textContent = '';
-    if (!items.length) {
-      box.appendChild(el_('div', 'empty', emptyText));
-      return;
-    }
-    items.forEach(function (p) {
-      box.appendChild(row(p.name, p.count, function () { openList(p.id, p.name); }));
-    });
-  }
-
   /**
    * 铺一列可折叠的入口：超过 COLLAPSE_MAX 个就只铺前 5 个，末尾挂一行「展开全部／收起」。
    * 展开状态由调用方持有，刷新、重连之后保持用户刚才的选择。
+   * 每行右侧都有播放钮：不进去，直接把整列从头放。
    */
   function fillEntries(box, items, expanded, onToggle, emptyText) {
     clear(box);
@@ -498,7 +516,11 @@
     }
     var shown = expanded ? items : items.slice(0, COLLAPSE_MAX);
     shown.forEach(function (p) {
-      box.appendChild(row(p.name, p.count, function () { openList(p.id, p.name); }));
+      box.appendChild(row(
+        p.name, p.count,
+        function () { openList(p.id, p.name); },
+        function () { playList(p.id, p.name); }
+      ));
     });
     if (items.length > COLLAPSE_MAX) {
       var more = el_('button', 'row more');
@@ -517,6 +539,17 @@
   function closeSheet() {
     el.sheet.classList.remove('open');
     list = null;
+  }
+
+  /**
+   * 不打开列表，直接从头顺序播放整列。
+   * 车机端 playTracks 会自己 load(id) 把整张歌单塞进队列，index 只是起点，
+   * 所以这里不必先 getTracks，省一次往返。
+   */
+  function playList(id, title) {
+    command('playTracks', { id: id, index: 0 });
+    toast('正在播放：' + title);
+    el.scroll.scrollTop = 0;
   }
 
   function openList(id, title) {
@@ -834,6 +867,8 @@
   // daily / heartbeat 是车机端的两个虚拟列表 id，和歌单一样先看列表再点歌
   el.dailyRow.addEventListener('click', function () { openList('daily', '每日推荐'); });
   el.hbRow.addEventListener('click', function () { openList('heartbeat', '心动模式'); });
+  el.dailyPlay.addEventListener('click', function (e) { e.stopPropagation(); playList('daily', '每日推荐'); });
+  el.hbPlay.addEventListener('click', function (e) { e.stopPropagation(); playList('heartbeat', '心动模式'); });
   el.back.addEventListener('click', function () { closeSheet(); });
 
   connect();

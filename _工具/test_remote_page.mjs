@@ -58,8 +58,13 @@ class El {
     c.parent = null;
     return c;
   }
+  setAttribute(k, v) { (this.attrs = this.attrs || {})[k] = String(v); }
+  getAttribute(k) { return (this.attrs || {})[k] ?? null; }
   addEventListener(t, f) { (this.listeners[t] = this.listeners[t] || []).push(f); }
-  dispatch(t, ev) { (this.listeners[t] || []).forEach((f) => f(ev || { preventDefault() {} })); }
+  dispatch(t, ev) {
+    const e = ev || { preventDefault() {}, stopPropagation() {} };
+    (this.listeners[t] || []).forEach((f) => f(e));
+  }
   click() { this.dispatch('click'); }
   blur() { doc.activeElement = null; }
   set textContent(v) { this._text = String(v); this.children.length = 0; }
@@ -82,6 +87,20 @@ const doc = {
 
 const byId = (id) => store.get(id);
 const textOf = (n) => (n ? n.textContent : '');
+
+/**
+ * 模拟真实冒泡：从节点往上逐层触发 click，直到有人 stopPropagation。
+ * 用来验证「点行内播放钮不会顺带把列表也打开」——真实浏览器里就是这样。
+ */
+function clickBubbling(node) {
+  const ev = { stopped: false, preventDefault() {}, stopPropagation() { this.stopped = true; } };
+  let cur = node;
+  while (cur) {
+    cur.dispatch('click', ev);
+    if (ev.stopped) break;
+    cur = cur.parent;
+  }
+}
 
 const ls = {
   _m: new Map(),
@@ -251,19 +270,40 @@ byId('sheetBody').children[2].click();
 eq(ws.last('command').data, { action: 'playTracks', args: { id: 'search:晴天', index: 2 } }, '搜索结果可直接点播');
 
 console.log('\n[8] 榜单与推荐');
+const tops7 = Array.from({ length: 7 }, (_, i) => ({ id: 'top:' + i, name: 'TOP' + i, count: 100 }));
 ws.push('catalog', {
   ok: true,
-  top: [{ id: 'top:1', name: '飙升榜', count: 100 }],
+  top: tops7,
   recommend: [{ id: 'rec:9', name: '每日推荐', count: 30 }],
 });
-ok(textOf(byId('tops').children[0]).startsWith('飙升榜'), '排行榜行');
+ok(textOf(byId('tops').children[0]).startsWith('TOP0'), '排行榜行');
 ok(textOf(byId('recs').children[0]).startsWith('每日推荐'), '推荐行');
 byId('recs').children[0].click();
 eq(ws.last('command').data, { action: 'getTracks', args: { id: 'rec:9', offset: 0 } }, '推荐歌单 id 原样回传');
 
+console.log('\n[8b] 排行榜折叠 + 行内顺序播放');
+eq(byId('tops').children.length, 6, '7 个榜单默认只铺 5 个 + 一行展开');
+eq(textOf(byId('tops').children[5]), '展开全部（7 个）', '排行榜展开按钮文案');
+byId('tops').children[5].click();
+eq(byId('tops').children.length, 8, '排行榜展开后铺满 7 个 + 一行收起');
+eq(textOf(byId('tops').children[7]), '收起', '排行榜收起按钮文案');
+byId('tops').children[7].click();
+eq(byId('tops').children.length, 6, '排行榜收起后回到 5 个');
+
+const top0 = byId('tops').children[0];
+eq(top0.children.length, 4, '入口行 = 名称 + 首数 + 播放钮 + 箭头');
+const titleBefore = textOf(byId('sheetTitle'));
+clickBubbling(top0.children[2]);
+eq(ws.last('command').data, { action: 'playTracks', args: { id: 'top:0', index: 0 } }, '点排行榜播放钮直接整列顺序播');
+eq(textOf(byId('sheetTitle')), titleBefore, '顺序播放不打开列表面板');
+top0.click();
+eq(ws.last('command').data, { action: 'getTracks', args: { id: 'top:0', offset: 0 } }, '点行本身才进列表');
+
 console.log('\n[9] 空列表 / 失败 / 指令错误');
 byId('reload').click();
 ok(ws.count('command', 'library') === 2 && ws.count('command', 'catalog') === 2, '刷新重新拉资料库和榜单');
+// 上一段最后停在 top:0 的列表上，这里退回 rec:9 —— 下面要验「这个列表取歌失败」的提示
+byId('recs').children[0].click();
 ws.push('library', { ok: false, message: '车机还没登录网易云' });
 eq(textOf(byId('libHint')), '车机还没登录网易云', '资料库失败原因直接显示');
 ws.push('tracks', { ok: false, id: 'rec:9', message: '歌单读取失败' });
@@ -281,6 +321,8 @@ ws.push('library', {
 });
 eq(byId('playlists').children.length, 6, '7 个歌单默认只铺 5 个 + 一行展开');
 eq(textOf(byId('playlists').children[5]), '展开全部（7 个）', '展开按钮文案');
+clickBubbling(byId('playlists').children[0].children[2]);
+eq(ws.last('command').data, { action: 'playTracks', args: { id: '300', index: 0 } }, '歌单行播放钮顺序播放整列');
 byId('playlists').children[5].click();
 eq(byId('playlists').children.length, 8, '展开后铺满 7 个 + 一行收起');
 eq(textOf(byId('playlists').children[7]), '收起', '收起按钮文案');
@@ -301,6 +343,12 @@ eq(ws.last('command').data, { action: 'getTracks', args: { id: 'heartbeat', offs
 const recs7 = Array.from({ length: 7 }, (_, i) => ({ id: 'rec:' + (900 + i), name: 'RC' + i, count: 30 }));
 ws.push('catalog', { ok: true, top: [], recommend: recs7 });
 eq(byId('recs').children.length, 6, '推荐歌单默认也只铺 5 个 + 一行展开');
+
+// 每日推荐 / 心动模式的播放钮：静态写在 HTML 里，这里只验点了发什么
+clickBubbling(byId('dailyPlay'));
+eq(ws.last('command').data, { action: 'playTracks', args: { id: 'daily', index: 0 } }, '每日推荐可直接顺序播');
+clickBubbling(byId('hbPlay'));
+eq(ws.last('command').data, { action: 'playTracks', args: { id: 'heartbeat', index: 0 } }, '心动模式可直接顺序播');
 
 console.log('\n[11] 断线重连与授权失效');
 ws.readyState = 3;
