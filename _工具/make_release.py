@@ -14,31 +14,37 @@ import urllib.request
 
 OWNER = "boderline7"
 REPO = "music-remote-control"
-TAG = "v2.2.1"
-TITLE = "2.2.1（车机）+ 1.8.6（手机）"
+TAG = "v2.2.2"
+TITLE = "2.2.2（车机）+ 1.8.7（手机）"
 
 ASSETS = [
-    ("dist/cloudmusic-car-v2.2.1-遥控-debug.apk", "music-remote-car-2.2.1.apk"),
-    ("dist/车机遥控-v1.8.6.apk", "music-remote-phone-1.8.6.apk"),
+    ("dist/cloudmusic-car-v2.2.2-遥控-debug.apk", "music-remote-car-2.2.2.apk"),
+    ("dist/车机遥控-v1.8.7.apk", "music-remote-phone-1.8.7.apk"),
 ]
 
-BODY = """车机端 **2.2.1**（versionCode 32）+ 手机端 **1.8.6**（versionCode 15），配套使用。
+BODY = """车机端 **2.2.2**（versionCode 33）+ 手机端 **1.8.7**（versionCode 16），配套使用。
+
+## 这一版
+
+- **行内播放钮**：歌单、排行榜、推荐歌单、每日推荐、心动模式，每一行右侧多一个圆钮。
+  点行本身照旧进列表看曲目；点圆钮**不进列表，直接从第一首顺序播整列**。
+- **排行榜也折叠**：跟歌单一致，默认铺 5 个，超出的收在「展开全部」里。
+
+两端都是覆盖安装，不用卸载。
 
 ## 装哪个
 
 | 文件 | 装在哪 | 说明 |
 |---|---|---|
-| `music-remote-car-2.2.1.apk` | 车机 | 播放器 + 遥控服务，覆盖安装即可，同签名不用卸载 |
-| `music-remote-phone-1.8.6.apk` | 手机 | 独立遥控 App，**可选** |
+| `music-remote-car-2.2.2.apk` | 车机 | 播放器 + 遥控服务 |
+| `music-remote-phone-1.8.7.apk` | 手机 | 独立遥控 App，**可选** |
 | 浏览器 | 后排任意手机 | 不用装东西，打开 `http://<车机IP>:18765` |
 
-## 手机端包名变了
+## 手机端包名（从 1.8.5 或更早升上来的才需要看）
 
 1.8.6 起 `com.yuhan.carremote` → `com.carremote.client`。Android 视作另一个应用：
-
-- 旧版必须先卸载，否则桌面会出现两个同名图标
-- 卸载后车机地址、音量、上次连接记录会清空，装完重新发现或手填一次 IP
-- 车机端不受影响，不用重装
+旧版必须先卸载，否则桌面会出现两个同名图标；卸载后车机地址、音量、上次连接记录会清空，
+装完重新发现或手填一次 IP。车机端不受影响。
 
 ## 车机端要点
 
