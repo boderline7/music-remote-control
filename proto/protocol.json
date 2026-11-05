@@ -1,0 +1,429 @@
+{
+  "protocolVersion": 1,
+  "defaultPort": 18765,
+  "transport": "websocket-text-frame",
+  "nsd": {
+    "serviceType": "_cloudmusic-car._tcp",
+    "serviceNamePrefix": "cloudmusic-car"
+  },
+  "envelope": {
+    "required": [
+      "v",
+      "type"
+    ],
+    "optional": [
+      "id",
+      "ts",
+      "data"
+    ],
+    "notes": "one JSON object per text frame; no batching; utf-8"
+  },
+  "messages": {
+    "pair": {
+      "dir": "c2s",
+      "idRequired": true,
+      "authRequired": false,
+      "data": {
+        "pin": {
+          "type": "string",
+          "required": false,
+          "pattern": "^(|[0-9]{6})$",
+          "note": "免 PIN 自动通过时可为空字符串"
+        },
+        "deviceId": {
+          "type": "string",
+          "required": true,
+          "maxLength": 64
+        },
+        "deviceName": {
+          "type": "string",
+          "required": false,
+          "maxLength": 40
+        },
+        "clientVersion": {
+          "type": "string",
+          "required": false,
+          "maxLength": 24
+        }
+      }
+    },
+    "pair_result": {
+      "dir": "s2c",
+      "idRequired": true,
+      "data": {
+        "ok": {
+          "type": "boolean",
+          "required": true
+        },
+        "token": {
+          "type": "string",
+          "required": false,
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "carId": {
+          "type": "string",
+          "required": false
+        },
+        "carName": {
+          "type": "string",
+          "required": false
+        },
+        "protocolVersion": {
+          "type": "integer",
+          "required": true
+        },
+        "error": {
+          "type": "integer",
+          "required": false
+        },
+        "message": {
+          "type": "string",
+          "required": false
+        },
+        "autoApproved": {
+          "type": "boolean",
+          "required": false
+        }
+      }
+    },
+    "auth": {
+      "dir": "c2s",
+      "idRequired": true,
+      "authRequired": false,
+      "data": {
+        "token": {
+          "type": "string",
+          "required": true,
+          "maxLength": 43,
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "deviceId": {
+          "type": "string",
+          "required": true,
+          "maxLength": 64
+        },
+        "clientVersion": {
+          "type": "string",
+          "required": false
+        }
+      }
+    },
+    "auth_result": {
+      "dir": "s2c",
+      "idRequired": true,
+      "data": {
+        "ok": {
+          "type": "boolean",
+          "required": true
+        },
+        "carId": {
+          "type": "string",
+          "required": false
+        },
+        "carName": {
+          "type": "string",
+          "required": false
+        },
+        "protocolVersion": {
+          "type": "integer",
+          "required": true
+        },
+        "error": {
+          "type": "integer",
+          "required": false
+        },
+        "message": {
+          "type": "string",
+          "required": false
+        }
+      }
+    },
+    "command": {
+      "dir": "c2s",
+      "idRequired": true,
+      "authRequired": true,
+      "data": {
+        "action": {
+          "type": "string",
+          "required": true,
+          "enum": [
+            "play",
+            "pause",
+            "next",
+            "prev",
+            "seek",
+            "setVolume",
+            "getState",
+            "library",
+            "getTracks",
+            "playTracks"
+          ]
+        },
+        "args": {
+          "type": "object",
+          "required": false
+        }
+      },
+      "argsByAction": {
+        "seek": {
+          "positionMs": {
+            "type": "integer",
+            "required": true,
+            "min": 0
+          }
+        },
+        "setVolume": {
+          "volume": {
+            "type": "integer",
+            "required": true,
+            "min": 0
+          }
+        },
+        "getTracks": {
+          "id": {
+            "type": "string",
+            "required": true,
+            "maxLength": 32
+          },
+          "offset": {
+            "type": "integer",
+            "required": false,
+            "min": 0
+          }
+        },
+        "playTracks": {
+          "id": {
+            "type": "string",
+            "required": true,
+            "maxLength": 32
+          },
+          "index": {
+            "type": "integer",
+            "required": false,
+            "min": 0
+          }
+        }
+      }
+    },
+    "ack": {
+      "dir": "s2c",
+      "idRequired": true,
+      "data": {
+        "ok": {
+          "type": "boolean",
+          "required": true
+        },
+        "action": {
+          "type": "string",
+          "required": true
+        },
+        "error": {
+          "type": "integer",
+          "required": false
+        },
+        "message": {
+          "type": "string",
+          "required": false
+        }
+      }
+    },
+    "state": {
+      "dir": "s2c",
+      "idRequired": false,
+      "data": {
+        "seq": {
+          "type": "integer",
+          "required": true,
+          "notes": "monotonic per car process; phone drops lower seq"
+        },
+        "playing": {
+          "type": "boolean",
+          "required": true
+        },
+        "title": {
+          "type": "string",
+          "required": true
+        },
+        "artist": {
+          "type": "string",
+          "required": true
+        },
+        "album": {
+          "type": "string",
+          "required": false
+        },
+        "positionMs": {
+          "type": "integer",
+          "required": true,
+          "min": 0
+        },
+        "durationMs": {
+          "type": "integer",
+          "required": true,
+          "min": 0
+        },
+        "volume": {
+          "type": "integer",
+          "required": false,
+          "notes": "absent when not readable"
+        },
+        "volumeMax": {
+          "type": "integer",
+          "required": false
+        },
+        "reason": {
+          "type": "string",
+          "required": false,
+          "enum": [
+            "tick",
+            "event",
+            "reply"
+          ],
+          "notes": "tick 1Hz heartbeat, event immediate, reply to getState"
+        }
+      }
+    },
+    "ping": {
+      "dir": "c2s",
+      "idRequired": false,
+      "authRequired": false,
+      "data": {
+        "t": {
+          "type": "integer",
+          "required": true
+        }
+      }
+    },
+    "pong": {
+      "dir": "s2c",
+      "idRequired": false,
+      "data": {
+        "t": {
+          "type": "integer",
+          "required": true
+        },
+        "serverTs": {
+          "type": "integer",
+          "required": true
+        }
+      }
+    },
+    "revoked": {
+      "dir": "s2c",
+      "idRequired": false,
+      "data": {
+        "reason": {
+          "type": "string",
+          "required": true,
+          "enum": [
+            "removed_by_car",
+            "token_reset",
+            "device_limit"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "required": false
+        }
+      }
+    },
+    "error": {
+      "dir": "s2c",
+      "idRequired": false,
+      "data": {
+        "error": {
+          "type": "integer",
+          "required": true
+        },
+        "message": {
+          "type": "string",
+          "required": false
+        }
+      },
+      "notes": "报文层 / 认证层错误（收不到对应的 *_result 或 ack 时用这个），车机不主动断开"
+    },
+    "library": {
+      "dir": "s2c",
+      "idRequired": false,
+      "data": {
+        "ok": {
+          "type": "boolean",
+          "required": true
+        },
+        "liked": {
+          "type": "object",
+          "required": false
+        },
+        "cloud": {
+          "type": "object",
+          "required": false
+        },
+        "playlists": {
+          "type": "array",
+          "required": false
+        },
+        "message": {
+          "type": "string",
+          "required": false
+        }
+      }
+    },
+    "tracks": {
+      "dir": "s2c",
+      "idRequired": false,
+      "data": {
+        "ok": {
+          "type": "boolean",
+          "required": true
+        },
+        "id": {
+          "type": "string",
+          "required": false
+        },
+        "total": {
+          "type": "integer",
+          "required": false
+        },
+        "offset": {
+          "type": "integer",
+          "required": false
+        },
+        "tracks": {
+          "type": "array",
+          "required": false
+        },
+        "message": {
+          "type": "string",
+          "required": false
+        }
+      }
+    }
+  },
+  "errors": {
+    "1000": "INVALID_MESSAGE",
+    "1001": "UNSUPPORTED_VERSION",
+    "1002": "UNKNOWN_TYPE",
+    "2000": "NOT_AUTHENTICATED",
+    "2001": "PIN_INVALID",
+    "2002": "PIN_EXPIRED",
+    "2003": "PIN_ATTEMPTS_EXCEEDED",
+    "2004": "TOKEN_INVALID",
+    "2005": "DEVICE_REVOKED",
+    "2006": "DEVICE_LIMIT_REACHED",
+    "3000": "UNSUPPORTED_ACTION",
+    "3001": "ACTION_FAILED",
+    "3002": "VALUE_OUT_OF_RANGE",
+    "3003": "NOT_AVAILABLE",
+    "4000": "RATE_LIMITED",
+    "9000": "INTERNAL"
+  },
+  "timing": {
+    "pinTtlSec": 120,
+    "pinMaxAttempts": 5,
+    "authTimeoutSec": 10,
+    "stateTickMs": 1000,
+    "pingIntervalSec": 20,
+    "pingTimeoutSec": 60,
+    "maxFrameBytes": 8192
+  }
+}

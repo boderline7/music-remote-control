@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  自适应图标的底层：纯红打底 + 官方图按 4% 内缩叠上去。
+
+  官方图本身红底铺满画布、白色音符占宽 71.5%，而自适应图标只露出中间 72/108 ≈ 66.7%，
+  直接用 fillBounds 铺满会把音符两端削掉。内缩 4% 后图宽 99.4、音符宽 71.1，
+  正好落在可见区内，看起来就是官方图标原样，不会被裁。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/ic_launcher_bg" />
+    <item>
+        <inset
+            android:drawable="@drawable/ic_cloudmusic_app"
+            android:inset="4%" />
+    </item>
+</layer-list>

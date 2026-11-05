@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 与官方图标边缘的红色一致，用于铺满自适应图标的底 -->
+    <color name="ic_launcher_bg">#F60F19</color>
+</resources>

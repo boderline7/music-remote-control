@@ -1,0 +1,843 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="车机遥控">
+<meta name="theme-color" content="#0b0b0d">
+<link rel="apple-touch-icon" href="/icon.png">
+<title>车机遥控</title>
+<style>
+  :root {
+    --red: #fa2d48;
+    --fg: #ffffff;
+    --dim: rgba(255,255,255,.55);
+    --faint: rgba(255,255,255,.32);
+    --line: rgba(255,255,255,.12);
+    --card: rgba(255,255,255,.06);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: radial-gradient(120% 60% at 50% 0%, #1b1b22 0%, #0b0b0d 62%) fixed;
+    color: var(--fg);
+    font-family: -apple-system, system-ui, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  button { border: 0; background: none; color: var(--fg); padding: 0; cursor: pointer; font: inherit; }
+  button:active { opacity: .55; }
+
+  header {
+    flex: none;
+    display: flex; align-items: center; gap: 8px;
+    padding: calc(10px + env(safe-area-inset-top)) 20px 6px;
+    font-size: 13px; color: var(--dim);
+  }
+  #dot { width: 8px; height: 8px; border-radius: 50%; background: #8e8e93; flex: none; transition: background .2s; }
+  #dot.on { background: #34c759; }
+  #dot.warn { background: #ff9f0a; }
+
+  main {
+    flex: 1;
+    overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    padding: 4px 20px calc(22px + env(safe-area-inset-bottom));
+  }
+
+  /* ---------- 正在播放 ---------- */
+  .head-row { display: flex; align-items: flex-start; gap: 12px; }
+  #title {
+    flex: 1; margin: 0; font-size: 26px; font-weight: 700; line-height: 1.25;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  #like {
+    flex: none; width: 46px; height: 46px; border-radius: 50%; background: var(--card);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #like svg { width: 22px; height: 22px; fill: none; stroke: rgba(255,255,255,.75); stroke-width: 1.9; }
+  #like.on svg { fill: var(--red); stroke: var(--red); }
+  #artist { margin: 6px 0 0; font-size: 14px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .progress { margin-top: 16px; }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 6px; border-radius: 3px; outline: none; margin: 0;
+    background: linear-gradient(to right, var(--red) var(--p, 0%), var(--line) var(--p, 0%));
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,.55);
+  }
+  input[type=range]:disabled { opacity: .35; }
+  .times { display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+  .controls { display: flex; align-items: center; justify-content: center; gap: 44px; margin: 20px 0 4px; }
+  .skip svg { width: 32px; height: 32px; fill: rgba(255,255,255,.9); }
+  .main { width: 70px; height: 70px; border-radius: 50%; background: var(--red); box-shadow: 0 10px 24px rgba(250,45,72,.32); }
+  .main svg { width: 30px; height: 30px; fill: #fff; }
+
+  .volume { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
+  .round {
+    flex: none; width: 42px; height: 42px; border-radius: 50%; background: var(--card);
+    font-size: 22px; line-height: 1; color: rgba(255,255,255,.85);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .volume input[type=range] { flex: 1; }
+  #volVal { width: 24px; flex: none; text-align: right; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .hidden { display: none !important; }
+
+  /* ---------- 搜索 ---------- */
+  .search { display: flex; align-items: center; gap: 8px; margin-top: 22px; }
+  .field {
+    flex: 1; display: flex; align-items: center; gap: 8px;
+    background: var(--card); border-radius: 14px; padding: 0 4px 0 14px;
+  }
+  #q {
+    flex: 1; min-width: 0; background: none; border: 0; outline: none;
+    color: #fff; font-size: 16px; padding: 12px 0;
+  }
+  #q::placeholder { color: var(--faint); }
+  #go { width: 46px; height: 40px; border-radius: 11px; background: var(--red); display: flex; align-items: center; justify-content: center; }
+  #go svg { width: 20px; height: 20px; fill: none; stroke: #fff; stroke-width: 2.2; }
+
+  /* ---------- 区块 ---------- */
+  .sec { margin-top: 26px; display: flex; align-items: baseline; gap: 8px; }
+  .sec h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .sec .hint { font-size: 12px; color: var(--faint); flex: 1; }
+  .sec button { font-size: 13px; color: var(--dim); }
+
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+  .tile { background: var(--card); border-radius: 16px; padding: 14px; text-align: left; }
+  .tile .n { display: block; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile .c { display: block; margin-top: 6px; font-size: 12px; color: var(--faint); }
+
+  .rows { margin-top: 12px; }
+  .row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 13px 14px; background: var(--card); border-radius: 14px; margin-bottom: 8px; text-align: left; }
+  .row .n { flex: 1; min-width: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .c { font-size: 12px; color: var(--faint); flex: none; }
+  .row .chev { color: var(--faint); font-size: 17px; flex: none; }
+  /* 带副标题的行（每日推荐 / 心动模式）：主标题在上，说明在下 */
+  .row .t { flex: 1; min-width: 0; }
+  .row .sub { margin-top: 3px; font-size: 12px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 折叠时末尾那个「展开全部 / 收起」 */
+  .row.more { justify-content: center; padding: 11px 14px; }
+  .row.more .n { flex: none; font-size: 13px; color: var(--dim); }
+  .empty { font-size: 13px; color: var(--faint); padding: 4px 2px; }
+
+  footer { margin: 26px 0 0; font-size: 11px; color: var(--faint); text-align: center; }
+  footer b { color: var(--dim); font-weight: 500; }
+
+  /* ---------- 曲目面板 ---------- */
+  .sheet {
+    position: fixed; inset: 0; z-index: 9; background: #0d0d10;
+    display: flex; flex-direction: column;
+    transform: translateY(100%); transition: transform .26s cubic-bezier(.32,.72,0,1);
+    will-change: transform;
+  }
+  .sheet.open { transform: translateY(0); }
+  .sheet-head {
+    flex: none; display: flex; align-items: center; gap: 10px;
+    padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .sheet-head .t { flex: 1; min-width: 0; }
+  .sheet-head h2 { margin: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sheet-head .s { margin-top: 3px; font-size: 12px; color: var(--faint); }
+  #back { flex: none; width: 40px; height: 40px; font-size: 26px; line-height: 1; color: var(--dim); }
+  .sheet-body {
+    flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    padding: 6px 16px calc(20px + env(safe-area-inset-bottom));
+  }
+  .track { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 4px; border-bottom: 1px solid rgba(255,255,255,.06); text-align: left; }
+  .track .idx { width: 22px; flex: none; text-align: right; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .track .t { flex: 1; min-width: 0; }
+  .track .nm { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .track .ar { margin-top: 3px; font-size: 12px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .track .dur { flex: none; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .track.off { opacity: .38; }
+  #more { width: 100%; margin-top: 14px; padding: 13px; border-radius: 14px; background: var(--card); color: var(--dim); font-size: 14px; }
+  #toast {
+    position: fixed; left: 50%; bottom: calc(28px + env(safe-area-inset-bottom));
+    transform: translate(-50%, 12px); opacity: 0; pointer-events: none;
+    background: rgba(30,30,36,.96); color: #fff; font-size: 13px;
+    padding: 10px 18px; border-radius: 999px; transition: opacity .18s, transform .18s; z-index: 20;
+    max-width: 80vw; text-align: center;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+</style>
+</head>
+<body>
+  <header>
+    <span id="dot"></span>
+    <span id="status">正在连接车机…</span>
+  </header>
+
+  <main id="scroll">
+    <div class="head-row">
+      <h1 id="title">未在播放</h1>
+      <button id="like" aria-label="喜欢">
+        <svg viewBox="0 0 24 24"><path d="M12 20.5s-7.6-4.7-9.2-9C1.6 7.9 3.6 4.8 6.8 4.8c2 0 3.4 1.1 4.2 2.3.3.4.9.4 1.2 0 .8-1.2 2.2-2.3 4.2-2.3 3.2 0 5.2 3.1 4 6.7-1.6 4.3-9.2 9-9.2 9z"/></svg>
+      </button>
+    </div>
+    <p id="artist">—</p>
+
+    <div class="progress">
+      <input id="prog" type="range" min="0" max="1000" value="0" disabled aria-label="进度">
+      <div class="times"><span id="cur">0:00</span><span id="dur">0:00</span></div>
+    </div>
+
+    <div class="controls">
+      <button class="skip" id="prev" aria-label="上一首">
+        <svg viewBox="0 0 24 24"><path d="M6 6h2.4v12H6zm3.6 6L18 6v12z"/></svg>
+      </button>
+      <button class="main" id="play" aria-label="播放/暂停">
+        <svg id="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <button class="skip" id="next" aria-label="下一首">
+        <svg viewBox="0 0 24 24"><path d="M15.6 6H18v12h-2.4zM6 6l8.4 6L6 18z"/></svg>
+      </button>
+    </div>
+
+    <div class="volume hidden" id="volumeRow">
+      <button class="round" id="volDown" aria-label="音量减">−</button>
+      <input id="vol" type="range" min="0" max="30" value="0" aria-label="音量">
+      <span id="volVal">0</span>
+      <button class="round" id="volUp" aria-label="音量加">+</button>
+    </div>
+
+    <div class="search">
+      <div class="field">
+        <input id="q" type="search" placeholder="搜索歌曲、歌手" enterkeyhint="search" autocomplete="off" autocorrect="off" spellcheck="false">
+        <button id="go" aria-label="搜索">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>资料库</h2>
+      <span class="hint" id="libHint"></span>
+      <button id="reload">刷新</button>
+    </div>
+    <div class="tiles">
+      <button class="tile" id="tileLiked"><span class="n" id="likedName">我喜欢的音乐</span><span class="c" id="likedCount">—</span></button>
+      <button class="tile" id="tileCloud"><span class="n" id="cloudName">音乐云盘</span><span class="c" id="cloudCount">—</span></button>
+    </div>
+
+    <div class="sec"><h2>为你推荐</h2><span class="hint" id="quickHint"></span></div>
+    <div class="rows" id="quick">
+      <button class="row" id="dailyRow">
+        <div class="t"><div class="n">每日推荐</div><div class="sub">根据你的口味 · 每天 6:00 更新</div></div>
+        <span class="chev">›</span>
+      </button>
+      <button class="row" id="hbRow">
+        <div class="t"><div class="n">心动模式</div><div class="sub">根据红心推荐 · 边放边续</div></div>
+        <span class="chev">›</span>
+      </button>
+    </div>
+
+    <div class="sec"><h2>我创建的歌单</h2><span class="hint" id="plHint"></span></div>
+    <div class="rows" id="playlists"></div>
+
+    <div class="sec"><h2>排行榜</h2><span class="hint" id="topHint"></span></div>
+    <div class="rows" id="tops"></div>
+
+    <div class="sec"><h2>推荐歌单</h2><span class="hint" id="recHint"></span></div>
+    <div class="rows" id="recs"></div>
+
+    <footer>地址固定为 <b id="host">—</b></footer>
+  </main>
+
+  <div class="sheet" id="sheet">
+    <div class="sheet-head">
+      <button id="back" aria-label="返回">‹</button>
+      <div class="t">
+        <h2 id="sheetTitle">列表</h2>
+        <div class="s" id="sheetSub"></div>
+      </div>
+    </div>
+    <div class="sheet-body" id="sheetBody"></div>
+  </div>
+
+  <div id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var PROTO_VERSION = 1;
+  var K_TOKEN = 'carremote.token';
+  var K_DEVICE = 'carremote.deviceId';
+  var PAGE_SIZE = 20;   // 与服务端 RemoteLibrary.PAGE_SIZE 对齐，仅用于「加载更多」文案
+
+  var ICON_PLAY = '<path d="M8 5v14l11-7z"/>';
+  var ICON_PAUSE = '<path d="M6.5 5h4v14h-4zm7 0h4v14h-4z"/>';
+
+  var el = {};
+  ['dot', 'status', 'title', 'artist', 'like', 'prog', 'cur', 'dur', 'play', 'playIcon', 'prev', 'next',
+   'volumeRow', 'vol', 'volVal', 'volUp', 'volDown', 'q', 'go', 'reload', 'likedName', 'likedCount',
+   'cloudName', 'cloudCount', 'playlists', 'tops', 'recs', 'libHint', 'plHint', 'topHint', 'recHint',
+   'sheet', 'sheetTitle', 'sheetSub', 'sheetBody', 'back', 'toast', 'host', 'tileLiked', 'tileCloud', 'scroll',
+   'dailyRow', 'hbRow', 'quickHint'
+  ].forEach(function (id) { el[id] = document.getElementById(id); });
+
+  var ws = null;
+  var seq = 0;
+  var state = {};
+  var lastSeq = -1;
+  var stateAt = 0;
+  var draggingSeek = false;
+  var pendingSeek = 0;
+  var reconnectDelay = 1000;
+  var reconnectTimer = null;
+  var connectFails = 0;
+  var toastTimer = null;
+
+  var library = null;                // { liked, cloud, playlists[] }
+  var catalog = null;                // { top[], recommend[] }
+  var list = null;                   // { id, title, total, items[], loading, error }
+
+  // 歌单默认只铺 5 个。自建歌单可能有几十个，全铺出来会把下面的榜单、底部的地址全顶出屏，
+  // 手机上要划半天才到头；默认收着，想看全的点「展开全部」。
+  var COLLAPSE_MAX = 5;
+  var plExpanded = false;
+  var recExpanded = false;
+
+  el.host.textContent = location.host;
+
+  // ---------- 基础 ----------
+
+  function deviceId() {
+    var v = localStorage.getItem(K_DEVICE);
+    if (!v) {
+      v = 'web-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      localStorage.setItem(K_DEVICE, v);
+    }
+    return v;
+  }
+
+  function setStatus(text, kind) {
+    el.status.textContent = text;
+    el.dot.className = kind || '';
+  }
+
+  function toast(text) {
+    el.toast.textContent = text;
+    el.toast.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.toast.classList.remove('show'); }, 1800);
+  }
+
+  function send(type, data) {
+    if (!ws || ws.readyState !== 1) return;
+    seq += 1;
+    ws.send(JSON.stringify({
+      v: PROTO_VERSION, type: type, id: 'w' + seq, ts: Date.now(), data: data || {}
+    }));
+  }
+
+  function command(action, args) {
+    var payload = { action: action };
+    if (args) payload.args = args;
+    send('command', payload);
+  }
+
+  function fmt(ms) {
+    if (!ms || ms < 0) ms = 0;
+    var total = Math.floor(ms / 1000);
+    var m = Math.floor(total / 60);
+    var s = total % 60;
+    return m + ':' + (s < 10 ? '0' + s : s);
+  }
+
+  function setBar(input, ratio) {
+    input.style.setProperty('--p', (Math.max(0, Math.min(1, ratio)) * 100).toFixed(2) + '%');
+  }
+
+  /** 清空一个容器。不用 replaceChildren，老 Safari 没有。 */
+  function clear(node) {
+    while (node.firstChild) node.removeChild(node.firstChild);
+  }
+
+  function el_(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  function row(name, count, onClick) {
+    var b = el_('button', 'row');
+    b.appendChild(el_('span', 'n', name));
+    if (count != null) b.appendChild(el_('span', 'c', count + ' 首'));
+    b.appendChild(el_('span', 'chev', '›'));
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  // ---------- 渲染：正在播放 ----------
+
+  function paintNow() {
+    el.title.textContent = state.title || '未在播放';
+    el.artist.textContent = state.artist || '—';
+    el.playIcon.innerHTML = state.playing ? ICON_PAUSE : ICON_PLAY;
+    paintLike();
+
+    var dur = state.durationMs || 0;
+    el.dur.textContent = fmt(dur);
+    if (!draggingSeek) {
+      var pos = Math.min(dur || 0, state.positionMs || 0);
+      el.prog.max = dur || 1000;
+      el.prog.value = pos;
+      el.cur.textContent = fmt(pos);
+      setBar(el.prog, dur ? pos / dur : 0);
+    }
+    el.prog.disabled = !dur;
+
+    var max = state.volumeMax || 0;
+    if (max > 0 && typeof state.volume === 'number' && state.volume >= 0) {
+      el.volumeRow.classList.remove('hidden');
+      el.vol.max = max;
+      if (document.activeElement !== el.vol) {
+        el.vol.value = state.volume;
+        setBar(el.vol, state.volume / max);
+        el.volVal.textContent = state.volume;
+      }
+    } else {
+      el.volumeRow.classList.add('hidden');
+    }
+  }
+
+  function paintLike() {
+    if (state.liked) el.like.classList.add('on');
+    else el.like.classList.remove('on');
+  }
+
+  // 进度条自己走：车机每秒推一次 tick，中间靠本地插值补齐
+  setInterval(function () {
+    if (draggingSeek || !state.playing || !state.durationMs) return;
+    var pos = Math.min(state.durationMs, (state.positionMs || 0) + (Date.now() - stateAt));
+    el.prog.value = pos;
+    el.cur.textContent = fmt(pos);
+    setBar(el.prog, pos / state.durationMs);
+  }, 250);
+
+  // ---------- 渲染：资料库 / 榜单 ----------
+
+  function paintLibrary() {
+    var lib = library;
+    if (!lib) {
+      el.libHint.textContent = '读取中…';
+      return;
+    }
+    el.libHint.textContent = '';
+    el.likedName.textContent = lib.liked.name || '我喜欢的音乐';
+    el.likedCount.textContent = lib.liked.count + ' 首';
+    el.cloudName.textContent = lib.cloud.name || '音乐云盘';
+    el.cloudCount.textContent = lib.cloud.count + ' 首';
+
+    var items = lib.playlists || [];
+    el.plHint.textContent = items.length ? items.length + ' 个' : '';
+    paintPlaylists(items);
+  }
+
+  /** 自建歌单单独抽出来，是因为「展开 / 收起」要就地重画这一块，不能整页重来。 */
+  function paintPlaylists(items) {
+    fillEntries(el.playlists, items, plExpanded, function () {
+      plExpanded = !plExpanded;
+      paintPlaylists(items);
+    }, '还没有自建歌单');
+  }
+
+  function paintCatalog() {
+    var cat = catalog;
+    if (!cat) {
+      el.topHint.textContent = '读取中…';
+      el.recHint.textContent = '读取中…';
+      return;
+    }
+    fillRows(el.tops, el.topHint, cat.top, '榜单读取失败');
+    var recs = cat.recommend || [];
+    el.recHint.textContent = recs.length ? recs.length + ' 个' : '';
+    fillEntries(el.recs, recs, recExpanded, function () {
+      recExpanded = !recExpanded;
+      paintCatalog();
+    }, '暂无推荐');
+  }
+
+  function fillRows(box, hint, items, emptyText) {
+    clear(box);
+    items = items || [];
+    hint.textContent = '';
+    if (!items.length) {
+      box.appendChild(el_('div', 'empty', emptyText));
+      return;
+    }
+    items.forEach(function (p) {
+      box.appendChild(row(p.name, p.count, function () { openList(p.id, p.name); }));
+    });
+  }
+
+  /**
+   * 铺一列可折叠的入口：超过 COLLAPSE_MAX 个就只铺前 5 个，末尾挂一行「展开全部／收起」。
+   * 展开状态由调用方持有，刷新、重连之后保持用户刚才的选择。
+   */
+  function fillEntries(box, items, expanded, onToggle, emptyText) {
+    clear(box);
+    items = items || [];
+    if (!items.length) {
+      box.appendChild(el_('div', 'empty', emptyText));
+      return;
+    }
+    var shown = expanded ? items : items.slice(0, COLLAPSE_MAX);
+    shown.forEach(function (p) {
+      box.appendChild(row(p.name, p.count, function () { openList(p.id, p.name); }));
+    });
+    if (items.length > COLLAPSE_MAX) {
+      var more = el_('button', 'row more');
+      more.appendChild(el_('span', 'n', expanded ? '收起' : '展开全部（' + items.length + ' 个）'));
+      more.addEventListener('click', onToggle);
+      box.appendChild(more);
+    }
+  }
+
+  // ---------- 曲目面板 ----------
+
+  function openSheet() {
+    el.sheet.classList.add('open');
+  }
+
+  function closeSheet() {
+    el.sheet.classList.remove('open');
+    list = null;
+  }
+
+  function openList(id, title) {
+    list = { id: id, title: title, total: 0, items: [], loading: true, error: null };
+    el.sheetTitle.textContent = title;
+    el.sheetSub.textContent = '读取中…';
+    paintList();
+    openSheet();
+    command('getTracks', { id: id, offset: 0 });
+  }
+
+  function openSearch(keyword) {
+    var q = (keyword || '').trim();
+    if (!q) return;
+    list = { id: 'search:' + q, title: '搜索：' + q, total: 0, items: [], loading: true, error: null };
+    el.sheetTitle.textContent = list.title;
+    el.sheetSub.textContent = '搜索中…';
+    paintList();
+    openSheet();
+    command('search', { q: q });
+  }
+
+  function paintList() {
+    if (!list) return;
+    clear(el.sheetBody);
+
+    if (list.error) {
+      el.sheetSub.textContent = '';
+      el.sheetBody.appendChild(el_('div', 'empty', list.error));
+      var again = el_('button', 'row');
+      again.appendChild(el_('span', 'n', '重试'));
+      again.addEventListener('click', function () { requestMore(true); });
+      el.sheetBody.appendChild(again);
+      return;
+    }
+
+    el.sheetSub.textContent = list.loading && !list.items.length
+      ? '读取中…'
+      : (list.total ? list.items.length + ' / ' + list.total + ' 首' : list.items.length + ' 首');
+
+    list.items.forEach(function (t) {
+      var b = el_('button', 'track' + (t.playable === false ? ' off' : ''));
+      b.appendChild(el_('span', 'idx', String(t.index + 1)));
+      var box = el_('div', 't');
+      box.appendChild(el_('div', 'nm', t.name));
+      box.appendChild(el_('div', 'ar', t.artist || '未知歌手'));
+      b.appendChild(box);
+      b.appendChild(el_('span', 'dur', fmt(t.durationMs)));
+      b.addEventListener('click', function () { playTrack(t); });
+      el.sheetBody.appendChild(b);
+    });
+
+    if (list.loading) {
+      el.sheetBody.appendChild(el_('div', 'empty', '加载中…'));
+    } else if (!list.items.length) {
+      el.sheetBody.appendChild(el_('div', 'empty', '这里没有歌'));
+    } else if (list.items.length < list.total) {
+      var more = el_('button');
+      more.id = 'more';
+      more.textContent = '加载更多（' + list.items.length + '/' + list.total + '）';
+      more.addEventListener('click', function () { requestMore(false); });
+      el.sheetBody.appendChild(more);
+    }
+  }
+
+  function requestMore(reset) {
+    if (!list) return;
+    list.loading = true;
+    list.error = null;
+    var offset = reset ? 0 : list.items.length;
+    if (reset) list.items = [];
+    paintList();
+    command('getTracks', { id: list.id, offset: offset });
+  }
+
+  function playTrack(t) {
+    if (!list) return;
+    if (t.playable === false) { toast('这首歌在车机上不可播放'); return; }
+    command('playTracks', { id: list.id, index: t.index });
+    toast('正在播放：' + t.name);
+    closeSheet();
+    el.scroll.scrollTop = 0;
+  }
+
+  // ---------- 消息 ----------
+
+  function handle(type, data) {
+    switch (type) {
+      case 'pair_result':
+        if (data.ok) {
+          localStorage.setItem(K_TOKEN, data.token || '');
+          setStatus('已连接 · ' + (data.carName || '车机'), 'on');
+          command('getState');
+          loadAll();
+        } else {
+          setStatus(data.message || '配对失败', 'warn');
+        }
+        break;
+
+      case 'auth_result':
+        if (data.ok) {
+          setStatus('已连接 · ' + (data.carName || '车机'), 'on');
+          command('getState');
+          loadAll();
+        } else {
+          localStorage.removeItem(K_TOKEN);
+          setStatus('授权失效，重新配对…', 'warn');
+          send('pair', { pin: '', deviceId: deviceId(), deviceName: 'Safari', clientVersion: '1.0.0' });
+        }
+        break;
+
+      case 'state':
+        if (typeof data.seq === 'number') {
+          if (data.seq <= lastSeq) return;
+          lastSeq = data.seq;
+        }
+        // 松手 seek 后车机要过一会儿才推到新位置，这期间别让进度条跳回旧值
+        if (pendingSeek && Math.abs((data.positionMs || 0) - pendingSeek) < 2500) {
+          pendingSeek = 0;
+          draggingSeek = false;
+        }
+        state = data;
+        stateAt = Date.now();
+        paintNow();
+        break;
+
+      case 'library':
+        if (data.ok) {
+          library = {
+            liked: data.liked || { name: '我喜欢的音乐', count: 0 },
+            cloud: data.cloud || { name: '音乐云盘', count: 0 },
+            playlists: data.playlists || []
+          };
+          paintLibrary();
+        } else {
+          library = null;
+          el.libHint.textContent = data.message || '资料库读取失败';
+        }
+        break;
+
+      case 'catalog':
+        if (data.ok) {
+          catalog = { top: data.top || [], recommend: data.recommend || [] };
+          paintCatalog();
+        } else {
+          catalog = { top: [], recommend: [] };
+          el.topHint.textContent = data.message || '榜单读取失败';
+        }
+        break;
+
+      case 'tracks':
+        if (!list || data.id !== list.id) return;   // 迟到的上一份列表，丢掉
+        if (data.ok) {
+          var page = data.tracks || [];
+          // 车机按字节预算裁页，条数不固定，所以偏移一律用「已收到的条数」
+          if (!data.offset) list.items = page;
+          else list.items = list.items.concat(page);
+          list.total = data.total || list.items.length;
+          list.error = null;
+        } else {
+          list.error = data.message || '读取失败';
+        }
+        list.loading = false;
+        paintList();
+        break;
+
+      case 'ack':
+        if (data.ok === false) toast('指令失败：' + (data.message || data.error || ''));
+        break;
+
+      case 'error':
+        toast(data.message || ('错误 ' + data.error));
+        break;
+
+      case 'revoked':
+        localStorage.removeItem(K_TOKEN);
+        send('pair', { pin: '', deviceId: deviceId(), deviceName: 'Safari', clientVersion: '1.0.0' });
+        break;
+    }
+  }
+
+  function loadAll() {
+    library = null;
+    catalog = null;
+    el.libHint.textContent = '';
+    paintLibrary();
+    paintCatalog();
+    command('library');
+    command('catalog');
+  }
+
+  // ---------- 连接 ----------
+
+  function connect() {
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    setStatus('正在连接车机…', '');
+    var scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(scheme + '://' + location.host + '/');
+
+    ws.onopen = function () {
+      reconnectDelay = 1000;
+      connectFails = 0;
+      var token = localStorage.getItem(K_TOKEN) || '';
+      if (token) {
+        send('auth', { token: token, deviceId: deviceId(), clientVersion: '1.0.0' });
+        setStatus('正在认证…', '');
+      } else {
+        send('pair', { pin: '', deviceId: deviceId(), deviceName: 'Safari', clientVersion: '1.0.0' });
+        setStatus('正在配对…', '');
+      }
+    };
+
+    ws.onmessage = function (ev) {
+      var msg;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      handle(msg.type, msg.data || {});
+    };
+
+    ws.onclose = function () {
+      ws = null;
+      connectFails++;
+      // 车机热点重启后 IP 会变，而浏览器对域名的解析结果有自己的缓存（我们发的 A 记录
+      // TTL 是 120 秒，期间不会重新问）。所以这里不能一直闷头重试：
+      // 超过 20 秒还连不上就明确告诉用户「刷新一下」，刷新会让浏览器重新解析域名。
+      if (connectFails >= 4) {
+        setStatus('连不上车机 · 地址可能已变，下拉刷新或重开本页', 'warn');
+      } else {
+        setStatus('已断开，重连中…', 'warn');
+      }
+      reconnectTimer = setTimeout(connect, reconnectDelay);
+      // 地址变了的时候退避到 10 秒会让恢复很慢，封顶 5 秒
+      reconnectDelay = Math.min(reconnectDelay * 2, 5000);
+    };
+
+    ws.onerror = function () { /* onclose 会跟着来，这里不重复处理 */ };
+  }
+
+  // 心跳：协议要求 20 秒一次，车机 90 秒没收到任何帧就断
+  setInterval(function () { send('ping', {}); }, 20000);
+
+  // 从后台切回来时立刻重连，不用等退避
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && (!ws || ws.readyState > 1)) {
+      reconnectDelay = 1000;
+      connect();
+    }
+  });
+
+  // ---------- 操作 ----------
+
+  el.play.addEventListener('click', function () {
+    command(state.playing ? 'pause' : 'play');
+  });
+  el.prev.addEventListener('click', function () { command('prev'); });
+  el.next.addEventListener('click', function () { command('next'); });
+
+  el.like.addEventListener('click', function () {
+    if (!state.title) { toast('当前没有播放'); return; }
+    // 先按预期翻一下，车机随即会推一次 state 覆盖成真值（失败也会被纠正回来）
+    state.liked = !state.liked;
+    paintLike();
+    command('like');
+    toast(state.liked ? '已加入我喜欢的音乐' : '已取消喜欢');
+  });
+
+  el.prog.addEventListener('input', function () {
+    draggingSeek = true;
+    el.cur.textContent = fmt(+el.prog.value);
+    setBar(el.prog, state.durationMs ? (+el.prog.value) / state.durationMs : 0);
+  });
+  el.prog.addEventListener('change', function () {
+    pendingSeek = +el.prog.value;
+    command('seek', { positionMs: Math.round(pendingSeek) });
+    // 兜底：车机没回新位置（不支持 seek 之类）也要把拖动状态放掉
+    setTimeout(function () {
+      pendingSeek = 0;
+      draggingSeek = false;
+    }, 1500);
+  });
+
+  function pushVolume(v) {
+    var max = state.volumeMax || 0;
+    if (!max) return;
+    command('setVolume', { volume: Math.max(0, Math.min(max, Math.round(v))) });
+  }
+
+  el.vol.addEventListener('input', function () {
+    el.volVal.textContent = el.vol.value;
+    setBar(el.vol, (+el.vol.value) / (state.volumeMax || 1));
+  });
+  el.vol.addEventListener('change', function () { pushVolume(+el.vol.value); });
+
+  function stepVolume(dir) {
+    var max = state.volumeMax || 0;
+    if (!max) return;
+    var cur = state.volume >= 0 ? state.volume : Math.round(max / 2);
+    var step = Math.max(1, Math.round(max / 15));
+    pushVolume(cur + dir * step);
+  }
+  el.volUp.addEventListener('click', function () { stepVolume(1); });
+  el.volDown.addEventListener('click', function () { stepVolume(-1); });
+
+  el.go.addEventListener('click', function () { openSearch(el.q.value); });
+  el.q.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.keyCode === 13) {
+      e.preventDefault();
+      el.q.blur();
+      openSearch(el.q.value);
+    }
+  });
+
+  el.reload.addEventListener('click', function () { loadAll(); });
+  el.tileLiked.addEventListener('click', function () { openList('liked', '我喜欢的音乐'); });
+  el.tileCloud.addEventListener('click', function () { openList('cloud', '音乐云盘'); });
+  // daily / heartbeat 是车机端的两个虚拟列表 id，和歌单一样先看列表再点歌
+  el.dailyRow.addEventListener('click', function () { openList('daily', '每日推荐'); });
+  el.hbRow.addEventListener('click', function () { openList('heartbeat', '心动模式'); });
+  el.back.addEventListener('click', function () { closeSheet(); });
+
+  connect();
+})();
+</script>
+</body>
+</html>

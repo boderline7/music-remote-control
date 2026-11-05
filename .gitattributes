@@ -1,0 +1,14 @@
+# 统一换行符：仓库里一律 LF，Windows 检出时不转 CRLF，
+# 免得每个 .kt 都显示成"整个文件被改动"。
+* text=auto eol=lf
+
+# 二进制文件不参与换行符转换、不做文本 diff
+*.apk   binary
+*.jar   binary
+*.jks   binary
+*.keystore binary
+*.png   binary
+*.webp  binary
+*.ttf   binary
+*.so    binary
+*.dex   binary

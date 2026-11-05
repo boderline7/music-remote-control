@@ -1,0 +1,33 @@
+# ---------- 构建产物 ----------
+build/
+.gradle/
+captures/
+*.apk
+*.aab
+*.ap_
+dist/
+local.properties
+
+# ---------- 签名（绝不入库） ----------
+# 签名库 + 口令一旦公开，任何人都能签一个「版本号更高」的包覆盖安装
+keystore/
+*.jks
+*.keystore
+keystore.properties
+!keystore.properties.example
+
+# ---------- 调试产物 ----------
+_工具/preview/*.png
+_工具/preview/*.html
+*.log
+__pycache__/
+*.pyc
+
+# ---------- IDE / 系统 ----------
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# 需求文档不进仓库（内含私人口吻的需求描述）
+/任务书.md

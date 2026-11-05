@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Apple TV 遥控器（Siri Remote）风格：银白机身 + 顶部大触控环 + 下方 2×3 圆键。
+  机身用上白下浅灰的竖向渐变模拟金属质感，缩到 48dp 也不会糊成一块白。
+  机身最远点（顶部圆心）距画布中心 31，落在自适应图标 36 的可见半径内，圆角不会被裁。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 机身：上下全圆头，宽 30、高 62 -->
+    <path android:pathData="M54,23 A15,15 0 0 1 69,38 V70 A15,15 0 0 1 54,85 A15,15 0 0 1 39,70 V38 A15,15 0 0 1 54,23 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="54"
+                android:startY="23"
+                android:endX="54"
+                android:endY="85"
+                android:startColor="#FFFFFF"
+                android:centerColor="#F8F8FB"
+                android:endColor="#DEDEE6" />
+        </aapt:attr>
+    </path>
+
+    <!-- 顶部触控环 -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M54,41 m-10,0 a10,10 0 1,0 20,0 a10,10 0 1,0 -20,0 z"
+        android:strokeColor="#FA2D48"
+        android:strokeWidth="2.3" />
+
+    <!-- 触控盘中心确认键 -->
+    <path
+        android:fillColor="#FA2D48"
+        android:pathData="M54,41 m-3.1,0 a3.1,3.1 0 1,0 6.2,0 a3.1,3.1 0 1,0 -6.2,0 z" />
+
+    <!-- 2×3 圆键 -->
+    <path
+        android:fillColor="#FA2D48"
+        android:pathData="M47.5,59 m-2.4,0 a2.4,2.4 0 1,0 4.8,0 a2.4,2.4 0 1,0 -4.8,0 z M60.5,59 m-2.4,0 a2.4,2.4 0 1,0 4.8,0 a2.4,2.4 0 1,0 -4.8,0 z" />
+    <path
+        android:fillColor="#FA2D48"
+        android:pathData="M47.5,66.5 m-2.4,0 a2.4,2.4 0 1,0 4.8,0 a2.4,2.4 0 1,0 -4.8,0 z M60.5,66.5 m-2.4,0 a2.4,2.4 0 1,0 4.8,0 a2.4,2.4 0 1,0 -4.8,0 z" />
+    <path
+        android:fillColor="#FA2D48"
+        android:pathData="M47.5,74 m-2.4,0 a2.4,2.4 0 1,0 4.8,0 a2.4,2.4 0 1,0 -4.8,0 z M60.5,74 m-2.4,0 a2.4,2.4 0 1,0 4.8,0 a2.4,2.4 0 1,0 -4.8,0 z" />
+</vector>
