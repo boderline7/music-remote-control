@@ -31,5 +31,6 @@ Thumbs.db
 
 # 需求文档不进仓库（内含私人口吻的需求描述）
 /任务书.md
+/docs/
 .gh_*.json
 .gh_*.txt

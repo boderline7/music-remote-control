@@ -16,8 +16,8 @@ android {
         applicationId = "com.cloudmusic.car"
         minSdk = 28
         targetSdk = 35
-        versionCode = 33
-        versionName = "2.2.2"
+        versionCode = 37
+        versionName = "2.2.6"
     }
 
     // 正式签名：读取工程根目录的 keystore.properties（不入库）；缺失时回退到 debug 签名

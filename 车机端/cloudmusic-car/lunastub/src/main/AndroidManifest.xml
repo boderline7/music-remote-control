@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 显式启动主应用需要能看到它（Android 11+ 包可见性）；startActivity 用显式组件其实不受限，
+         这里补上是为了 getLaunchIntentForPackage 之类的顺带调用也不至于返回 null。 -->
+    <queries>
+        <package android:name="com.cloudmusic.car" />
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:icon="@android:drawable/ic_media_play"
+        android:label="汽水音乐"
+        android:supportsRtl="true">
+
+        <activity
+            android:name=".LaunchStub"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

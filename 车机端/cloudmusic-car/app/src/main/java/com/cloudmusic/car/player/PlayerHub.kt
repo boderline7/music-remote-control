@@ -23,6 +23,7 @@ import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import com.cloudmusic.car.compat.LunaCompat
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.cloudmusic.car.api.LyricLine
 import com.cloudmusic.car.api.LyricsParser
@@ -184,11 +185,15 @@ object PlayerHub {
                 updatePrefetch()
             }
         }
+        // 车机助手（com.navi.tool）的「汽水音乐」通道适配，见 LunaCompat 注释：
+        // 它的通用音源会拿歌名去酷我搜歌词，走专用通道才能让歌词由本应用直接提供。
+        LunaCompat.start(context)
     }
 
     @Synchronized
     fun release() {
         if (!initialized) return
+        LunaCompat.stop()
         cancelNetworkWait()
         stopPrefetch()
         _status.value = null
