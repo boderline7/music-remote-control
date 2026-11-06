@@ -260,9 +260,9 @@ class MdnsResponder(private val context: Context) {
     }
 
     /**
-     * 收包循环。注意 [MulticastSocket.soTimeout] 设了 1 秒：
-     * `receive` 不能死等，因为「没人来查」是常态，而**宣告必须照发**。
-     * 超时分支就是保活心跳，顺便当作网卡状况的探针。
+     * 收包循环。[MulticastSocket.soTimeout] 设为 [RECV_TIMEOUT_MS]（5 秒），
+     * 让 `receive` 不死等、能定期检查 `running` / `generation`；宣告由 [announceLoop]
+     * 独立负责，不依赖这里的超时节奏。收到查询包会立刻被 `receive` 唤醒，不额外增加延迟。
      */
     private fun loop(gen: Int) {
         while (running && gen == generation.get()) {
@@ -312,7 +312,7 @@ class MdnsResponder(private val context: Context) {
                     try {
                         soc.receive(packet)
                     } catch (e: SocketTimeoutException) {
-                        // 1 秒没包是常态（没人查询）。宣告已经交给独立线程，这里只更新统计。
+                        // 5 秒没包是常态（没人查询）。宣告已经交给独立线程，这里只更新统计。
                         sinceAnnounceMs =
                             if (lastAnnounceAt == 0L) -1L else System.currentTimeMillis() - lastAnnounceAt
                         continue
@@ -729,8 +729,15 @@ class MdnsResponder(private val context: Context) {
         /** 宣告线程的检查周期。比间隔小一个数量级，保证 45 秒到点后几秒内就发出去。 */
         const val ANNOUNCE_TICK_MS = 5_000L
 
-        /** receive 超时：既能当保活心跳，又能让 [stop] 之外的异常及时发现。 */
-        const val RECV_TIMEOUT_MS = 1_000
+        /**
+         * receive 超时。宣告已由独立的 [announceLoop] 负责，这里**不是**保活心跳，
+         * 只是给阻塞的 `receive` 一个周期性离开点：让 `running` / `generation` 能被检查到，
+         * 顺带刷新设置页的统计。取 5 秒，把空转唤醒从 3600 次/小时降到 720 次/小时。
+         * 正常 [stop] 会 close socket 立刻唤醒 `receive`，不受这个值影响；只有异常路径
+         * （没走 stop 就要退出）才会多等最多 5 秒，daemon 线程下无害。
+         * 设置页统计另由 [announceLoop] 每 [ANNOUNCE_TICK_MS] 更新一次，不会因此变迟钝。
+         */
+        const val RECV_TIMEOUT_MS = 5_000
 
         /** A 记录固定 16 字节：2 名字 + 2 类型 + 2 class + 4 TTL + 2 RDLEN + 4 地址。 */
         const val A_RECORD_BYTES = 16
