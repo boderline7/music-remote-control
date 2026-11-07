@@ -142,12 +142,18 @@ object LunaCompat {
                     pushLyric(force = true)
                 }
 
-                ACTION_CONTROL -> when (intent.getIntExtra(EXTRA_CONTROL, -1)) {
-                    CONTROL_TOGGLE -> PlayerHub.togglePlay()
-                    CONTROL_PREV -> PlayerHub.previous()
-                    CONTROL_NEXT -> PlayerHub.next()
-                    CONTROL_LIKE -> setLiked(true)
-                    CONTROL_UNLIKE -> setLiked(false)
+                ACTION_CONTROL -> {
+                    val type = intent.getIntExtra(EXTRA_CONTROL, -1)
+                    // 方向盘 / 桌面卡片若走的是助手的 PLAYER_CONTROL 广播，这里能一眼看到有没有送达。
+                    // 系统媒体按键（KEYCODE_MEDIA_NEXT/PREVIOUS）不经这里，直接到 MediaSession。
+                    Log.i(TAG, "收到播控 controlType=$type")
+                    when (type) {
+                        CONTROL_TOGGLE -> PlayerHub.togglePlay()
+                        CONTROL_PREV -> PlayerHub.previous()
+                        CONTROL_NEXT -> PlayerHub.next()
+                        CONTROL_LIKE -> setLiked(true)
+                        CONTROL_UNLIKE -> setLiked(false)
+                    }
                 }
 
                 else -> Unit
