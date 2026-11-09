@@ -86,8 +86,8 @@ struct ConnectPanel: View {
         }
         .navigationTitle("车机遥控")
         .toolbar {
-            if !embedded {
-                ToolbarItem(placement: .cancellationAction) {
+            ToolbarItem(placement: .cancellationAction) {
+                if !embedded {
                     Button("关闭") { dismiss() }
                 }
             }
