@@ -1,0 +1,119 @@
+name: iOS IPA (unsigned)
+
+on:
+  push:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios-ipa.yml'
+  workflow_dispatch:
+    inputs:
+      default_host:
+        description: '车机固定 IP（编进包里，装上即用；App 内可随时改）'
+        required: false
+        default: '192.168.43.1'
+      release_tag:
+        description: '可选：填了就同时发到 GitHub Release，例如 v1.0.0-ios'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks | grep iphoneos
+
+      - name: Install XcodeGen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen --version
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Archive (no code signing)
+        working-directory: ios
+        env:
+          DEFAULT_HOST: ${{ inputs.default_host || '192.168.43.1' }}
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project CarRemote.xcodeproj \
+            -scheme CarRemote \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/CarRemote.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CAR_REMOTE_HOST="$DEFAULT_HOST" \
+            clean archive
+
+      - name: Pack unsigned IPA
+        env:
+          DEFAULT_HOST: ${{ inputs.default_host || '192.168.43.1' }}
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/CarRemote.xcarchive/Products/Applications/CarRemote.app"
+          test -d "$APP" || { echo "::error::CarRemote.app not found in archive"; exit 1; }
+          OUT="$GITHUB_WORKSPACE/ios/out"
+          rm -rf "$OUT"
+          mkdir -p "$OUT/Payload"
+          cp -R "$APP" "$OUT/Payload/"
+          cd "$OUT"
+          zip -qry CarRemote-unsigned.ipa Payload
+          shasum -a 256 CarRemote-unsigned.ipa | tee CarRemote-unsigned.ipa.sha256
+          echo "DEFAULT_HOST=$DEFAULT_HOST" > build-info.txt
+          echo "GITHUB_SHA=$GITHUB_SHA" >> build-info.txt
+          unzip -l CarRemote-unsigned.ipa | head -10
+          ls -lh CarRemote-unsigned.ipa
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarRemote-unsigned-ipa
+          path: |
+            ios/out/CarRemote-unsigned.ipa
+            ios/out/CarRemote-unsigned.ipa.sha256
+            ios/out/build-info.txt
+          retention-days: 90
+
+      - name: Publish to Release (optional)
+        if: ${{ inputs.release_tag != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.release_tag }}
+          DEFAULT_HOST: ${{ inputs.default_host || '192.168.43.1' }}
+        run: |
+          set -euo pipefail
+          NOTES="GitHub Actions 云构建的 iOS 遥控客户端（未签名 IPA）。
+          默认车机地址：$DEFAULT_HOST，App 内「连接设置」可改。
+          安装方式见 ios/README.md：Sideloadly / AltStore 用本机 Apple ID 签名，或自有开发者证书签名。
+          本包只做固定 IP 直连，不使用 carremote.local 域名发现。"
+          if gh release create "$TAG" \
+              ios/out/CarRemote-unsigned.ipa \
+              ios/out/CarRemote-unsigned.ipa.sha256 \
+              ios/out/build-info.txt \
+              --title "iOS 遥控 $TAG" --notes "$NOTES"; then
+            echo "release created: $TAG"
+          else
+            gh release upload "$TAG" \
+              ios/out/CarRemote-unsigned.ipa \
+              ios/out/CarRemote-unsigned.ipa.sha256 \
+              ios/out/build-info.txt --clobber
+            echo "assets replaced: $TAG"
+          fi

@@ -34,3 +34,10 @@ Thumbs.db
 /docs/
 .gh_*.json
 .gh_*.txt
+
+# ---------- iOS 云构建产物（不入库） ----------
+*.ipa
+*.xcarchive/
+ios/out/
+ios/CarRemote.xcodeproj/
+ios/DerivedData/
