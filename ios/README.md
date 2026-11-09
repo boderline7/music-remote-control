@@ -26,8 +26,9 @@
 
 1. `xcodegen` 由 `project.yml` 生成 Xcode 工程（工程文件不入库）；
 2. `xcodebuild ... -sdk iphoneos clean archive`，`CODE_SIGNING_ALLOWED=NO` 出未签名 `.app`；
-3. 打成 `Payload/CarRemote.app` → `CarRemote-unsigned.ipa`，附 SHA-256；
-4. 上传到 Actions artifact `CarRemote-unsigned-ipa`（保留 90 天）。
+3. 打包前把仓库里的 `Info.plist` 强制合并进 `.app/Info.plist` 并逐键校验 —— Xcode 16 配 XcodeGen 时用自动生成的 plist，会丢掉 ATS 明文放行、本地网络权限说明和 `NSBonjourServices`，不补上 App 就发现不了车机；
+4. 打成 `Payload/CarRemote.app` → `CarRemote-unsigned.ipa`，附 SHA-256；
+5. 上传到 Actions artifact `CarRemote-unsigned-ipa`（保留 90 天）。
 
 手动触发（Actions → iOS IPA (unsigned) → Run workflow）填 `release_tag` 就能顺手把 IPA 发到 GitHub Release，方便直接下载。推送 `ios/**` 或该 workflow 文件也会自动构建。仓库是公开的，macOS runner 对本仓库不额外收费。
 

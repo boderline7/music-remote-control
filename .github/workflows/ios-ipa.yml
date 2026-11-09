@@ -40,6 +40,14 @@ jobs:
         working-directory: ios
         run: xcodegen generate
 
+      - name: Show Info.plist settings
+        working-directory: ios
+        run: |
+          xcodebuild -project CarRemote.xcodeproj -scheme CarRemote \
+            -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' -showBuildSettings 2>/dev/null \
+            | grep -E 'GENERATE_INFOPLIST_FILE|INFOPLIST_FILE|MARKETING_VERSION' || true
+
       - name: Archive (no code signing)
         working-directory: ios
         run: |
@@ -61,6 +69,30 @@ jobs:
           set -euo pipefail
           APP="$RUNNER_TEMP/CarRemote.xcarchive/Products/Applications/CarRemote.app"
           test -d "$APP" || { echo "::error::CarRemote.app not found in archive"; exit 1; }
+          # Xcode 16 + XcodeGen 可能改用自动生成的 Info.plist，把仓库里那份丢掉。
+          # ATS 明文放行 / 本地网络权限 / NSBonjourServices 一旦缺失，App 就发现不了车机，
+          # 所以这里以仓库内的 Info.plist 为准强制合并，并在打包前逐键校验。
+          python3 - "$APP/Info.plist" <<'PY'
+          import plistlib, sys
+          src = plistlib.load(open("ios/CarRemote/Info.plist", "rb"))
+          dst_path = sys.argv[1]
+          dst = plistlib.load(open(dst_path, "rb"))
+          merged = []
+          for key, value in src.items():
+              # 这些键由 Xcode 的 build settings 展开，源 plist 里只是 $(...) 占位符，跳过
+              if isinstance(value, str) and "$(" in value:
+                  continue
+              dst[key] = value
+              merged.append(key)
+          plistlib.dump(dst, open(dst_path, "wb"))
+          print("merged keys:", ", ".join(sorted(merged)))
+          required = ("NSAppTransportSecurity", "NSLocalNetworkUsageDescription",
+                      "NSBonjourServices", "CFBundleDisplayName")
+          for key in required:
+              assert key in dst, "missing required Info.plist key: " + key
+              print("OK", key, "=", dst[key])
+          PY
+          plutil -lint "$APP/Info.plist"
           OUT="$GITHUB_WORKSPACE/ios/out"
           rm -rf "$OUT"
           mkdir -p "$OUT/Payload"
