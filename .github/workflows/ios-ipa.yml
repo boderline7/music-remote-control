@@ -38,7 +38,14 @@ jobs:
 
       - name: Generate Xcode project
         working-directory: ios
-        run: xcodegen generate
+        run: |
+          # XcodeGen 会把 info.path 指向的 Info.plist 覆写成它自己生成的版本
+          # （实测只剩 CFBundle* 几个键），所以先在生成工程之前留一份权威副本。
+          cp CarRemote/Info.plist "$RUNNER_TEMP/CarRemote-Info.plist.source"
+          grep -c NSBonjourServices CarRemote/Info.plist
+          xcodegen generate
+          echo "after xcodegen, NSBonjourServices count:"
+          grep -c NSBonjourServices CarRemote/Info.plist || true
 
       - name: Show Info.plist settings
         working-directory: ios
@@ -72,11 +79,15 @@ jobs:
           # Xcode 16 + XcodeGen 可能改用自动生成的 Info.plist，把仓库里那份丢掉。
           # ATS 明文放行 / 本地网络权限 / NSBonjourServices 一旦缺失，App 就发现不了车机，
           # 所以这里以仓库内的 Info.plist 为准强制合并，并在打包前逐键校验。
-          python3 - "$APP/Info.plist" <<'PY'
+          python3 - "$APP/Info.plist" "$RUNNER_TEMP/CarRemote-Info.plist.source" <<'PY'
           import plistlib, sys
-          src = plistlib.load(open("ios/CarRemote/Info.plist", "rb"))
-          dst_path = sys.argv[1]
+          dst_path, src_path = sys.argv[1], sys.argv[2]
+          src = plistlib.load(open(src_path, "rb"))
           dst = plistlib.load(open(dst_path, "rb"))
+          required = ("NSAppTransportSecurity", "NSLocalNetworkUsageDescription",
+                      "NSBonjourServices", "CFBundleDisplayName")
+          for key in required:
+              assert key in src, "source plist was overwritten, missing: " + key
           merged = []
           for key, value in src.items():
               # 这些键由 Xcode 的 build settings 展开，源 plist 里只是 $(...) 占位符，跳过
@@ -86,8 +97,6 @@ jobs:
               merged.append(key)
           plistlib.dump(dst, open(dst_path, "wb"))
           print("merged keys:", ", ".join(sorted(merged)))
-          required = ("NSAppTransportSecurity", "NSLocalNetworkUsageDescription",
-                      "NSBonjourServices", "CFBundleDisplayName")
           for key in required:
               assert key in dst, "missing required Info.plist key: " + key
               print("OK", key, "=", dst[key])

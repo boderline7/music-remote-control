@@ -26,7 +26,7 @@
 
 1. `xcodegen` 由 `project.yml` 生成 Xcode 工程（工程文件不入库）；
 2. `xcodebuild ... -sdk iphoneos clean archive`，`CODE_SIGNING_ALLOWED=NO` 出未签名 `.app`；
-3. 打包前把仓库里的 `Info.plist` 强制合并进 `.app/Info.plist` 并逐键校验 —— Xcode 16 配 XcodeGen 时用自动生成的 plist，会丢掉 ATS 明文放行、本地网络权限说明和 `NSBonjourServices`，不补上 App 就发现不了车机；
+3. 打包前把仓库里的 `Info.plist` 强制合并进 `.app/Info.plist` 并逐键校验 —— XcodeGen 的 `info.path` 会把该文件覆写成自己生成的版本（实测只剩几个 `CFBundle*` 键），ATS 明文放行、本地网络权限说明和 `NSBonjourServices` 会全部丢失；因此生成工程前先备份权威 plist，打包时以备份为准合并。不补上 App 就发现不了车机、也加载不了明文 HTTP；
 4. 打成 `Payload/CarRemote.app` → `CarRemote-unsigned.ipa`，附 SHA-256；
 5. 上传到 Actions artifact `CarRemote-unsigned-ipa`（保留 90 天）。
 

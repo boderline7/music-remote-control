@@ -15,8 +15,9 @@ targets:
       - path: CarRemote
         excludes:
           - Info.plist
-    info:
-      path: CarRemote/Info.plist
+    # 不要写 info 段：XcodeGen 会把 info.path 指向的文件覆写成它自己生成的 plist
+    # （实测会把 ATS / 本地网络权限 / NSBonjourServices 全部抹掉）。
+    # 直接用 build settings 指向仓库内的 Info.plist，云构建里另有一道合并兜底。
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.carremote.ios
