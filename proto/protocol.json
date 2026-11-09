@@ -153,13 +153,14 @@
             "prev",
             "seek",
             "setVolume",
-            "getState",
-            "getLyrics",
-            "library",
-            "getTracks",
-            "playTracks",
-            "addToPlaylist"
-          ]
+        "getState",
+        "getLyrics",
+        "library",
+        "getTracks",
+        "playTracks",
+        "addToPlaylist",
+        "refresh"
+      ]
         },
         "args": {
           "type": "object",
@@ -206,6 +207,7 @@
           }
         },
         "getLyrics": {},
+        "refresh": {},
         "addToPlaylist": {
           "playlistId": {
             "type": "string",

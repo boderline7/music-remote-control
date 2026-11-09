@@ -45,6 +45,18 @@ object RemotePrefs {
     private const val PREFS = "remote_settings"
     private const val KEY_MAX_CLIENTS = "maxClients"
     private const val KEY_CACHE_LIMIT = "cacheLimit"
+    private const val KEY_DOMAIN_DISCOVERY = "domainDiscovery"
+
+    /**
+     * 「域名发现」默认关闭。
+     *
+     * 开着会在 18765 端口之外额外跑两件事：NsdRegistrar 注册 _cloudmusic-car._tcp，
+     * MdnsResponder 常驻 224.0.0.251 给 carremote.local 回包，并一直攥着 MulticastLock。
+     * 这个域名在车机热点上并不稳，手机 App 早就改成 Bonjour + /24 网段扫描自己找车机，
+     * 网页端直接给 IP 也能用。所以默认不广播：省组播流量、省那把唤醒锁，少一层会坏的东西。
+     * 只有确实想在浏览器里输 carremote.local 时才需要打开。
+     */
+    private const val DEFAULT_DOMAIN_DISCOVERY = false
 
     private lateinit var prefs: SharedPreferences
 
@@ -53,6 +65,9 @@ object RemotePrefs {
 
     private val _cacheLimit = MutableStateFlow(DEFAULT_CACHE)
     val cacheLimit: StateFlow<Int> = _cacheLimit.asStateFlow()
+
+    private val _domainDiscovery = MutableStateFlow(DEFAULT_DOMAIN_DISCOVERY)
+    val domainDiscovery: StateFlow<Boolean> = _domainDiscovery.asStateFlow()
 
     @Synchronized
     fun init(context: Context) {
@@ -63,12 +78,15 @@ object RemotePrefs {
             .coerceIn(MIN_CLIENTS, MAX_CLIENTS)
         _cacheLimit.value = prefs.getInt(KEY_CACHE_LIMIT, DEFAULT_CACHE)
             .coerceIn(MIN_CACHE, MAX_CACHE)
+        _domainDiscovery.value = prefs.getBoolean(KEY_DOMAIN_DISCOVERY, DEFAULT_DOMAIN_DISCOVERY)
     }
 
     /** 给后台线程用，不走 StateFlow，避免频繁装箱。 */
     val currentMaxClients: Int get() = _maxClients.value
 
     val currentCacheLimit: Int get() = _cacheLimit.value
+
+    val currentDomainDiscovery: Boolean get() = _domainDiscovery.value
 
     @Synchronized
     fun setMaxClients(value: Int) {
@@ -83,5 +101,12 @@ object RemotePrefs {
         val v = value.coerceIn(MIN_CACHE, MAX_CACHE)
         _cacheLimit.value = v
         if (::prefs.isInitialized) prefs.edit().putInt(KEY_CACHE_LIMIT, v).apply()
+    }
+
+    /** 只写偏好；真正的即时启停由 [RemoteServer.setDomainDiscovery] 执行。 */
+    @Synchronized
+    fun setDomainDiscovery(enabled: Boolean) {
+        _domainDiscovery.value = enabled
+        if (::prefs.isInitialized) prefs.edit().putBoolean(KEY_DOMAIN_DISCOVERY, enabled).apply()
     }
 }

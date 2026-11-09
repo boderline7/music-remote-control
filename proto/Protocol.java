@@ -42,6 +42,7 @@ public final class Protocol {
     public static final String ACT_GET_TRACKS = "getTracks";
     public static final String ACT_PLAY_TRACKS = "playTracks";
     public static final String ACT_ADD_TO_PLAYLIST = "addToPlaylist";
+    public static final String ACT_REFRESH = "refresh";
 
     // ---- 指令动作 ----
     public static final String ACTION_PLAY = "play";

@@ -140,11 +140,25 @@ object NeteaseApi {
     }
 
     /** 收藏歌曲到自建歌单。op=add、pid=歌单 id、tracks=[歌曲 id]；业务码非 200 由 checked() 抛 ApiException。 */
+    /**
+     * 把歌曲加进自建歌单。
+     *
+     * 2026-11 实测：老的 /weapi/playlist/tracks 已被网易云下线，返回 code=404「接口未找到！」
+     * —— 这正是遥控端点「添加到歌单」报错的原因，不是权限或架构限制。
+     * 现行接口为 /weapi/playlist/manipulate/tracks，参数也从 tracks(逗号分隔) 改成
+     * trackIds(JSON 数组字符串) + imme=true；匿名探测该路径返回 301，说明路径有效、需登录。
+     * 保留 v1 变体作为回退，网易云再改路径时不至于整个功能立刻失效。
+     */
     suspend fun addTrackToPlaylist(pid: Long, tid: Long) {
-        client.weapi(
-            "/playlist/tracks",
-            json("op" to "add", "pid" to pid, "tracks" to "[$tid]"),
-        ).checked()
+        val payload = json(
+            "op" to "add",
+            "pid" to pid,
+            "trackIds" to "[$tid]",
+            "imme" to "true",
+        )
+        runCatching { client.weapi("/playlist/manipulate/tracks", payload).checked() }
+            .recoverCatching { client.weapi("/v1/playlist/manipulate/tracks", payload).checked() }
+            .getOrThrow()
     }
 
     // ---------- 播放 ----------

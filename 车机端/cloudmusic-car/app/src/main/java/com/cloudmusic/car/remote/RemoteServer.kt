@@ -43,6 +43,8 @@ data class RemoteUiState(
     val cacheEntries: Int = 0,
     val cacheBytes: Long = 0L,
     val error: String? = null,
+    /** 域名发现开关：默认关，关时车机不跑 NSD / mDNS，也不占 MulticastLock。 */
+    val domainDiscovery: Boolean = false,
     // mDNS 自检：设置页据此显示「网页遥控能不能用」
     val mdnsRunning: Boolean = false,
     val mdnsInterface: String = "",
@@ -129,9 +131,8 @@ object RemoteServer : WsServer.Listener {
                 return false
             }
             ws = server
-            nsd = NsdRegistrar(ctx).also { it.register(RemoteConfig.PORT) }
-            // 固定域名 carremote.local → 当前热点 IP，网页端不依赖会变的 IP
-            mdns = MdnsResponder(ctx).also { it.start() }
+            // 域名发现默认关闭：只有开关打开才注册 Bonjour 服务、才起 carremote.local 响应器
+            applyDomainDiscovery(ctx)
             // 网络变化只作为「立刻刷新」的信号，真正的正确性仍靠 5 秒一次的轮询兜底
             NetworkMonitor.start(ctx) { onNetworkChanged() }
             // 熄屏时热点常被系统回收、亮屏再起：亮屏是「马上要来连」的最强信号，主动校验一次
@@ -168,6 +169,32 @@ object RemoteServer : WsServer.Listener {
     }
 
     fun isRunning(): Boolean = ws != null
+
+    /**
+     * 设置页的「域名发现」开关：立即启停 NSD / mDNS，不重启 WebSocket 服务。
+     *
+     * 重启整个服务会把正在控车的手机全踢掉，为了一个广播开关不值得；
+     * 这两个组件本来就支持独立 start/stop。服务没开时只落偏好，等 start() 时按新值生效。
+     */
+    @Synchronized
+    fun setDomainDiscovery(enabled: Boolean) {
+        RemotePrefs.setDomainDiscovery(enabled)
+        val ctx = appContext
+        if (ctx != null && ws != null) applyDomainDiscovery(ctx)
+        pushUi()
+    }
+
+    private fun applyDomainDiscovery(ctx: Context) {
+        if (RemotePrefs.currentDomainDiscovery) {
+            if (nsd == null) nsd = NsdRegistrar(ctx).also { it.register(RemoteConfig.PORT) }
+            if (mdns == null) mdns = MdnsResponder(ctx).also { it.start() }
+        } else {
+            runCatching { nsd?.unregister() }
+            nsd = null
+            runCatching { mdns?.stop() }
+            mdns = null
+        }
+    }
 
     /**
      * 同时在线设备上限。调小之后不会立刻踢掉多余的人，
@@ -442,6 +469,30 @@ object RemoteServer : WsServer.Listener {
                 }
             }
 
+            "refresh" -> {
+                // 遥控端「刷新」：先清缓存再把资料库、榜单、状态、歌词整套重推一遍。
+                // 不清缓存的话 library/catalog 的 15 秒 AGG_TTL 会让刷新拿到同一份旧数据，
+                // 这也是之前网页 #reload 只重发命令却看不到新歌单的原因。
+                RemoteLibrary.clearCache()
+                main.post { pushState("reply"); broadcastLyrics() }
+                val pending = java.util.concurrent.atomic.AtomicInteger(2)
+                fun finish() {
+                    if (pending.decrementAndGet() == 0) {
+                        client.conn.sendText(
+                            envelope("ack", id, JSONObject().put("ok", true).put("action", action)),
+                        )
+                    }
+                }
+                RemoteLibrary.library { result ->
+                    client.conn.sendText(envelope("library", id, result), OutQueue.Kind.BULK)
+                    finish()
+                }
+                RemoteLibrary.catalog { result ->
+                    client.conn.sendText(envelope("catalog", id, result), OutQueue.Kind.BULK)
+                    finish()
+                }
+            }
+
             "addToPlaylist" -> {
                 val playlistId = args.optString("playlistId")
                 if (playlistId.isEmpty()) {
@@ -691,6 +742,7 @@ object RemoteServer : WsServer.Listener {
             cacheEntries = cache.entries,
             cacheBytes = cache.bytes.toLong(),
             error = null,
+            domainDiscovery = RemotePrefs.currentDomainDiscovery,
             mdnsRunning = responder?.isRunning() == true,
             mdnsInterface = responder?.interfaceName.orEmpty(),
             mdnsIp = responder?.hostIp.orEmpty(),
@@ -802,5 +854,5 @@ object RemoteServer : WsServer.Listener {
     }
 
     /** 需要发网络请求、走异步 ack 的指令。 */
-    private val LIBRARY_ACTIONS = setOf("library", "catalog", "search", "getTracks", "playTracks", "addToPlaylist")
+    private val LIBRARY_ACTIONS = setOf("library", "catalog", "search", "getTracks", "playTracks", "addToPlaylist", "refresh")
 }

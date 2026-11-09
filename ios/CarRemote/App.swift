@@ -86,7 +86,9 @@ final class CarLink: ObservableObject {
 
     var url: URL? {
         guard !host.isEmpty else { return nil }
-        return URL(string: "http://\(host):\(port)/")
+        // 带上客户端标识，车机侧能看到是 iOS / 哪个版本连进来的；车机端 HTTP 会忽略 query。
+        let cv = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "1.2.0"
+        return URL(string: "http://\(host):\(port)/?client=ios&cv=\(cv)")
     }
 
     func start() {

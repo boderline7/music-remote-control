@@ -34,7 +34,12 @@
   }
   button { border: 0; background: none; color: var(--fg); padding: 0; cursor: pointer; font: inherit; }
   button:active { opacity: .55; }
+  /* 手机 WebView 里默认那条白色滚动条非常扎眼，三端统一隐藏（内容照样能滚） */
+  * { scrollbar-width: none; -ms-overflow-style: none; }
+  *::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
+  /* 宽屏浏览器 / 平板也保持手机版式居中，不然标题和右侧按钮会被拉到屏幕两头 */
+  header, main { width: 100%; max-width: 560px; margin-left: auto; margin-right: auto; }
   header {
     flex: none;
     display: flex; align-items: center; gap: 8px;
@@ -44,6 +49,16 @@
   #dot { width: 8px; height: 8px; border-radius: 50%; background: #8e8e93; flex: none; transition: background .2s; }
   #dot.on { background: #34c759; }
   #dot.warn { background: #ff9f0a; }
+  #status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .icon-btn {
+    flex: none; width: 38px; height: 38px; border-radius: 50%;
+    background: var(--card); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .icon-btn svg { width: 19px; height: 19px; fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .icon-btn:active { background: var(--red); }
+  .icon-btn.spin svg { animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
   main {
     flex: 1;
@@ -52,18 +67,29 @@
   }
 
   /* ---------- 正在播放 ---------- */
-  .head-row { display: flex; align-items: flex-start; gap: 12px; }
+  /* 标题和歌手要在同一列紧挨着：以前 #artist 在 head-row 外面，
+     被右侧竖排按钮撑出一大片空白，看上去像两截不相关的东西 */
+  .head-row { display: flex; align-items: center; gap: 12px; }
+  .head-text { flex: 1; min-width: 0; }
   #title {
-    flex: 1; margin: 0; font-size: 26px; font-weight: 700; line-height: 1.25;
+    margin: 0; font-size: 26px; font-weight: 700; line-height: 1.25;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
-  #like {
-    flex: none; width: 46px; height: 46px; border-radius: 50%; background: var(--card);
+  /* 右侧竖排：爱心在上，添加到歌单缩小一圈排在下，整体垂直居中于文字块 */
+  .side-actions { flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .side-btn {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: var(--card); border: 1px solid var(--line);
     display: flex; align-items: center; justify-content: center;
   }
-  #like svg { width: 22px; height: 22px; fill: none; stroke: rgba(255,255,255,.75); stroke-width: 1.9; }
+  .side-btn:disabled { opacity: .35; }
+  .side-btn svg { width: 21px; height: 21px; fill: none; stroke: rgba(255,255,255,.8); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
   #like.on svg { fill: var(--red); stroke: var(--red); }
-  #artist { margin: 6px 0 0; font-size: 14px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* 「添加到歌单」比爱心小一号，用淡红描边点一下可点性，禁用时自动退回灰边 */
+  #addToPlaylist { width: 36px; height: 36px; }
+  #addToPlaylist svg { width: 17px; height: 17px; stroke: rgba(255,255,255,.92); }
+  #addToPlaylist:not(:disabled) { border-color: rgba(250,45,72,.42); }
+  #artist { margin: 3px 0 0; font-size: 14px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   .progress { margin-top: 16px; }
   input[type=range] {
@@ -83,58 +109,73 @@
   .main { width: 70px; height: 70px; border-radius: 50%; background: var(--red); box-shadow: 0 10px 24px rgba(250,45,72,.32); }
   .main svg { width: 30px; height: 30px; fill: #fff; }
 
-  .volume { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
+  .volume { display: flex; align-items: center; gap: 10px; margin-top: 16px; }
+  /* 音量加减只是微调，不该比播放键还抢眼：收成和右上刷新钮同一套低调小圆钮 */
   .round {
-    flex: none; width: 56px; height: 56px; border-radius: 50%;
-    background: rgba(250,45,72,.16); border: 2px solid var(--red);
-    font-size: 30px; line-height: 1; color: #fff; font-weight: 600;
+    flex: none; width: 38px; height: 38px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line);
+    font-size: 21px; line-height: 1; color: var(--dim); font-weight: 400;
     display: flex; align-items: center; justify-content: center;
   }
-  .round:active { background: var(--red); }
-  .volume input[type=range] { flex: 1; }
+  .round:active { background: rgba(250,45,72,.2); border-color: rgba(250,45,72,.5); color: #fff; }
+  .volume input[type=range] { flex: 1; height: 4px; }
+  .volume input[type=range]::-webkit-slider-thumb { width: 15px; height: 15px; }
   #volVal { width: 24px; flex: none; text-align: right; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
   .hidden { display: none !important; }
 
-  /* 资料库 tile 上的整列播放钮 */
-  .tile { position: relative; }
-  .tile .c { padding-right: 42px; }
-  .tile .tilePlay {
-    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
-    width: 38px; height: 38px; border-radius: 50%;
+  /* 资料库卡片：彩色渐变大方框，图标 + 播放钮在框内同一行，不再悬空 */
+  .tile {
+    position: relative; min-height: 108px; padding: 14px;
+    border-radius: 18px; border: 1px solid rgba(255,255,255,.16);
+    display: flex; flex-direction: column; justify-content: space-between;
+    text-align: left; overflow: hidden;
+  }
+  .tile.liked { background: linear-gradient(135deg, #7d1e30 0%, #3a1119 100%); }
+  .tile.cloud { background: linear-gradient(135deg, #294672 0%, #141d33 100%); }
+  .tile .tile-top { display: flex; align-items: center; justify-content: space-between; }
+  .tile .ico {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: rgba(255,255,255,.16);
     display: flex; align-items: center; justify-content: center;
-    background: var(--red); color: #fff;
   }
-  .tile .tilePlay svg { width: 18px; height: 18px; fill: currentColor; }
-  .tile .tilePlay:active { background: #fff; color: var(--red); }
+  .tile .ico svg { width: 18px; height: 18px; fill: #fff; }
+  .tile .tilePlay {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: rgba(255,255,255,.94); color: #1a1a1f;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .tile .tilePlay svg { width: 16px; height: 16px; fill: currentColor; }
+  .tile .tilePlay:active { background: var(--red); color: #fff; }
 
-  /* 添加到歌单 */
-  .wide-btn {
-    width: 100%; margin-top: 18px; padding: 14px; border-radius: 14px;
-    background: var(--card); color: #fff; font-size: 15px; font-weight: 600;
-    border: 1px solid rgba(250,45,72,.55);
+  /* 页面最顶部的歌词方框：固定约 5 行，当前行高亮并自动滚到中间。
+     内部不允许手动滑（overflow hidden），手势交给外层 main 滚整页。 */
+  .lyric-card {
+    margin: 2px 0 18px; border-radius: 18px;
+    background: rgba(255,255,255,.045); border: 1px solid var(--line);
+    padding: 12px 10px 10px;
   }
-  .wide-btn:active { background: var(--red); }
-  .wide-btn:disabled { opacity: .4; }
-
-  /* 歌单 / 歌词 双页 */
-  .pagetabs { display: flex; gap: 8px; margin-top: 22px; }
-  .pagetab {
-    flex: 1; padding: 11px; border-radius: 12px;
-    background: var(--card); color: var(--dim); font-size: 14px; font-weight: 600;
+  .lyric-card .cap {
+    display: flex; align-items: baseline; gap: 8px;
+    font-size: 12px; color: var(--dim); margin: 0 6px 6px;
   }
-  .pagetab.on { background: var(--red); color: #fff; }
-  #pages { margin-top: 4px; }
-  #pageLyrics { min-height: 320px; }
+  .lyric-card .cap b { color: #fff; font-weight: 600; font-size: 13px; }
   #lyricBox {
-    max-height: 60vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
-    overscroll-behavior: contain; padding: 18px 6px;
+    height: 165px; overflow: hidden; position: relative;
+    scrollbar-width: none; scroll-behavior: smooth;
+    /* 禁止手动滑动，但手势仍能冒泡给 main 滚整页 */
+    touch-action: pan-y;
+    /* 只淡出边缘十来像素，柔化硬切但不吞掉首尾整行歌词 */
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 7%, #000 93%, transparent 100%);
+    mask-image: linear-gradient(to bottom, transparent 0%, #000 7%, #000 93%, transparent 100%);
   }
+  #lyricBox::-webkit-scrollbar { display: none; }
   .lyric-line {
-    padding: 9px 4px; font-size: 14px; line-height: 1.5; text-align: center;
-    color: var(--faint); transition: color .18s, font-size .18s;
+    padding: 7px 8px; font-size: 13px; line-height: 1.45; text-align: center;
+    color: rgba(255,255,255,.44); transition: color .2s, font-size .2s, background .2s;
   }
-  .lyric-line .tr { display: block; font-size: 12px; color: var(--faint); }
-  .lyric-line.on { color: #fff; font-size: 17px; font-weight: 700; }
+  .lyric-line .tr { display: block; font-size: 11px; color: rgba(255,255,255,.3); }
+  .lyric-line.on { color: #fff; font-size: 16px; font-weight: 700; background: rgba(250,45,72,.1); border-radius: 10px; }
+  .lyric-line.on .tr { color: rgba(255,255,255,.62); }
 
   /* 添加到歌单选择面板 */
   .overlay {
@@ -175,20 +216,19 @@
   .sec { margin-top: 26px; display: flex; align-items: baseline; gap: 8px; }
   .sec h2 { margin: 0; font-size: 15px; font-weight: 600; }
   .sec .hint { font-size: 12px; color: var(--faint); flex: 1; }
-  .sec button { font-size: 13px; color: var(--dim); }
+  .sec button { font-size: 12px; color: var(--dim); padding: 6px 13px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); }
 
   .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
-  .tile { background: var(--card); border-radius: 16px; padding: 14px; text-align: left; }
   .tile .n { display: block; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tile .c { display: block; margin-top: 6px; font-size: 12px; color: var(--faint); }
+  .tile .c { display: block; margin-top: 4px; font-size: 12px; color: rgba(255,255,255,.68); }
 
   .rows { margin-top: 12px; }
-  .row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 13px 14px; background: var(--card); border-radius: 14px; margin-bottom: 8px; text-align: left; }
+  .row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 13px 14px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 8px; text-align: left; }
   .row .n { flex: 1; min-width: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row .c { font-size: 12px; color: var(--faint); flex: none; }
   .row .chev { color: var(--faint); font-size: 17px; flex: none; }
   /* 行内「顺序播放」：整行是入口，这个小圆钮不进去，直接从头播整列 */
-  .row .pl { flex: none; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--dim); background: rgba(255,255,255,.08); }
+  .row .pl { flex: none; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; background: rgba(250,45,72,.14); border: 1px solid rgba(250,45,72,.4); }
   .row .pl svg { width: 17px; height: 17px; fill: currentColor; }
   .row .pl:active { background: var(--red); color: #fff; }
   /* 带副标题的行（每日推荐 / 心动模式）：主标题在上，说明在下 */
@@ -245,16 +285,31 @@
   <header>
     <span id="dot"></span>
     <span id="status">正在连接车机…</span>
+    <button class="icon-btn" id="refresh" aria-label="刷新">
+      <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+    </button>
   </header>
 
   <main id="scroll">
-    <div class="head-row">
-      <h1 id="title">未在播放</h1>
-      <button id="like" aria-label="喜欢">
-        <svg viewBox="0 0 24 24"><path d="M12 20.5s-7.6-4.7-9.2-9C1.6 7.9 3.6 4.8 6.8 4.8c2 0 3.4 1.1 4.2 2.3.3.4.9.4 1.2 0 .8-1.2 2.2-2.3 4.2-2.3 3.2 0 5.2 3.1 4 6.7-1.6 4.3-9.2 9-9.2 9z"/></svg>
-      </button>
+    <div class="lyric-card">
+      <div class="cap"><b>歌词</b><span id="lyricHint">自动跟随</span></div>
+      <div id="lyricBox"></div>
     </div>
-    <p id="artist">—</p>
+
+    <div class="head-row">
+      <div class="head-text">
+        <h1 id="title">未在播放</h1>
+        <p id="artist">—</p>
+      </div>
+      <div class="side-actions">
+        <button class="side-btn" id="like" aria-label="喜欢">
+          <svg viewBox="0 0 24 24"><path d="M12 20.5s-7.6-4.7-9.2-9C1.6 7.9 3.6 4.8 6.8 4.8c2 0 3.4 1.1 4.2 2.3.3.4.9.4 1.2 0 .8-1.2 2.2-2.3 4.2-2.3 3.2 0 5.2 3.1 4 6.7-1.6 4.3-9.2 9-9.2 9z"/></svg>
+        </button>
+        <button class="side-btn" id="addToPlaylist" aria-label="添加到歌单" disabled>
+          <svg viewBox="0 0 24 24"><path d="M4 6h9M4 11h9M4 16h5"/><path d="M16 13v7M12.5 16.5h7"/></svg>
+        </button>
+      </div>
+    </div>
 
     <div class="progress">
       <input id="prog" type="range" min="0" max="1000" value="0" disabled aria-label="进度">
@@ -280,15 +335,7 @@
       <button class="round" id="volUp" aria-label="音量加">+</button>
     </div>
 
-    <button class="wide-btn" id="addToPlaylist" disabled>＋ 添加到歌单</button>
-
-    <div class="pagetabs">
-      <button class="pagetab on" id="tabList">歌单</button>
-      <button class="pagetab" id="tabLyrics">歌词</button>
-    </div>
-    <div id="pages">
-      <div id="pageList">
-      <div class="search">
+    <div class="search">
       <div class="field">
         <input id="q" type="search" placeholder="搜索歌曲、歌手" enterkeyhint="search" autocomplete="off" autocorrect="off" spellcheck="false">
         <button id="go" aria-label="搜索">
@@ -303,8 +350,22 @@
       <button id="reload">刷新</button>
     </div>
     <div class="tiles">
-      <button class="tile" id="tileLiked"><span class="n" id="likedName">我喜欢的音乐</span><span class="c" id="likedCount">—</span><span class="pl tilePlay" id="likedPlay" role="button" aria-label="顺序播放我喜欢的音乐"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span></button>
-      <button class="tile" id="tileCloud"><span class="n" id="cloudName">音乐云盘</span><span class="c" id="cloudCount">—</span><span class="pl tilePlay" id="cloudPlay" role="button" aria-label="顺序播放音乐云盘"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span></button>
+      <button class="tile liked" id="tileLiked">
+        <span class="tile-top">
+          <span class="ico"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.6-4.7-9.2-9C1.6 7.9 3.6 4.8 6.8 4.8c2 0 3.4 1.1 4.2 2.3.3.4.9.4 1.2 0 .8-1.2 2.2-2.3 4.2-2.3 3.2 0 5.2 3.1 4 6.7-1.6 4.3-9.2 9-9.2 9z"/></svg></span>
+          <span class="pl tilePlay" id="likedPlay" role="button" aria-label="顺序播放我喜欢的音乐"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+        </span>
+        <span class="n" id="likedName">我喜欢的音乐</span>
+        <span class="c" id="likedCount">—</span>
+      </button>
+      <button class="tile cloud" id="tileCloud">
+        <span class="tile-top">
+          <span class="ico"><svg viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 .4-8A6 6 0 0 0 6 9.2 4.4 4.4 0 0 0 7 18z"/></svg></span>
+          <span class="pl tilePlay" id="cloudPlay" role="button" aria-label="顺序播放音乐云盘"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+        </span>
+        <span class="n" id="cloudName">音乐云盘</span>
+        <span class="c" id="cloudCount">—</span>
+      </button>
     </div>
 
     <div class="sec"><h2>为你推荐</h2><span class="hint" id="quickHint"></span></div>
@@ -330,10 +391,7 @@
     <div class="sec"><h2>推荐歌单</h2><span class="hint" id="recHint"></span></div>
     <div class="rows" id="recs"></div>
 
-      <footer>地址固定为 <b id="host">—</b></footer>
-      </div>
-      <div id="pageLyrics" class="hidden"><div id="lyricBox"></div></div>
-    </div>
+    <footer>地址固定为 <b id="host">—</b></footer>
   </main>
 
   <div class="overlay hidden" id="addPanel">
@@ -361,6 +419,13 @@
   'use strict';
 
   var PROTO_VERSION = 1;
+  // 壳层（安卓 WebView / iOS WKWebView）在 URL 上带客户端标识，车机侧能看到是谁连进来了；
+  // 浏览器直接打开时没有这两个参数，走默认值。
+  var qs = new URLSearchParams(location.search);
+  var CLIENT = {
+    name: qs.get('client') || 'Safari',
+    version: qs.get('cv') || '1.0.0'
+  };
   var K_TOKEN = 'carremote.token';
   var K_DEVICE = 'carremote.deviceId';
   var PAGE_SIZE = 20;   // 与服务端 RemoteLibrary.PAGE_SIZE 对齐，仅用于「加载更多」文案
@@ -374,7 +439,7 @@
    'cloudName', 'cloudCount', 'playlists', 'tops', 'recs', 'libHint', 'plHint', 'topHint', 'recHint',
    'sheet', 'sheetTitle', 'sheetSub', 'sheetBody', 'back', 'toast', 'host', 'tileLiked', 'tileCloud', 'scroll',
    'dailyRow', 'hbRow', 'quickHint', 'dailyPlay', 'hbPlay',
-   'tabList', 'tabLyrics', 'pages', 'pageList', 'pageLyrics', 'lyricBox',
+   'refresh', 'lyricHint', 'lyricBox',
    'addToPlaylist', 'addPanel', 'addList', 'addClose', 'likedPlay', 'cloudPlay'
   ].forEach(function (id) { el[id] = document.getElementById(id); });
 
@@ -392,7 +457,6 @@
 
   var lyricLines = [];               // [{ t, text, trans }]
   var lyricActive = -1;
-  var currentPage = 'list';           // 默认显示歌单
 
   var library = null;                // { liked, cloud, playlists[] }
   var catalog = null;                // { top[], recommend[] }
@@ -421,6 +485,13 @@
   function setStatus(text, kind) {
     el.status.textContent = text;
     el.dot.className = kind || '';
+    // 主动把连接状态告诉原生壳：安卓据此决定是否拦截硬件音量键、记住成功的地址。
+    // iOS 壳没有注入这个对象，可选调用直接跳过；浏览器打开也安全。
+    try {
+      if (window.CarRemoteNative && window.CarRemoteNative.onConnection) {
+        window.CarRemoteNative.onConnection(kind === 'on', text);
+      }
+    } catch (e) {}
   }
 
   function toast(text) {
@@ -748,7 +819,7 @@
         } else {
           localStorage.removeItem(K_TOKEN);
           setStatus('授权失效，重新配对…', 'warn');
-          send('pair', { pin: '', deviceId: deviceId(), deviceName: 'Safari', clientVersion: '1.0.0' });
+          send('pair', { pin: '', deviceId: deviceId(), deviceName: CLIENT.name, clientVersion: CLIENT.version });
         }
         break;
 
@@ -816,7 +887,13 @@
 
       case 'ack':
         if (data.ok === false) toast('指令失败：' + (data.message || data.error || ''));
-        else if (data.action === 'addToPlaylist') { closeAddPanel(); toast('已添加到歌单'); }
+        else if (data.action === 'addToPlaylist') {
+          closeAddPanel(); toast('已添加到歌单');
+          command('library');   // 车机已清 library 缓存，重拉一次让歌单数立刻更新
+        } else if (data.action === 'refresh') {
+          el.refresh.classList.remove('spin');
+          toast('已刷新');
+        }
         break;
 
       case 'error':
@@ -825,7 +902,7 @@
 
       case 'revoked':
         localStorage.removeItem(K_TOKEN);
-        send('pair', { pin: '', deviceId: deviceId(), deviceName: 'Safari', clientVersion: '1.0.0' });
+        send('pair', { pin: '', deviceId: deviceId(), deviceName: CLIENT.name, clientVersion: CLIENT.version });
         break;
     }
   }
@@ -838,6 +915,28 @@
     paintCatalog();
     command('library');
     command('catalog');
+  }
+
+  /** 真正的刷新：走服务端 refresh 清缓存并重推资料库/榜单/状态/歌词；断线时改为重载页面。 */
+  var refreshTimer = null;
+  function refreshAll(silent) {
+    if (!ws || ws.readyState > 1) {
+      if (!silent) toast('连接已断开，正在重新加载…');
+      location.reload();
+      return;
+    }
+    if (!silent) toast('正在刷新…');
+    el.refresh.classList.add('spin');
+    if (refreshTimer) clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(function () { el.refresh.classList.remove('spin'); }, 8000);
+    library = null;
+    catalog = null;
+    lyricLines = [];
+    lyricActive = -1;
+    renderLyrics();
+    paintLibrary();
+    paintCatalog();
+    command('refresh');
   }
 
   // ---------- 连接 ----------
@@ -853,10 +952,10 @@
       connectFails = 0;
       var token = localStorage.getItem(K_TOKEN) || '';
       if (token) {
-        send('auth', { token: token, deviceId: deviceId(), clientVersion: '1.0.0' });
+        send('auth', { token: token, deviceId: deviceId(), clientVersion: CLIENT.version });
         setStatus('正在认证…', '');
       } else {
-        send('pair', { pin: '', deviceId: deviceId(), deviceName: 'Safari', clientVersion: '1.0.0' });
+        send('pair', { pin: '', deviceId: deviceId(), deviceName: CLIENT.name, clientVersion: CLIENT.version });
         setStatus('正在配对…', '');
       }
     };
@@ -874,7 +973,7 @@
       // TTL 是 120 秒，期间不会重新问）。所以这里不能一直闷头重试：
       // 超过 20 秒还连不上就明确告诉用户「刷新一下」，刷新会让浏览器重新解析域名。
       if (connectFails >= 4) {
-        setStatus('连不上车机 · 地址可能已变，下拉刷新或重开本页', 'warn');
+        setStatus('连不上车机 · 点右上角刷新或下拉重试', 'warn');
       } else {
         setStatus('已断开，重连中…', 'warn');
       }
@@ -899,19 +998,11 @@
 
   // ---------- 歌单 / 歌词 双页 ----------
 
-  function setPage(name) {
-    currentPage = name === 'lyrics' ? 'lyrics' : 'list';
-    el.pageList.classList.toggle('hidden', currentPage !== 'list');
-    el.pageLyrics.classList.toggle('hidden', currentPage !== 'lyrics');
-    el.tabList.classList.toggle('on', currentPage === 'list');
-    el.tabLyrics.classList.toggle('on', currentPage === 'lyrics');
-    if (currentPage === 'lyrics') highlightLyric();
-  }
-
   function renderLyrics() {
     var box = el.lyricBox;
     box.textContent = '';
     lyricActive = -1;
+    el.lyricHint.textContent = lyricLines.length ? '自动跟随' : '暂无歌词';
     if (!lyricLines.length) {
       var empty = document.createElement('div');
       empty.className = 'empty';
@@ -948,28 +1039,27 @@
     if (idx >= 0 && nodes[idx]) {
       nodes[idx].classList.add('on');
       var box = el.lyricBox;
-      var top = nodes[idx].offsetTop - box.clientHeight / 2 + nodes[idx].clientHeight / 2;
-      if (box.scrollTo) box.scrollTo({ top: top, behavior: 'smooth' });
-      else box.scrollTop = top;
+      // overflow:hidden 下脚本仍可设 scrollTop，CSS 的 scroll-behavior 负责平滑
+      box.scrollTop = nodes[idx].offsetTop - box.clientHeight / 2 + nodes[idx].clientHeight / 2;
     }
     lyricActive = idx;
   }
 
-  // 左滑切到另一页，右滑同样可切；竖向滚动和拖动进度条时不接管。
-  (function bindSwipe() {
-    var x0 = 0, y0 = 0, tracking = false;
-    el.pages.addEventListener('touchstart', function (e) {
+  // 下拉刷新：只在页面已经滚到顶、且不是拖输入框/滑杆时接管。三端共用这一份手势。
+  (function bindPullRefresh() {
+    // iOS 壳用 WKWebView 的 UIRefreshControl（有 spinner 反馈），这里别重复触发刷新
+    if (CLIENT.name === 'ios') return;
+    var y0 = 0, tracking = false;
+    el.scroll.addEventListener('touchstart', function (e) {
       var tag = (e.target.tagName || '').toLowerCase();
-      tracking = !(e.touches.length !== 1 || tag === 'input' || tag === 'textarea');
-      if (tracking) { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }
+      tracking = (e.touches.length === 1 && el.scroll.scrollTop <= 0
+                  && tag !== 'input' && tag !== 'textarea');
+      if (tracking) y0 = e.touches[0].clientY;
     }, { passive: true });
-    el.pages.addEventListener('touchend', function (e) {
+    el.scroll.addEventListener('touchend', function (e) {
       if (!tracking || !e.changedTouches.length) return;
       tracking = false;
-      var dx = e.changedTouches[0].clientX - x0;
-      var dy = e.changedTouches[0].clientY - y0;
-      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-      setPage(currentPage === 'list' ? 'lyrics' : 'list');
+      if (e.changedTouches[0].clientY - y0 > 75) refreshAll(false);
     }, { passive: true });
   })();
 
@@ -1001,8 +1091,10 @@
 
   function closeAddPanel() { el.addPanel.classList.add('hidden'); }
 
-  // iOS 原生层拦到硬件音量键后调它；dir 为 +1 / -1
+  // 原生层（安卓 onKeyDown / iOS VolumeKeyWatcher）拦到硬件音量键后调它；dir 为 +1 / -1
   window.carRemoteStepVolume = function (dir) { stepVolume(dir); };
+  // 原生层从后台切回、或需要主动刷新时调用
+  window.carRemoteRefresh = function () { refreshAll(true); };
 
   // ---------- 操作 ----------
 
@@ -1067,14 +1159,13 @@
     }
   });
 
-  el.tabList.addEventListener('click', function () { setPage('list'); });
-  el.tabLyrics.addEventListener('click', function () { setPage('lyrics'); });
   el.addToPlaylist.addEventListener('click', openAddPanel);
   el.addClose.addEventListener('click', closeAddPanel);
   el.addPanel.addEventListener('click', function (e) { if (e.target === el.addPanel) closeAddPanel(); });
   el.likedPlay.addEventListener('click', function (e) { e.stopPropagation(); playList('liked', '我喜欢的音乐'); });
   el.cloudPlay.addEventListener('click', function (e) { e.stopPropagation(); playList('cloud', '音乐云盘'); });
-  el.reload.addEventListener('click', function () { loadAll(); });
+  el.refresh.addEventListener('click', function () { refreshAll(false); });
+  el.reload.addEventListener('click', function () { refreshAll(false); });
   el.tileLiked.addEventListener('click', function () { openList('liked', '我喜欢的音乐'); });
   el.tileCloud.addEventListener('click', function () { openList('cloud', '音乐云盘'); });
   // daily / heartbeat 是车机端的两个虚拟列表 id，和歌单一样先看列表再点歌

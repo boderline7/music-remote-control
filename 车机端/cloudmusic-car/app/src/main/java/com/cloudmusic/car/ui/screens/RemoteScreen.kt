@@ -128,7 +128,7 @@ fun RemoteScreen(nav: Nav) {
     }
 }
 
-/** 左栏：服务开关、地址、网页域名、mDNS 自检。 */
+/** 左栏：服务开关、域名发现开关、地址、网页域名、mDNS 自检。 */
 @Composable
 private fun LeftCard(
     state: RemoteUiState,
@@ -175,43 +175,71 @@ private fun LeftCard(
         }
 
         Spacer(Modifier.height(26.dp))
-        Label("手机浏览器遥控", 24.sp, c.label, FontWeight.Medium)
-        Spacer(Modifier.height(6.dp))
-        // 网页端靠 mDNS 固定域名，不用管热点 IP 变成什么
-        Label(state.webUrl, if (compact) 26.sp else 30.sp, c.accent, FontWeight.Bold)
-        Spacer(Modifier.height(6.dp))
-        val mdnsOk = state.mdnsRunning && state.mdnsLocked && state.mdnsInterface.isNotEmpty()
-        // 收到了查询却一次都没回，说明问的类型不对，这时候绿的会骗人
-        val notifyStuck = mdnsOk && state.mdnsQueries > 0 && state.mdnsAnswers == 0L
-        // 宣告是「域名能不能长期用」的唯一指标：超过 60 秒没发，缓存一过期就解析失败
-        val announceStale = mdnsOk && (state.mdnsSinceAnnounceSec < 0 || state.mdnsSinceAnnounceSec > 60)
-        val mdnsText = when {
-            !state.running -> "遥控服务未开启"
-            mdnsOk -> "mDNS 就绪 · ${state.mdnsInterface} · 收 ${state.mdnsQueries} / 回 ${state.mdnsAnswers}"
-            state.mdnsError.isNotEmpty() -> "mDNS 异常：${state.mdnsError}"
-            else -> "mDNS 启动中…"
-        }
-        Label(mdnsText, 20.sp, if (mdnsOk && !notifyStuck) Color(0xFF34C759) else Color(0xFFFF9500))
-        if (mdnsOk) {
-            // 这一行是长期可用性的主指标：次数应该一直缓慢增长，秒数应该在 45 上下
-            val age = if (state.mdnsSinceAnnounceSec < 0) "—" else "${state.mdnsSinceAnnounceSec}s 前"
-            Label(
-                "域名保活：已宣告 ${state.mdnsAnnounces} 次 · 上次 $age",
-                17.sp,
-                if (announceStale) Color(0xFFFF9500) else c.secondary,
-            )
-            if (announceStale) {
-                Label("保活停了，域名过一会会解析不出来；点上方开关重开一次遥控", 17.sp, Color(0xFFFF9500))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Label("域名发现", 24.sp, c.label, FontWeight.Medium)
+                Spacer(Modifier.height(4.dp))
+                Label(
+                    if (state.domainDiscovery)
+                        "已开启：车机广播 carremote.local 与 Bonjour 服务，网页可直接输域名，手机 App 也能更快发现。"
+                    else
+                        "已关闭（默认）：不广播域名、不占组播锁。网页用下方 IP 访问，手机 App 靠局域网扫描发现，不受影响。",
+                    18.sp, c.secondary, maxLines = 3,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            PillButton(if (state.domainDiscovery) "关闭" else "开启", null) {
+                RemoteServer.setDomainDiscovery(!state.domainDiscovery)
             }
         }
-        if (mdnsOk && state.mdnsLastQuery.isNotEmpty()) {
-            Label("最近查询：${state.mdnsLastQuery}", 17.sp, c.secondary)
-        }
-        if (notifyStuck) {
-            Label("收到查询但没回包，看下行「最近查询」里的类型", 17.sp, Color(0xFFFF9500))
-        }
-        if (state.ip.isNotEmpty()) {
-            Label("打不开时改用 http://${state.ip}:${state.port}", 18.sp, c.secondary)
+
+        Spacer(Modifier.height(20.dp))
+        Label("手机浏览器遥控", 24.sp, c.label, FontWeight.Medium)
+        Spacer(Modifier.height(6.dp))
+        if (state.domainDiscovery) {
+            // 网页端靠 mDNS 固定域名，不用管热点 IP 变成什么
+            Label(state.webUrl, if (compact) 26.sp else 30.sp, c.accent, FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            val mdnsOk = state.mdnsRunning && state.mdnsLocked && state.mdnsInterface.isNotEmpty()
+            // 收到了查询却一次都没回，说明问的类型不对，这时候绿的会骗人
+            val notifyStuck = mdnsOk && state.mdnsQueries > 0 && state.mdnsAnswers == 0L
+            // 宣告是「域名能不能长期用」的唯一指标：超过 60 秒没发，缓存一过期就解析失败
+            val announceStale = mdnsOk && (state.mdnsSinceAnnounceSec < 0 || state.mdnsSinceAnnounceSec > 60)
+            val mdnsText = when {
+                !state.running -> "遥控服务未开启"
+                mdnsOk -> "mDNS 就绪 · ${state.mdnsInterface} · 收 ${state.mdnsQueries} / 回 ${state.mdnsAnswers}"
+                state.mdnsError.isNotEmpty() -> "mDNS 异常：${state.mdnsError}"
+                else -> "mDNS 启动中…"
+            }
+            Label(mdnsText, 20.sp, if (mdnsOk && !notifyStuck) Color(0xFF34C759) else Color(0xFFFF9500))
+            if (mdnsOk) {
+                // 这一行是长期可用性的主指标：次数应该一直缓慢增长，秒数应该在 45 上下
+                val age = if (state.mdnsSinceAnnounceSec < 0) "—" else "${state.mdnsSinceAnnounceSec}s 前"
+                Label(
+                    "域名保活：已宣告 ${state.mdnsAnnounces} 次 · 上次 $age",
+                    17.sp,
+                    if (announceStale) Color(0xFFFF9500) else c.secondary,
+                )
+                if (announceStale) {
+                    Label("保活停了，域名过一会会解析不出来；点上方开关重开一次遥控", 17.sp, Color(0xFFFF9500))
+                }
+            }
+            if (mdnsOk && state.mdnsLastQuery.isNotEmpty()) {
+                Label("最近查询：${state.mdnsLastQuery}", 17.sp, c.secondary)
+            }
+            if (notifyStuck) {
+                Label("收到查询但没回包，看下行「最近查询」里的类型", 17.sp, Color(0xFFFF9500))
+            }
+            if (state.ip.isNotEmpty()) {
+                Label("打不开时改用 http://${state.ip}:${state.port}", 18.sp, c.secondary)
+            }
+        } else {
+            Label(
+                if (state.ip.isNotEmpty()) "http://${state.ip}:${state.port}" else "开启遥控后显示地址",
+                if (compact) 24.sp else 28.sp, c.accent, FontWeight.Bold,
+            )
+            Spacer(Modifier.height(6.dp))
+            Label("域名发现已关闭，用上面的 IP 打开；热点 IP 变了这里会自动更新。", 18.sp, c.secondary, maxLines = 2)
         }
     }
 }

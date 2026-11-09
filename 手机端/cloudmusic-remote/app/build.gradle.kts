@@ -3,7 +3,6 @@ import java.util.Properties
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
@@ -14,8 +13,8 @@ android {
         applicationId = "com.carremote.client"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "1.8.8"
+        versionCode = 18
+        versionName = "2.0.0"
     }
 
     // 自有签名库：与车机端共用一份，debug / release 都用它
@@ -52,21 +51,11 @@ android {
             jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
         }
     }
-    buildFeatures {
-        compose = true
-    }
+    // 2.0.0 起改成纯 WebView 壳：界面全部来自车机端 assets/remote.html，
+    // 这里不再需要 Compose / Material3 / OkHttp，APK 体积从 ~16 MB 降到 ~100 KB 量级。
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2024.09.03")
-    implementation(composeBom)
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.foundation:foundation")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.activity:activity-compose:1.9.2")
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
+    // 下拉刷新由 remote.html 自己实现（页面顶部手势 + 右上角按钮），壳层不再加原生刷新控件
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
