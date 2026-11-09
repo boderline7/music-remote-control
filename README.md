@@ -1,79 +1,33 @@
 # 音乐车机遥控器
 
-给车机上的音乐播放器加一个局域网遥控：车机跑一个 WebSocket 服务（18765），手机装 APK 或直接用浏览器打开，连上就能播控 —— 不用 PIN，也不用配对。
+车机端跑 WebSocket 服务（18765），手机用 App 或浏览器连上即可播控。
 
-2.2.10 起三端 UI 统一：安卓 / iOS 客户端都只是「局域网发现 + WebView 壳」，界面、协议、功能全由车机端 `assets/remote.html` 一份代码决定，改一处三端同时生效。
+入口 `http://<车机IP>:18765`。手机端靠 Bonjour / 网段扫描发现车机，车机设置页的「域名发现」默认关闭。三端 UI 由车机端 `assets/remote.html` 一份网页提供：改网页只需重装车机端，手机端刷新即生效。
 
-浏览器入口：`http://<车机IP>:18765`。车机设置页另有「域名发现」开关（`carremote.local`），**默认关闭**；安卓 / iOS App 不依赖它，靠 Bonjour + /24 网段扫描照样能找到车机。
-
-## 产物
-
-| 文件 | 说明 |
-|---|---|
-| `cloudmusic-car-v2.2.12-遥控-debug.apk` | 车机端（播放器 + 遥控模块 + 内置网页），versionCode 43 |
-| `占位包.apk` | 占位包，7.8 KB，只为让车机助手认出「汽水音乐车机版」 |
-| `车机遥控-v2.0.1.apk` | 安卓遥控 WebView 壳（约 1.3 MB），versionCode 19 |
-| `CarRemote-unsigned-1.2.1.ipa` | iOS 遥控客户端 1.2.1（未签名），GitHub Actions 云构建，见 [ios/README.md](./ios/README.md) |
-
-另外 `dist/` 里还留着 v2.2.2 的车机端 APK，对应 GitHub 上的备份版本（备案），便于回退。
-
-都是本地构建产物，`dist/` 不入库。现成的安装包见 [Releases](https://github.com/boderline7/music-remote-control/releases)，装哪端看你的场景。
-
-## 2.2.12 这一版
-
-本版只改 `assets/remote.html` 一份网页，**只有车机端需要重新出包**：安卓 2.0.1、iOS 1.2.1、占位包均沿用上一版文件，未重新构建。手机端 / iOS 只要刷新网页就是新 UI，不用重装 App。
-
-- **文案**：歌词卡片标题只留「歌词」，去掉「3 行自动跟随」备注；页脚「地址固定为」改成「当前 IP 地址」，只显示主机名不带端口，并允许长按选中复制。
-- **刷新入口去重**：删掉资料库区那个「刷新」胶囊（它其实清的是全站缓存，容易误解），只留右上圆钮 + 下拉手势。
-- **按钮语言统一**：资料库卡片与列表行的播放钮统一成 34px 白底深色三角；音量加减从圆角方块改正圆，与爱心 / 加歌单 / 刷新一致。
-- **歌词显示**：高亮行去掉暗红背景条，靠白色加粗区分，框内仍是固定 3 行、开场钉住第一句。
-- **添加到歌单**：面板标题下补一行「当前曲目：歌名 · 歌手」，避免加错歌。
-- 顺手清理：隐藏 `type=search` 在部分 WebView 里的原生清除叉、`#volVal` 改 `min-width`（三位数音量不被裁）、删掉从未赋值的 `quickHint` 死元素。
-
-> 车机端装完记得**彻底杀进程重启**：`RemoteWeb.page()` 有进程内缓存，只退回后台仍会吐旧页面。
-
-## 2.2.11 上一版
-
-- **iOS 物理音量键修复**：改成 `AVAudioSession.outputVolume` KVO + `MPVolumeView` 滑杆 `valueChanged` 双通道检测，递归查找 UISlider、回锚点可重试、前台回切重新激活；桥接改成强引用并在网页 `documentStart` 预置音量命令队列，页面没加载完按下的键也不会丢。
-- **安卓图标对齐 iOS**：换成同款的深色底 + 正红圆 + 白色播放三角（原来是银白遥控器造型）。
-- **歌词固定第一句**：换歌/歌词异步到位/进度回退时锁回第一句并即时定位，前 2.5 秒不跟随旧的 state 位置，消除开场乱跑；方框固定显示 3 行、每行等高、译文并排，去掉会吞行的渐隐遮罩。
-- **按钮排布**：「添加到歌单」移到爱心旁边同一行，两个圆钮同为 44×44。
-
-## 2.2.10 更早
-
-- **三端统一 UI**：安卓遥控改成 WebView 壳，删掉 Compose 原生界面和原生 WebSocket 客户端，APK 从 16 MB 降到 1.3 MB；保留 Bonjour / 网段发现、物理音量键、上次地址记忆与失效自愈。
-- **App 内刷新**：协议加 `refresh`，车机端清资料库缓存后重推 library / catalog / lyrics / state；网页右上角按钮 + 下拉手势（iOS 用原生 `UIRefreshControl`）。
-- **域名发现开关**：车机设置页可开可关，默认关闭，省掉常驻组播与 MulticastLock；关闭时 App 端发现不受影响。
-- **修复「添加到歌单」**：网易云 `/weapi/playlist/tracks` 已下线（返回 404「接口未找到」），改为现行的 `/weapi/playlist/manipulate/tracks`，并加 `/v1/` 同族路径回退。
+安装包见 [Releases](https://github.com/boderline7/music-remote-control/releases)。
 
 ## 构建
 
 ```bash
-source _工具/env.sh                                # 检查工具链
-python proto/test_protocol.py                      # 协议自检
-
+python proto/test_protocol.py
 cd 车机端/cloudmusic-car && ./gradlew assembleDebug
 cd 手机端/cloudmusic-remote && ./gradlew assembleDebug
 ```
 
-需要一个完整 JDK（含 javac）和本机 Android SDK（platform 35 + build-tools 34），路径写在不入库的 `local.properties` 里。
-签名照 `keystore.properties.example` 填，不填就走 debug 签名，照样能编译。
+需要 JDK 17 与 Android SDK（platform 35、build-tools 34），路径写在不入库的 `local.properties`。iOS 客户端见 [ios/README.md](./ios/README.md)。`dist/` 不入库。
 
 ## 目录
 
 ```
-车机端/cloudmusic-car/     播放器工程，遥控模块在 com.cloudmusic.car.remote
-手机端/cloudmusic-remote/  安卓遥控（WebView 壳 + Bonjour/网段发现，Kotlin）
-proto/                     协议定义与 Java / Python 实现
-docs/                      协议全文、源码勘察、设计与构建说明（本地留档，不入库）
-ios/                       iOS 遥控客户端源码与云构建配置
-_工具/                      env.sh、联调脚本、自检脚本
+车机端/   播放器与遥控服务
+手机端/   安卓 WebView 壳
+ios/      iOS 客户端
+proto/    协议定义与自检
+docs/     本地留档，不入库
 ```
 
-## 安全边界
-
-无 TLS、无 PIN，局域网内明文传输，同网段任何人都能连上 18765 发指令。唯一的闸门是「同时在线设备数上限」（默认 4，可调 1~8），它挡的是数量，不是身份。**只适用于车内可信网络，不要把 18765 映射到公网。**
+无 TLS、无 PIN，仅限车内可信局域网，不要把 18765 映射到公网。
 
 ## 许可
 
-GNU LGPL-3.0。车机端派生自 [xuqian-git/cloudmusic-car](https://github.com/xuqian-git/cloudmusic-car)（同为 LGPL-3.0），派生作品必须沿用同一许可证，故整个仓库统一 LGPL。改了上游哪些地方，逐条列在 [NOTICE.md](./NOTICE.md)。
+GNU LGPL-3.0。车机端派生自 [xuqian-git/cloudmusic-car](https://github.com/xuqian-git/cloudmusic-car)（同为 LGPL-3.0），派生作品沿用同一许可证。改动逐条见 [NOTICE.md](./NOTICE.md)。
