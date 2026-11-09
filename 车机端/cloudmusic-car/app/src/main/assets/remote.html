@@ -110,7 +110,7 @@
   .volume { display: flex; align-items: center; gap: 10px; margin-top: 16px; }
   /* 音量加减只是微调，不该比播放键还抢眼：收成和右上刷新钮同一套低调小圆钮 */
   .round {
-    flex: none; width: 38px; height: 38px; border-radius: 12px;
+    flex: none; width: 38px; height: 38px; border-radius: 50%;
     background: var(--card); border: 1px solid var(--line);
     font-size: 21px; line-height: 1; color: var(--dim); font-weight: 400;
     display: flex; align-items: center; justify-content: center;
@@ -118,7 +118,7 @@
   .round:active { background: rgba(250,45,72,.2); border-color: rgba(250,45,72,.5); color: #fff; }
   .volume input[type=range] { flex: 1; height: 4px; }
   .volume input[type=range]::-webkit-slider-thumb { width: 15px; height: 15px; }
-  #volVal { width: 24px; flex: none; text-align: right; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  #volVal { min-width: 24px; flex: none; text-align: right; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
   .hidden { display: none !important; }
 
   /* 资料库卡片：彩色渐变大方框，图标 + 播放钮在框内同一行，不再悬空 */
@@ -138,7 +138,7 @@
   }
   .tile .ico svg { width: 18px; height: 18px; fill: #fff; }
   .tile .tilePlay {
-    width: 36px; height: 36px; border-radius: 50%;
+    width: 34px; height: 34px; border-radius: 50%;
     background: rgba(255,255,255,.94); color: #1a1a1f;
     display: flex; align-items: center; justify-content: center;
   }
@@ -180,7 +180,7 @@
   }
   /* 译文并排在同一行，不额外占高度，保证「固定 3 行」 */
   .lyric-line .tr { display: inline; margin-left: 8px; font-size: 11px; color: rgba(255,255,255,.3); }
-  .lyric-line.on { color: #fff; font-size: 15px; font-weight: 700; background: rgba(250,45,72,.1); border-radius: 10px; }
+  .lyric-line.on { color: #fff; font-size: 15px; font-weight: 700; }
   .lyric-line.on .tr { color: rgba(255,255,255,.62); }
 
   /* 添加到歌单选择面板 */
@@ -196,6 +196,7 @@
   .overlay .panel-head { display: flex; align-items: center; margin-bottom: 14px; }
   .overlay .panel-head h3 { flex: 1; margin: 0; font-size: 17px; }
   .overlay .panel-head button { color: var(--dim); font-size: 14px; }
+  .overlay .panel-sub { margin: -8px 0 12px; font-size: 12px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .overlay .plrow {
     width: 100%; display: flex; align-items: center; gap: 10px;
     padding: 14px 4px; border-bottom: 1px solid var(--line);
@@ -215,6 +216,9 @@
     color: #fff; font-size: 16px; padding: 12px 0;
   }
   #q::placeholder { color: var(--faint); }
+  /* type=search 在部分 WebView 里自带清除叉 / 装饰，和右侧红色搜索钮重复 */
+  #q::-webkit-search-cancel-button,
+  #q::-webkit-search-decoration { -webkit-appearance: none; appearance: none; display: none; }
   #go { width: 46px; height: 40px; border-radius: 11px; background: var(--red); display: flex; align-items: center; justify-content: center; }
   #go svg { width: 20px; height: 20px; fill: none; stroke: #fff; stroke-width: 2.2; }
 
@@ -222,7 +226,6 @@
   .sec { margin-top: 26px; display: flex; align-items: baseline; gap: 8px; }
   .sec h2 { margin: 0; font-size: 15px; font-weight: 600; }
   .sec .hint { font-size: 12px; color: var(--faint); flex: 1; }
-  .sec button { font-size: 12px; color: var(--dim); padding: 6px 13px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); }
 
   .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
   .tile .n { display: block; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -234,8 +237,8 @@
   .row .c { font-size: 12px; color: var(--faint); flex: none; }
   .row .chev { color: var(--faint); font-size: 17px; flex: none; }
   /* 行内「顺序播放」：整行是入口，这个小圆钮不进去，直接从头播整列 */
-  .row .pl { flex: none; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; background: rgba(250,45,72,.14); border: 1px solid rgba(250,45,72,.4); }
-  .row .pl svg { width: 17px; height: 17px; fill: currentColor; }
+  .row .pl { flex: none; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #1a1a1f; background: rgba(255,255,255,.94); }
+  .row .pl svg { width: 16px; height: 16px; fill: currentColor; }
   .row .pl:active { background: var(--red); color: #fff; }
   /* 带副标题的行（每日推荐 / 心动模式）：主标题在上，说明在下 */
   .row .t { flex: 1; min-width: 0; }
@@ -245,7 +248,9 @@
   .row.more .n { flex: none; font-size: 13px; color: var(--dim); }
   .empty { font-size: 13px; color: var(--faint); padding: 4px 2px; }
 
-  footer { margin: 26px 0 0; font-size: 11px; color: var(--faint); text-align: center; }
+  /* 页面整体禁选中防误触，但地址要能长按复制 */
+  footer { margin: 26px 0 0; font-size: 11px; color: var(--faint); text-align: center;
+           user-select: text; -webkit-user-select: text; }
   footer b { color: var(--dim); font-weight: 500; }
 
   /* ---------- 曲目面板 ---------- */
@@ -298,7 +303,7 @@
 
   <main id="scroll">
     <div class="lyric-card">
-      <div class="cap"><b>歌词</b><span id="lyricHint">自动跟随</span></div>
+      <div class="cap"><b>歌词</b></div>
       <div id="lyricBox"></div>
     </div>
 
@@ -353,7 +358,6 @@
     <div class="sec">
       <h2>资料库</h2>
       <span class="hint" id="libHint"></span>
-      <button id="reload">刷新</button>
     </div>
     <div class="tiles">
       <button class="tile liked" id="tileLiked">
@@ -374,7 +378,7 @@
       </button>
     </div>
 
-    <div class="sec"><h2>为你推荐</h2><span class="hint" id="quickHint"></span></div>
+    <div class="sec"><h2>为你推荐</h2></div>
     <div class="rows" id="quick">
       <button class="row" id="dailyRow">
         <div class="t"><div class="n">每日推荐</div><div class="sub">根据你的口味 · 每天 6:00 更新</div></div>
@@ -397,12 +401,13 @@
     <div class="sec"><h2>推荐歌单</h2><span class="hint" id="recHint"></span></div>
     <div class="rows" id="recs"></div>
 
-    <footer>地址固定为 <b id="host">—</b></footer>
+    <footer>当前 IP 地址 <b id="host">—</b></footer>
   </main>
 
   <div class="overlay hidden" id="addPanel">
     <div class="panel">
       <div class="panel-head"><h3>添加到歌单</h3><button id="addClose">关闭</button></div>
+      <div class="panel-sub" id="addTrack"></div>
       <div id="addList"></div>
     </div>
   </div>
@@ -441,12 +446,12 @@
 
   var el = {};
   ['dot', 'status', 'title', 'artist', 'like', 'prog', 'cur', 'dur', 'play', 'playIcon', 'prev', 'next',
-   'volumeRow', 'vol', 'volVal', 'volUp', 'volDown', 'q', 'go', 'reload', 'likedName', 'likedCount',
+   'volumeRow', 'vol', 'volVal', 'volUp', 'volDown', 'q', 'go', 'likedName', 'likedCount',
    'cloudName', 'cloudCount', 'playlists', 'tops', 'recs', 'libHint', 'plHint', 'topHint', 'recHint',
    'sheet', 'sheetTitle', 'sheetSub', 'sheetBody', 'back', 'toast', 'host', 'tileLiked', 'tileCloud', 'scroll',
-   'dailyRow', 'hbRow', 'quickHint', 'dailyPlay', 'hbPlay',
-   'refresh', 'lyricHint', 'lyricBox',
-   'addToPlaylist', 'addPanel', 'addList', 'addClose', 'likedPlay', 'cloudPlay'
+   'dailyRow', 'hbRow', 'dailyPlay', 'hbPlay',
+   'refresh', 'lyricBox',
+   'addToPlaylist', 'addPanel', 'addList', 'addClose', 'addTrack', 'likedPlay', 'cloudPlay'
   ].forEach(function (id) { el[id] = document.getElementById(id); });
 
   var ws = null;
@@ -479,7 +484,7 @@
   var recExpanded = false;
   var topExpanded = false;
 
-  el.host.textContent = location.host;
+  el.host.textContent = location.hostname;
 
   // ---------- 基础 ----------
 
@@ -1035,7 +1040,6 @@
     var box = el.lyricBox;
     box.textContent = '';
     lyricActive = -1;
-    el.lyricHint.textContent = lyricLines.length ? '3 行自动跟随' : '暂无歌词';
     if (!lyricLines.length) {
       var empty = document.createElement('div');
       empty.className = 'empty';
@@ -1131,6 +1135,9 @@
   // ---------- 添加到歌单 ----------
 
   function openAddPanel() {
+    el.addTrack.textContent = state.title
+      ? '当前曲目：' + state.title + (state.artist ? ' · ' + state.artist : '')
+      : '当前没有播放';
     var items = (library && library.playlists) || [];
     el.addList.textContent = '';
     if (!items.length) {
@@ -1235,7 +1242,6 @@
   el.likedPlay.addEventListener('click', function (e) { e.stopPropagation(); playList('liked', '我喜欢的音乐'); });
   el.cloudPlay.addEventListener('click', function (e) { e.stopPropagation(); playList('cloud', '音乐云盘'); });
   el.refresh.addEventListener('click', function () { refreshAll(false); });
-  el.reload.addEventListener('click', function () { refreshAll(false); });
   el.tileLiked.addEventListener('click', function () { openList('liked', '我喜欢的音乐'); });
   el.tileCloud.addEventListener('click', function () { openList('cloud', '音乐云盘'); });
   // daily / heartbeat 是车机端的两个虚拟列表 id，和歌单一样先看列表再点歌
