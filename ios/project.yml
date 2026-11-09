@@ -7,9 +7,6 @@ settings:
   base:
     SWIFT_VERSION: "5.9"
     TARGETED_DEVICE_FAMILY: "1,2"
-    # 编译时写死的默认车机 IP；GitHub Actions 的 default_host 输入会覆盖它。
-    # App 内「连接设置」改过的地址优先，存在 UserDefaults 里。
-    CAR_REMOTE_HOST: "192.168.43.1"
 targets:
   CarRemote:
     type: application

@@ -43,11 +43,13 @@
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>用于连接车机上的音乐遥控服务（局域网 18765 端口）。不使用域名发现，只连你填写的固定 IP。</string>
+	<string>用于发现并连接同一局域网内车机上的音乐遥控服务（18765 端口）。</string>
+	<!-- iOS 14+ 使用 Bonjour 服务发现必须在 Info.plist 声明服务类型 -->
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_cloudmusic-car._tcp</string>
+	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
-	<!-- 编译时由 GitHub Actions 的 default_host 输入注入，App 内可随时覆盖 -->
-	<key>CarRemoteDefaultHost</key>
-	<string>$(CAR_REMOTE_HOST)</string>
 </dict>
 </plist>

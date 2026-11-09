@@ -1,18 +1,24 @@
 # iOS 遥控客户端（未签名 IPA）
 
-给车机遥控做一个能装到 iPhone 上的独立 App。**只解决一件事：绕开 `carremote.local` 域名发现的不稳定，用固定 IP 直连车机。**
+给车机遥控做一个能装到 iPhone 上的独立 App。**发现逻辑照搬安卓遥控 App**：服务发现 + 网段扫描，拿到车机的纯 IPv4 直连，不依赖 `carremote.local` 域名解析。
 
 ## 为什么不是继续用网页
 
-车机端自带网页遥控（`http://carremote.local:18765/`），但那个域名靠 mDNS 活着：iOS 对组播应答的校验很严，查询包丢一次、缓存过期 120 秒没刷上，页面就打不开，而同一时刻用 IP 访问完全正常。IP 是稳定的，那就别再让域名掺和。
+车机端自带网页遥控（`http://carremote.local:18765/`），但那个域名靠车机自己实现的 mDNS 应答器活着：iOS 对组播应答的校验很严，查询包丢一次、缓存 120 秒过期没刷上，页面就打不开，而同一时刻用 IP 访问完全正常。
 
-这个 App 里：
+安卓 App 早就不吃这套了，它的做法是：
 
-- **没有** mDNS、`carremote.local`、Bonjour / NSD 发现、网段扫描；
-- **只有** 一个记住的 `IP:端口`，直接 `http://IP:18765/` 加载车机端 `remote.html`。页面里的 WebSocket 按 `location.host` 连同一个 IP，所以歌词、收藏、搜索、歌单、音量等所有功能和网页端 **100% 一致**，没有协议翻译；
-- 原生部分只补连通性：启动前短超时探测、连不上时每 2 秒自动重试、回到前台自检、WKWebView 页面进程被系统回收后自动重载、右上角齿轮改地址。
+| 安卓 | iOS 这里 | 说明 |
+|---|---|---|
+| `Discovery.kt` 搜 `_cloudmusic-car._tcp`（NSD） | `BonjourFinder` + `NetServiceBrowser` | 从 `NetService.addresses` 里取**纯 IPv4**，不用 `xxx.local` 主机名 |
+| `Scanner.kt` 扫本机所有 site-local IPv4 的 /24，TCP 探 18765 | `LanScanner` | 64 并发、0.5 秒超时，用 HTTP 探测确认对面真是遥控页面 |
+| 启动先连 `Prefs.lastHost`，2.5 秒没连上就扫网段 | `CarLink.start()` | 顺序执行，避免两条连接并存来回跳 |
+| 连上 `Discovery.stop()`，断开重启 | `finder.stop() / start()` | 一样 |
+| `ConnectPanel`：发现列表 + 扫描结果 + 手动连接 | `ConnectPanel.swift` | 一样，另外未连接时会自动采用第一个发现结果 |
 
-换句话说，界面不是原生重写的，是 WKWebView 壳；换来的是零协议改动和风险最低。
+再补一点自愈：页面加载失败 / 进程被系统回收会重新发现，每 5 秒重试上次地址、每 15 秒全量扫一次网段，回到前台也会自检。
+
+界面本身是 WKWebView 壳，直接加载车机端 `remote.html`；页面里的 WebSocket 按 `location.host` 连同一个 IP，所以歌词、收藏、搜索、歌单、音量等所有功能和网页端 **100% 一致**，没有协议翻译、没有原生重写 UI。
 
 ## 云构建
 
@@ -23,14 +29,7 @@
 3. 打成 `Payload/CarRemote.app` → `CarRemote-unsigned.ipa`，附 SHA-256；
 4. 上传到 Actions artifact `CarRemote-unsigned-ipa`（保留 90 天）。
 
-手动触发（Actions → iOS IPA (unsigned) → Run workflow）可以填：
-
-| 输入 | 作用 |
-|---|---|
-| `default_host` | 编译进包的默认车机 IP，**装上即用**；App 内改过的地址优先 |
-| `release_tag` | 填了就顺手把 IPA 发到 GitHub Release，方便直接下载 |
-
-推送 `ios/**` 或该 workflow 文件也会自动构建。仓库是公开的，macOS runner 对本仓库不额外收费。
+手动触发（Actions → iOS IPA (unsigned) → Run workflow）填 `release_tag` 就能顺手把 IPA 发到 GitHub Release，方便直接下载。推送 `ios/**` 或该 workflow 文件也会自动构建。仓库是公开的，macOS runner 对本仓库不额外收费。
 
 产物是 **未签名 IPA**，不能双击直接装到 iPhone —— iOS 只允许装经过签名的包。下面三种方式任选。
 
@@ -55,22 +54,23 @@
 
 ## 装好之后
 
-1. 打开 App，iOS 问「允许访问本地网络」时点**允许**（Info.plist 里已写明用途）；
-2. 右上角齿轮 → 填车机固定 IP（车机端「设置 → 手机遥控」页显示当前 IP）→ 端口默认 `18765` → 保存并连接；
-3. 车机没开机或服务没起时不会白屏，会显示原因并自动重试，开机后自己连上。
+1. 打开 App，iOS 问「允许访问本地网络」时点**允许**（Info.plist 里已写明用途，并声明了 `NSBonjourServices`）；
+2. App 自动搜同一 Wi-Fi / 热点下的车机，发现到就直连；没发现就自动扫当前网段找开着的 18765 端口；
+3. 连过一次会记住 IP，下次启动先直连，快；IP 变了会重新发现 / 扫描，不用手动改；
+4. 列表里也能手点连接，或手动填 `IP:端口`（车机端「设置 → 手机遥控」页显示当前 IP）。
 
-连不上时按这个顺序查：手机和车机在不在同一个热点/WiFi → 车机「手机遥控」开关开了没 → IP 和端口对不对 → 车机设置页的 mDNS 自检不用看（本 App 不依赖它）。
+连不上时按这个顺序查：手机和车机在不在同一个热点/WiFi → 车机「手机遥控」开关开了没 → 车机设置页的 mDNS 自检不用看（本 App 不依赖域名）→ 点「重新搜索 / 扫网段」。
 
 ## 权限与边界
 
-- `NSLocalNetworkUsageDescription`：连局域网车机；
+- `NSLocalNetworkUsageDescription` + `NSBonjourServices`：发现并连接局域网车机；
 - ATS 放行明文 HTTP：车机服务是车内明文，没有 TLS；
 - 遥控服务无 TLS、无 PIN，**不要把 18765 映射到公网**；
 - 支持 iOS 15+，arm64 真机；未做 iPad 横屏适配。
 
 ## 和「Safari 添加到主屏幕」比
 
-Safari 打开网页再「添加到主屏幕」也能得到独立图标，而且不用签名、不过期，代价是地址栏里那个域名仍然要解析。如果只是偶尔用，继续用网页版足够；想要固定 IP、断线自愈、独立 App 不受 Safari 本地网络开关影响，再用这个 IPA。
+Safari 打开网页再「添加到主屏幕」也能得到独立图标，而且不用签名、不过期，代价是地址栏里那个域名仍然要解析。只是偶尔用，网页版足够；想要跟安卓 App 一样的局域网自动发现、IP 变了能自己找回来、掉线自愈，再用这个 IPA。
 
 ## 目录
 
@@ -78,10 +78,11 @@ Safari 打开网页再「添加到主屏幕」也能得到独立图标，而且�
 ios/
 ├── project.yml                 # XcodeGen 工程描述
 ├── CarRemote/
-│   ├── App.swift               # @main + 地址状态机（探测 / 重试 / 前台自检）
+│   ├── App.swift               # @main + 连接状态机（上次地址 / 2.5s 兜底扫描 / 掉线自愈）
+│   ├── Discovery.swift         # BonjourFinder（NSD）+ LanScanner（/24 网段扫描）
+│   ├── ConnectPanel.swift      # 发现列表 / 扫描结果 / 手动连接
 │   ├── RemoteWebView.swift     # WKWebView 壳
-│   ├── SetupView.swift         # 地址设置面板
-│   ├── Info.plist              # ATS / 本地网络 / 默认 IP 占位符
+│   ├── Info.plist              # ATS / 本地网络 / NSBonjourServices
 │   └── Assets.xcassets/        # AppIcon
 └── README.md
 ```
