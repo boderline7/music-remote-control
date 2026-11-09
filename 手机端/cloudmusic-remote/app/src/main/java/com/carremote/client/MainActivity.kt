@@ -71,8 +71,8 @@ class MainActivity : Activity() {
     private val clientVersion: String
         get() = runCatching {
             @Suppress("DEPRECATION")
-            packageManager.getPackageInfo(packageName, 0).versionName ?: "2.0.0"
-        }.getOrDefault("2.0.0")
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "2.0.1"
+        }.getOrDefault("2.0.1")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

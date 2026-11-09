@@ -87,7 +87,7 @@ final class CarLink: ObservableObject {
     var url: URL? {
         guard !host.isEmpty else { return nil }
         // 带上客户端标识，车机侧能看到是 iOS / 哪个版本连进来的；车机端 HTTP 会忽略 query。
-        let cv = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "1.2.0"
+        let cv = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "1.2.1"
         return URL(string: "http://\(host):\(port)/?client=ios&cv=\(cv)")
     }
 
@@ -249,46 +249,63 @@ struct RootView: View {
 }
 
 /// iOS 不开放硬件音量键事件，WKWebView 更收不到。
-/// 做法：激活 AVAudioSession 监听 outputVolume 变化，判断加/减后立刻用 MPVolumeView
-/// 把系统音量拉回中位 —— 既能持续检测按键，又能挡掉系统音量 HUD。
-/// 拉回动作本身也会触发 KVO，用 150ms 冷却吃掉这次回弹，避免一次按键发两条相反命令。
-final class VolumeKeyWatcher: ObservableObject {
+/// 双通道检测，任一条生效都能用：
+///   1) AVAudioSession.outputVolume 的 KVO（主通道）；
+///   2) MPVolumeView 内部 UISlider 的 valueChanged（部分 iOS 版本 KVO 不派发，滑杆仍会动）。
+/// 检测到按键后把系统音量拉回 0.5 锚点：既能持续识别下一次按键，又能吃掉系统音量 HUD。
+/// 两条通道共用 120ms 去重；回锚点产生的「回声」直接按数值忽略，不占用冷却。
+final class VolumeKeyWatcher: NSObject, ObservableObject {
     private let session = AVAudioSession.sharedInstance()
     private var observation: NSKeyValueObservation?
-    private let volumeView = MPVolumeView(frame: CGRect(x: -2000, y: -2000, width: 1, height: 1))
+    private let volumeView = MPVolumeView(frame: CGRect(x: 1, y: 1, width: 1, height: 1))
     private let anchor: Float = 0.5
     private var lastHandled = Date.distantPast
     private var started = false
+    private var sliderHooked = false
+    private var baseline: Float = 0.5
 
     func start() {
         guard !started else { return }
         started = true
+        activateSession()
+        attachVolumeView()
+
+        observation = session.observe(\.outputVolume, options: [.old, .new]) { [weak self] session, change in
+            let new = session.outputVolume
+            let old = change.oldValue
+            // KVO 回调线程不固定，统一切回主线程再做去重与发命令
+            DispatchQueue.main.async { [weak self] in
+                guard let self, abs(new - self.anchor) > 0.02 else { return }
+                self.handle(newValue: new, oldValue: old)
+            }
+        }
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil)
+    }
+
+    @objc private func appDidBecomeActive() {
+        // 后台切回时系统可能已经把音频会话挂起，重新激活并把音量拉回锚点
+        activateSession()
+        attachVolumeView()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.resetSystemVolume()
+        }
+    }
+
+    private func activateSession() {
         do {
             try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try session.setActive(true, options: [])
         } catch {
             print("volume key watcher: audio session unavailable: \(error)")
         }
-
-        // MPVolumeView 必须在视图层级里才能改系统音量；冷启动时 keyWindow 可能还没就绪
-        attachVolumeView()
-
-        observation = session.observe(\.outputVolume, options: [.old, .new]) { [weak self] session, change in
-            guard let self else { return }
-            let now = Date()
-            guard now.timeIntervalSince(self.lastHandled) > 0.15 else { return }
-            let new = session.outputVolume
-            let old = change.oldValue ?? self.anchor
-            guard abs(new - old) > 0.01 else { return }
-            self.lastHandled = now
-            let dir = new > old ? 1 : -1
-            self.resetSystemVolume()
-            WebViewBridge.stepVolume(dir)
-        }
     }
 
-    /// MPVolumeView 只有挂在 window 上才会创建 UISlider 并能改系统音量。
-    /// 冷启动时 onAppear 可能早于 keyWindow 就绪，所以失败就退避重试，最多 6 次（约 1.8 秒）。
+    /// MPVolumeView 必须挂在 window 上才会创建 UISlider。冷启动时 keyWindow 可能还没就绪，
+    /// 所以失败就退避重试（约 2.4 秒）。alpha 不能设成 0，否则系统不渲染、内部滑杆可能不创建。
     private func attachVolumeView(attempt: Int = 0) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -296,35 +313,82 @@ final class VolumeKeyWatcher: ObservableObject {
                 .compactMap({ $0 as? UIWindowScene })
                 .flatMap({ $0.windows })
                 .first(where: { $0.isKeyWindow }) else {
-                if attempt < 6 {
+                if attempt < 8 {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                         self?.attachVolumeView(attempt: attempt + 1)
                     }
                 }
                 return
             }
-            if self.volumeView.superview !== window { window.addSubview(self.volumeView) }
+            self.volumeView.alpha = 0.01
             self.volumeView.showsRouteButton = false
+            if self.volumeView.superview !== window {
+                self.volumeView.removeFromSuperview()
+                window.addSubview(self.volumeView)
+            }
+            self.volumeView.frame = CGRect(x: 1, y: 1, width: 1, height: 1)
             self.volumeView.layoutIfNeeded()
+            self.hookSlider()
             self.resetSystemVolume()
         }
     }
 
-    /// 把系统音量拉回锚点。slider 是 MPVolumeView 异步创建的，找不到时短退避重试。
+    /// 不同 iOS 版本 MPVolumeView 的层级深浅不一样，递归找 UISlider 而不是只看一层 subviews。
+    private func findSlider(in view: UIView) -> UISlider? {
+        for sub in view.subviews {
+            if let slider = sub as? UISlider { return slider }
+            if let slider = findSlider(in: sub) { return slider }
+        }
+        return nil
+    }
+
+    private func hookSlider() {
+        guard !sliderHooked, let slider = findSlider(in: volumeView) else { return }
+        sliderHooked = true
+        slider.addTarget(self, action: #selector(sliderChanged(_:)), for: .valueChanged)
+    }
+
+    @objc private func sliderChanged(_ slider: UISlider) {
+        let value = slider.value
+        guard abs(value - anchor) > 0.02 else { return }
+        handle(newValue: value, oldValue: baseline)
+    }
+
+    /// 两条通道汇到这里：判断加/减 → 立刻回锚点 → 把命令交给网页。
+    private func handle(newValue new: Float, oldValue old: Float?) {
+        let now = Date()
+        guard now.timeIntervalSince(lastHandled) > 0.12 else { return }
+        let base = old ?? anchor
+        guard abs(new - base) > 0.004 else { return }
+        let dir = new > base ? 1 : -1
+        lastHandled = now
+        // 记下这次的实际音量：万一回锚点没生效，下一条通道仍能用它判断方向
+        baseline = new
+        resetSystemVolume()
+        WebViewBridge.stepVolume(dir)
+    }
+
+    /// 把系统音量拉回锚点。slider 是异步创建的，找不到就短退避重试。
+    /// 即使这个回拉在某些 iOS 版本上失效，滑杆的 valueChanged 通道仍能继续识别按键。
     private func resetSystemVolume(attempt: Int = 0) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            guard let slider = self.volumeView.subviews.first(where: { $0 is UISlider }) as? UISlider else {
-                if attempt < 4 {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self.hookSlider()
+            guard let slider = self.findSlider(in: self.volumeView) else {
+                if attempt < 8 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
                         self?.resetSystemVolume(attempt: attempt + 1)
                     }
                 }
                 return
             }
             slider.setValue(self.anchor, animated: false)
+            self.baseline = self.anchor
         }
     }
 
-    deinit { observation?.invalidate() }
+    deinit {
+        observation?.invalidate()
+        NotificationCenter.default.removeObserver(self)
+    }
 }

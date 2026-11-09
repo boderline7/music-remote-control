@@ -1,51 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Apple TV 遥控器（Siri Remote）风格：银白机身 + 顶部大触控环 + 下方 2×3 圆键。
-  机身用上白下浅灰的竖向渐变模拟金属质感，缩到 48dp 也不会糊成一块白。
-  机身最远点（顶部圆心）距画布中心 31，落在自适应图标 36 的可见半径内，圆角不会被裁。
+  与 iOS 端 AppIcon.png 完全同款：深色底 + 正红圆 + 白色播放三角。
+  自适应图标的 108dp 画布只有中心约 72dp 会被 launcher 显示（外侧 18dp 是视差/裁切区），
+  所以不能把 iOS 的 58.4% 占比直接套到 108dp 上，否则红圆会被放大到几乎顶满图标。
+  换算：iOS 圆半径 299/1024 -> 相对可见区半径 72 × 0.292 ≈ 21dp。
+  三角按同一比例缩放：左边 x=422、顶点 x=662、上下 y=372/652
+    -> 相对中心 -6.3 / +10.5 / ±9.8 -> x=47.7 / 64.5、y=44.2 / 63.8。
+  深色底由 ic_launcher_background 提供，这里只画前景，其余透明。
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- 机身：上下全圆头，宽 30、高 62 -->
-    <path android:pathData="M54,23 A15,15 0 0 1 69,38 V70 A15,15 0 0 1 54,85 A15,15 0 0 1 39,70 V38 A15,15 0 0 1 54,23 Z">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:type="linear"
-                android:startX="54"
-                android:startY="23"
-                android:endX="54"
-                android:endY="85"
-                android:startColor="#FFFFFF"
-                android:centerColor="#F8F8FB"
-                android:endColor="#DEDEE6" />
-        </aapt:attr>
-    </path>
+    <!-- 正红圆 -->
+    <path
+        android:fillColor="#FA2D48"
+        android:pathData="M54,33 a21,21 0 1,0 0,42 a21,21 0 1,0 0,-42 z" />
 
-    <!-- 顶部触控环 -->
+    <!-- 白色播放三角 -->
     <path
-        android:fillColor="#00000000"
-        android:pathData="M54,41 m-10,0 a10,10 0 1,0 20,0 a10,10 0 1,0 -20,0 z"
-        android:strokeColor="#FA2D48"
-        android:strokeWidth="2.3" />
-
-    <!-- 触控盘中心确认键 -->
-    <path
-        android:fillColor="#FA2D48"
-        android:pathData="M54,41 m-3.1,0 a3.1,3.1 0 1,0 6.2,0 a3.1,3.1 0 1,0 -6.2,0 z" />
-
-    <!-- 2×3 圆键 -->
-    <path
-        android:fillColor="#FA2D48"
-        android:pathData="M47.5,59 m-2.4,0 a2.4,2.4 0 1,0 4.8,0 a2.4,2.4 0 1,0 -4.8,0 z M60.5,59 m-2.4,0 a2.4,2.4 0 1,0 4.8,0 a2.4,2.4 0 1,0 -4.8,0 z" />
-    <path
-        android:fillColor="#FA2D48"
-        android:pathData="M47.5,66.5 m-2.4,0 a2.4,2.4 0 1,0 4.8,0 a2.4,2.4 0 1,0 -4.8,0 z M60.5,66.5 m-2.4,0 a2.4,2.4 0 1,0 4.8,0 a2.4,2.4 0 1,0 -4.8,0 z" />
-    <path
-        android:fillColor="#FA2D48"
-        android:pathData="M47.5,74 m-2.4,0 a2.4,2.4 0 1,0 4.8,0 a2.4,2.4 0 1,0 -4.8,0 z M60.5,74 m-2.4,0 a2.4,2.4 0 1,0 4.8,0 a2.4,2.4 0 1,0 -4.8,0 z" />
+        android:fillColor="#FFFFFF"
+        android:pathData="M47.7,44.2 L64.5,54 L47.7,63.8 Z" />
 </vector>

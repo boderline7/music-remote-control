@@ -10,22 +10,28 @@
 
 | 文件 | 说明 |
 |---|---|
-| `cloudmusic-car-v2.2.10-遥控-debug.apk` | 车机端（播放器 + 遥控模块 + 内置网页），versionCode 41 |
+| `cloudmusic-car-v2.2.11-遥控-debug.apk` | 车机端（播放器 + 遥控模块 + 内置网页），versionCode 42 |
 | `占位包.apk` | 占位包，7.8 KB，只为让车机助手认出「汽水音乐车机版」 |
-| `车机遥控-v2.0.0.apk` | 安卓遥控 WebView 壳（约 1.3 MB），versionCode 18 |
-| `CarRemote-unsigned-1.2.0.ipa` | iOS 遥控客户端 1.2.0（未签名），GitHub Actions 云构建，见 [ios/README.md](./ios/README.md) |
+| `车机遥控-v2.0.1.apk` | 安卓遥控 WebView 壳（约 1.3 MB），versionCode 19 |
+| `CarRemote-unsigned-1.2.1.ipa` | iOS 遥控客户端 1.2.1（未签名），GitHub Actions 云构建，见 [ios/README.md](./ios/README.md) |
 
 另外 `dist/` 里还留着 v2.2.2 的车机端 APK，对应 GitHub 上的备份版本（备案），便于回退。
 
 都是本地构建产物，`dist/` 不入库。现成的安装包见 [Releases](https://github.com/boderline7/music-remote-control/releases)，装哪端看你的场景。
 
-## 2.2.10 这一版
+## 2.2.11 这一版
+
+- **iOS 物理音量键修复**：改成 `AVAudioSession.outputVolume` KVO + `MPVolumeView` 滑杆 `valueChanged` 双通道检测，递归查找 UISlider、回锚点可重试、前台回切重新激活；桥接改成强引用并在网页 `documentStart` 预置音量命令队列，页面没加载完按下的键也不会丢。
+- **安卓图标对齐 iOS**：换成同款的深色底 + 正红圆 + 白色播放三角（原来是银白遥控器造型）。
+- **歌词固定第一句**：换歌/歌词异步到位/进度回退时锁回第一句并即时定位，前 2.5 秒不跟随旧的 state 位置，消除开场乱跑；方框固定显示 3 行、每行等高、译文并排，去掉会吞行的渐隐遮罩。
+- **按钮排布**：「添加到歌单」移到爱心旁边同一行，两个圆钮同为 44×44。
+
+## 2.2.10 上一版
 
 - **三端统一 UI**：安卓遥控改成 WebView 壳，删掉 Compose 原生界面和原生 WebSocket 客户端，APK 从 16 MB 降到 1.3 MB；保留 Bonjour / 网段发现、物理音量键、上次地址记忆与失效自愈。
 - **App 内刷新**：协议加 `refresh`，车机端清资料库缓存后重推 library / catalog / lyrics / state；网页右上角按钮 + 下拉手势（iOS 用原生 `UIRefreshControl`）。
 - **域名发现开关**：车机设置页可开可关，默认关闭，省掉常驻组播与 MulticastLock；关闭时 App 端发现不受影响。
 - **修复「添加到歌单」**：网易云 `/weapi/playlist/tracks` 已下线（返回 404「接口未找到」），改为现行的 `/weapi/playlist/manipulate/tracks`，并加 `/v1/` 同族路径回退。
-- **网页 UI**：取消歌单/歌词双页切换；歌词方框移到页面最顶部，约 5 行自动跟随且默认不可手动滑；「添加到歌单」缩小排到爱心下方；资料库卡片方框化；音量加减收成低调小钮。
 
 ## 构建
 

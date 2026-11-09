@@ -75,8 +75,8 @@
     margin: 0; font-size: 26px; font-weight: 700; line-height: 1.25;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
-  /* 右侧竖排：爱心在上，添加到歌单缩小一圈排在下，整体垂直居中于文字块 */
-  .side-actions { flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  /* 右侧横排：爱心与「添加到歌单」并排，两个圆钮完全同尺寸 */
+  .side-actions { flex: none; display: flex; flex-direction: row; align-items: center; gap: 8px; }
   .side-btn {
     width: 44px; height: 44px; border-radius: 50%;
     background: var(--card); border: 1px solid var(--line);
@@ -85,9 +85,7 @@
   .side-btn:disabled { opacity: .35; }
   .side-btn svg { width: 21px; height: 21px; fill: none; stroke: rgba(255,255,255,.8); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
   #like.on svg { fill: var(--red); stroke: var(--red); }
-  /* 「添加到歌单」比爱心小一号，用淡红描边点一下可点性，禁用时自动退回灰边 */
-  #addToPlaylist { width: 36px; height: 36px; }
-  #addToPlaylist svg { width: 17px; height: 17px; stroke: rgba(255,255,255,.92); }
+  /* 只留一点淡红描边区分功能，尺寸与爱心保持一致 */
   #addToPlaylist:not(:disabled) { border-color: rgba(250,45,72,.42); }
   #artist { margin: 3px 0 0; font-size: 14px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -147,7 +145,8 @@
   .tile .tilePlay svg { width: 16px; height: 16px; fill: currentColor; }
   .tile .tilePlay:active { background: var(--red); color: #fff; }
 
-  /* 页面最顶部的歌词方框：固定约 5 行，当前行高亮并自动滚到中间。
+  /* 页面最顶部的歌词方框：固定显示 3 行，每行等高，当前行高亮。
+     行高固定后 JS 可以用「行号 × 行高」精确定位，不会因为高亮字号变化而抖动；
      内部不允许手动滑（overflow hidden），手势交给外层 main 滚整页。 */
   .lyric-card {
     margin: 2px 0 18px; border-radius: 18px;
@@ -160,21 +159,28 @@
   }
   .lyric-card .cap b { color: #fff; font-weight: 600; font-size: 13px; }
   #lyricBox {
-    height: 165px; overflow: hidden; position: relative;
+    --lyric-row: 34px;
+    height: calc(var(--lyric-row) * 3);
+    overflow: hidden; position: relative;
     scrollbar-width: none; scroll-behavior: smooth;
     /* 禁止手动滑动，但手势仍能冒泡给 main 滚整页 */
     touch-action: pan-y;
-    /* 只淡出边缘十来像素，柔化硬切但不吞掉首尾整行歌词 */
-    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 7%, #000 93%, transparent 100%);
-    mask-image: linear-gradient(to bottom, transparent 0%, #000 7%, #000 93%, transparent 100%);
+    /* 只有 3 行，不再用渐隐遮罩，避免吞掉首尾两行 */
   }
   #lyricBox::-webkit-scrollbar { display: none; }
-  .lyric-line {
-    padding: 7px 8px; font-size: 13px; line-height: 1.45; text-align: center;
-    color: rgba(255,255,255,.44); transition: color .2s, font-size .2s, background .2s;
+  #lyricBox .empty {
+    height: calc(var(--lyric-row) * 3); padding: 0;
+    display: flex; align-items: center; justify-content: center;
   }
-  .lyric-line .tr { display: block; font-size: 11px; color: rgba(255,255,255,.3); }
-  .lyric-line.on { color: #fff; font-size: 16px; font-weight: 700; background: rgba(250,45,72,.1); border-radius: 10px; }
+  .lyric-line {
+    height: var(--lyric-row); line-height: var(--lyric-row);
+    padding: 0 10px; font-size: 13px; text-align: center;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: rgba(255,255,255,.44); transition: color .2s, background .2s;
+  }
+  /* 译文并排在同一行，不额外占高度，保证「固定 3 行」 */
+  .lyric-line .tr { display: inline; margin-left: 8px; font-size: 11px; color: rgba(255,255,255,.3); }
+  .lyric-line.on { color: #fff; font-size: 15px; font-weight: 700; background: rgba(250,45,72,.1); border-radius: 10px; }
   .lyric-line.on .tr { color: rgba(255,255,255,.62); }
 
   /* 添加到歌单选择面板 */
@@ -457,6 +463,10 @@
 
   var lyricLines = [];               // [{ t, text, trans }]
   var lyricActive = -1;
+  var lyricTrackId = '';             // 这份歌词属于哪首歌
+  var lyricFresh = false;            // 刚换歌词：第一次定位必须钉在第一句
+  var lastLyricTitle = '';           // 上一次 state 的「歌名|歌手」，用来识别换歌
+  var lastLyricPos = -1;             // 上一次 state 的播放位置，用来识别进度回退
 
   var library = null;                // { liked, cloud, playlists[] }
   var catalog = null;                // { top[], recommend[] }
@@ -835,13 +845,32 @@
         }
         state = data;
         stateAt = Date.now();
+        // 换歌 / 进度回退（切上一首、拖回首）时把歌词锁回第一句。
+        // 车机端换歌是先推「空歌词」再推「新歌词」，中间那几帧 state 还是上一首的
+        // positionMs（可能已经两三分钟），不锁住就会先甩到歌词中段再弹回来，看着像乱跑。
+        var titleKey = (data.title || '') + '|' + (data.artist || '');
+        var pos = data.positionMs || 0;
+        if (titleKey !== lastLyricTitle || (lastLyricPos >= 0 && pos < lastLyricPos - 1500)) {
+          lockFirstLyric();
+        }
+        lastLyricTitle = titleKey;
+        lastLyricPos = pos;
         paintNow();
         highlightLyric();
         break;
 
       case 'lyrics':
-        lyricLines = (data.lines || []).slice().sort(function (a, b) { return (a.t || 0) - (b.t || 0); });
+        var lines = (data.lines || []).slice().sort(function (a, b) { return (a.t || 0) - (b.t || 0); });
+        var hadLines = lyricLines.length > 0;
+        var tid = data.trackId || '';
+        var swapped = tid !== lyricTrackId || (!hadLines && lines.length > 0) || !lines.length;
+        lyricTrackId = tid;
+        lyricLines = lines;
         renderLyrics();
+        // 换歌 / 歌词刚异步到位：一律从第一句起步，不拿旧的 state 位置去乱定位
+        if (swapped) lockFirstLyric();
+        // 只有真正换歌/歌词才钉第一句；同一首歌补推译文之类不打断正在跟随的位置
+        lyricFresh = swapped && lyricLines.length > 0;
         highlightLyric();
         break;
 
@@ -933,6 +962,10 @@
     catalog = null;
     lyricLines = [];
     lyricActive = -1;
+    lyricTrackId = '';
+    lyricFresh = false;
+    lastLyricTitle = '';
+    lastLyricPos = -1;
     renderLyrics();
     paintLibrary();
     paintCatalog();
@@ -1002,19 +1035,20 @@
     var box = el.lyricBox;
     box.textContent = '';
     lyricActive = -1;
-    el.lyricHint.textContent = lyricLines.length ? '自动跟随' : '暂无歌词';
+    el.lyricHint.textContent = lyricLines.length ? '3 行自动跟随' : '暂无歌词';
     if (!lyricLines.length) {
       var empty = document.createElement('div');
       empty.className = 'empty';
       empty.textContent = '暂无歌词';
       box.appendChild(empty);
+      box.scrollTop = 0;
       return;
     }
     var frag = document.createDocumentFragment();
     lyricLines.forEach(function (line) {
       var d = document.createElement('div');
       d.className = 'lyric-line';
-      d.textContent = line.text || '';
+      d.appendChild(document.createTextNode(line.text || ''));
       if (line.trans) {
         var tr = document.createElement('span');
         tr.className = 'tr';
@@ -1024,6 +1058,29 @@
       frag.appendChild(d);
     });
     box.appendChild(frag);
+    // 重建 DOM 后立刻把滚动位置钉回顶部（不走 CSS smooth，避免开场动画乱跑）
+    setLyricScroll(0, true);
+  }
+
+  /** 清掉高亮并把方框拉回第一行；instant=true 时跳过平滑动画。 */
+  function lockFirstLyric() {
+    var box = el.lyricBox;
+    Array.prototype.forEach.call(box.children, function (n) { n.classList.remove('on'); });
+    lyricActive = -1;
+    setLyricScroll(0, true);
+  }
+
+  function setLyricScroll(top, instant) {
+    var box = el.lyricBox;
+    if (instant) {
+      var old = box.style.scrollBehavior;
+      box.style.scrollBehavior = 'auto';
+      box.scrollTop = top;
+      box.style.scrollBehavior = old;
+    } else {
+      // CSS 里的 scroll-behavior: smooth 负责逐行跟随
+      box.scrollTop = top;
+    }
   }
 
   function highlightLyric() {
@@ -1033,16 +1090,24 @@
     for (var i = 0; i < lyricLines.length; i++) {
       if ((lyricLines[i].t || 0) <= pos) idx = i; else break;
     }
-    if (idx === lyricActive) return;
+    // 前奏 / 还没到第一句：也钉在第一句，不显示「没有高亮行」的空框
+    if (idx < 0) idx = 0;
+    // 新歌开头 2.5 秒内、或歌词刚换好：固定第一句，等真正的 state 位置到了再跟随
+    var pinFirst = lyricFresh || pos < 2500;
+    lyricFresh = false;
+    if (pinFirst) idx = 0;
     var nodes = el.lyricBox.children;
+    if (idx === lyricActive && !pinFirst) return;
     if (lyricActive >= 0 && nodes[lyricActive]) nodes[lyricActive].classList.remove('on');
-    if (idx >= 0 && nodes[idx]) {
-      nodes[idx].classList.add('on');
-      var box = el.lyricBox;
-      // overflow:hidden 下脚本仍可设 scrollTop，CSS 的 scroll-behavior 负责平滑
-      box.scrollTop = nodes[idx].offsetTop - box.clientHeight / 2 + nodes[idx].clientHeight / 2;
-    }
+    if (nodes[idx]) nodes[idx].classList.add('on');
     lyricActive = idx;
+
+    // 固定 3 行：当前行落在中间那行（第 0 行时自然是顶部三行）。
+    // 行高从真实 DOM 量出来，CSS 改 --lyric-row 也不用同步改这里。
+    var base = nodes[0] ? nodes[0].offsetTop : 0;
+    var rowH = nodes[1] ? nodes[1].offsetTop - base : el.lyricBox.clientHeight / 3;
+    var top = pinFirst ? 0 : Math.max(0, (nodes[idx] ? nodes[idx].offsetTop : base) - base - rowH);
+    setLyricScroll(top, pinFirst);
   }
 
   // 下拉刷新：只在页面已经滚到顶、且不是拖输入框/滑杆时接管。三端共用这一份手势。
@@ -1091,8 +1156,13 @@
 
   function closeAddPanel() { el.addPanel.classList.add('hidden'); }
 
-  // 原生层（安卓 onKeyDown / iOS VolumeKeyWatcher）拦到硬件音量键后调它；dir 为 +1 / -1
-  window.carRemoteStepVolume = function (dir) { stepVolume(dir); };
+  // 原生层（安卓 onKeyDown / iOS VolumeKeyWatcher）拦到硬件音量键后调它；dir 为 +1 / -1。
+  // iOS 壳在 documentStart 注入了一个「先排队」的同名函数，页面没加载完时按下的音量键
+  // 不会丢；这里换成真实现后把队列补放一遍（安卓 / 浏览器没有注入脚本，队列为空）。
+  var stepVolumeImpl = function (dir) { stepVolume(dir); };
+  window.carRemoteStepVolume = stepVolumeImpl;
+  (window.__carRemoteVolumeQueue || []).forEach(stepVolumeImpl);
+  window.__carRemoteVolumeQueue = [];
   // 原生层从后台切回、或需要主动刷新时调用
   window.carRemoteRefresh = function () { refreshAll(true); };
 
