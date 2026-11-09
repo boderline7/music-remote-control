@@ -14,6 +14,8 @@ object Protocol {
     const val ACTION_SET_VOLUME = "setVolume"
     const val ACTION_GET_STATE = "getState"
     const val ACTION_LIKE = "like"
+    const val ACTION_GET_LYRICS = "getLyrics"
+    const val ACTION_ADD_TO_PLAYLIST = "addToPlaylist"
 
     // 资料库 / 榜单 / 搜索，返回都是 library / catalog / tracks 消息
     const val ACTION_LIBRARY = "library"

@@ -154,9 +154,11 @@
             "seek",
             "setVolume",
             "getState",
+            "getLyrics",
             "library",
             "getTracks",
-            "playTracks"
+            "playTracks",
+            "addToPlaylist"
           ]
         },
         "args": {
@@ -201,6 +203,18 @@
             "type": "integer",
             "required": false,
             "min": 0
+          }
+        },
+        "getLyrics": {},
+        "addToPlaylist": {
+          "playlistId": {
+            "type": "string",
+            "required": true
+          },
+          "trackId": {
+            "type": "string",
+            "required": false,
+            "notes": "可选；空则取当前播放歌曲 id"
           }
         }
       }
@@ -395,6 +409,42 @@
         "message": {
           "type": "string",
           "required": false
+        }
+      }
+    },
+    "lyrics": {
+      "dir": "s2c",
+      "idRequired": false,
+      "data": {
+        "ok": {
+          "type": "boolean",
+          "required": true
+        },
+        "trackId": {
+          "type": "string",
+          "required": true,
+          "notes": "当前歌曲 id 字符串；无歌时空串"
+        },
+        "lines": {
+          "type": "array",
+          "required": true,
+          "notes": "无歌词时为空数组；按时间升序",
+          "items": {
+            "t": {
+              "type": "integer",
+              "required": true,
+              "notes": "毫秒时间戳"
+            },
+            "text": {
+              "type": "string",
+              "required": true
+            },
+            "trans": {
+              "type": "string",
+              "required": true,
+              "notes": "翻译；无翻译时为空字符串"
+            }
+          }
         }
       }
     }

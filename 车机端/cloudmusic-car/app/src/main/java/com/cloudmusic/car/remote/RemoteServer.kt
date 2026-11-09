@@ -10,6 +10,7 @@ import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.Inet4Address
 import java.net.NetworkInterface
@@ -369,6 +370,13 @@ object RemoteServer : WsServer.Listener {
             }
         }
         "getState" -> { pushState("reply"); 0 }
+        // 立即广播一次当前歌词；同步执行，ack 由 handleCommand 统一回
+        "getLyrics" -> {
+            // 记录当前指纹，避免紧接着的 tick 又重复广播同一份歌词
+            lastLyricsKey = lyricsFingerprint()
+            broadcastLyrics()
+            0
+        }
         "like" -> if (PlayerBridge.toggleLike()) 0 else RemoteConfig.ERR_NOT_AVAILABLE
         else -> RemoteConfig.ERR_UNSUPPORTED_ACTION
     }
@@ -433,6 +441,32 @@ object RemoteServer : WsServer.Listener {
                     if (ok) main.post { pushState("event") }
                 }
             }
+
+            "addToPlaylist" -> {
+                val playlistId = args.optString("playlistId")
+                if (playlistId.isEmpty()) {
+                    client.conn.sendText(errorMessage(id, RemoteConfig.ERR_INVALID_MESSAGE, "playlistId required"))
+                    return
+                }
+                // trackId 可选：空则交给 RemoteLibrary 取当前播放歌曲 id
+                val trackId = args.optString("trackId").takeIf { it.isNotEmpty() }?.toLongOrNull()
+                RemoteLibrary.addTrackToPlaylist(playlistId, trackId) { ok, message ->
+                    client.conn.sendText(
+                        envelope(
+                            "ack", id,
+                            JSONObject()
+                                .put("ok", ok)
+                                .put("action", action)
+                                .apply {
+                                    if (!ok) {
+                                        put("error", RemoteConfig.ERR_ACTION_FAILED)
+                                        put("message", message)
+                                    }
+                                },
+                        ),
+                    )
+                }
+            }
         }
     }
 
@@ -443,6 +477,8 @@ object RemoteServer : WsServer.Listener {
         if (clients.none { it.authed }) return
         val run = Runnable {
             val snapshot = runCatching { PlayerBridge.snapshot() }.getOrNull() ?: return@Runnable
+            // 歌词变化在 1Hz tick 里兜底检测一次：换歌 / 异步加载完成 / 清空都会触发广播
+            maybePushLyrics()
             val volume = PlayerBridge.volume()
             val volumeMax = PlayerBridge.volumeMax()
             // 暂停且内容没变时，tick 不必重复推同样的东西
@@ -468,6 +504,55 @@ object RemoteServer : WsServer.Listener {
             clients.filter { it.authed }.forEach { it.conn.sendText(message, OutQueue.Kind.STATE) }
         }
         if (Looper.myLooper() == Looper.getMainLooper()) run.run() else main.post(run)
+    }
+
+    // ---------- 歌词推送 ----------
+
+    /** 上次广播的歌词指纹，用来在 1Hz tick 里避免每秒重复发同一份歌词。 */
+    private var lastLyricsKey = ""
+
+    /**
+     * 歌词内容指纹：当前歌曲 id + 行数 + 首行文字。
+     * 换歌、异步加载完成、清空都会改变它，足以触发一次广播，又足够轻量。
+     */
+    private fun lyricsFingerprint(): String {
+        val lines = PlayerBridge.lyrics()
+        val trackId = PlayerBridge.currentTrackId()?.toString().orEmpty()
+        return "$trackId|${lines.size}|${lines.firstOrNull()?.text.orEmpty()}"
+    }
+
+    /** 主线程构造 lyrics.data：无歌时 trackId 空串；无歌词时 lines=[]；ok 恒为 true。 */
+    private fun lyricsMessageData(): JSONObject {
+        val lines = PlayerBridge.lyrics()
+        val array = JSONArray()
+        lines.forEach { line ->
+            array.put(
+                JSONObject()
+                    .put("t", line.timeMs.toInt())
+                    .put("text", line.text)
+                    .put("trans", line.translation.orEmpty()),
+            )
+        }
+        return JSONObject()
+            .put("ok", true)
+            .put("trackId", PlayerBridge.currentTrackId()?.toString().orEmpty())
+            .put("lines", array)
+    }
+
+    /** 主线程：立即向所有 authed 客户端广播一条 lyrics 消息（歌词较大，走 BULK）。 */
+    private fun broadcastLyrics() {
+        if (clients.none { it.authed }) return
+        val message = envelope("lyrics", null, lyricsMessageData())
+        clients.filter { it.authed }.forEach { it.conn.sendText(message, OutQueue.Kind.BULK) }
+    }
+
+    /** 主线程：歌词内容变化时才广播一次，避免 1Hz tick 每秒重复广播。 */
+    private fun maybePushLyrics() {
+        if (clients.none { it.authed }) return
+        val key = lyricsFingerprint()
+        if (key == lastLyricsKey) return
+        lastLyricsKey = key
+        broadcastLyrics()
     }
 
     // ---------- 内部 ----------
@@ -717,5 +802,5 @@ object RemoteServer : WsServer.Listener {
     }
 
     /** 需要发网络请求、走异步 ack 的指令。 */
-    private val LIBRARY_ACTIONS = setOf("library", "catalog", "search", "getTracks", "playTracks")
+    private val LIBRARY_ACTIONS = setOf("library", "catalog", "search", "getTracks", "playTracks", "addToPlaylist")
 }

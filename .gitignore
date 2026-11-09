@@ -36,8 +36,13 @@ Thumbs.db
 .gh_*.txt
 
 # ---------- iOS 云构建产物（不入库） ----------
+# 注意：ios/ 下的源码是要进仓库的，这里只忽略构建产物
 *.ipa
 *.xcarchive/
 ios/out/
 ios/CarRemote.xcodeproj/
 ios/DerivedData/
+
+# ---------- 旧联调暂存（2026-11-02，不入库） ----------
+# 从 D:\apk_push 归位：1.2.0 时代的两个 APK + 36 张 UI 截图，仅本地留档
+/apk_push/

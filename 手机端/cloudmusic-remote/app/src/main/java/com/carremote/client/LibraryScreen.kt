@@ -200,11 +200,19 @@ private fun LibHome(lib: RemoteClient.LibData, onOpen: (RemoteClient.LibEntry) -
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            lib.liked?.let {
-                BigCard(it.name, it.count, Icons.Rounded.Favorite, Color(0xFFE0334B), Modifier.weight(1f)) { onOpen(it) }
+            lib.liked?.let { entry ->
+                BigCard(
+                    entry.name, entry.count, Icons.Rounded.Favorite, Color(0xFFE0334B), Modifier.weight(1f),
+                    onClick = { onOpen(entry) },
+                    onPlay = { RemoteClient.playFromLibrary(entry.id, 0) },
+                )
             }
-            lib.cloud?.let {
-                BigCard(it.name, it.count, Icons.Rounded.Cloud, Color(0xFF2F6FEB), Modifier.weight(1f)) { onOpen(it) }
+            lib.cloud?.let { entry ->
+                BigCard(
+                    entry.name, entry.count, Icons.Rounded.Cloud, Color(0xFF2F6FEB), Modifier.weight(1f),
+                    onClick = { onOpen(entry) },
+                    onPlay = { RemoteClient.playFromLibrary(entry.id, 0) },
+                )
             }
         }
 
@@ -422,6 +430,7 @@ private fun BigCard(
     color: Color,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
+    onPlay: () -> Unit,
 ) {
     Column(
         modifier
@@ -429,13 +438,26 @@ private fun BigCard(
             .clickable(onClick = onClick)
             .padding(16.dp),
     ) {
-        Box(
-            Modifier
-                .size(32.dp)
-                .background(Color.White.copy(alpha = 0.22f), CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(icon, null, tint = Color.White, modifier = Modifier.size(18.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Box(
+                Modifier
+                    .size(32.dp)
+                    .background(Color.White.copy(alpha = 0.22f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(icon, null, tint = Color.White, modifier = Modifier.size(18.dp))
+            }
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = onPlay, modifier = Modifier.size(36.dp)) {
+                Box(
+                    Modifier
+                        .size(32.dp)
+                        .background(Color.White.copy(alpha = 0.22f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Rounded.PlayArrow, "顺序播放", tint = Color.White, modifier = Modifier.size(20.dp))
+                }
+            }
         }
         Spacer(Modifier.height(22.dp))
         Text(

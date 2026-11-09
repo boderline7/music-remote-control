@@ -3,6 +3,7 @@ package com.cloudmusic.car.remote
 import android.content.Context
 import android.media.AudioManager
 import android.os.SystemClock
+import com.cloudmusic.car.api.LyricLine
 import com.cloudmusic.car.data.AccountStore
 import com.cloudmusic.car.player.PlayerHub
 
@@ -51,6 +52,14 @@ object PlayerBridge {
             liked = track != null && track.id in AccountStore.likedIds.value,
         )
     }
+
+    // ---------- 当前歌曲 / 歌词（遥控协议用，只读）----------
+
+    /** 当前播放歌曲 id；无歌时 null。PlayerHub 访问仍只在本类内。 */
+    fun currentTrackId(): Long? = PlayerHub.current.value?.id
+
+    /** 当前歌词；换歌加载中 / 无歌词时为空列表。 */
+    fun lyrics(): List<LyricLine> = PlayerHub.lyrics.value
 
     // ---------- 红心 ----------
     // 和车机上点那颗心是同一套逻辑（AccountStore 先乐观更新、失败回滚），手机只是多一个入口。

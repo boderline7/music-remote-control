@@ -85,13 +85,77 @@
 
   .volume { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
   .round {
-    flex: none; width: 42px; height: 42px; border-radius: 50%; background: var(--card);
-    font-size: 22px; line-height: 1; color: rgba(255,255,255,.85);
+    flex: none; width: 56px; height: 56px; border-radius: 50%;
+    background: rgba(250,45,72,.16); border: 2px solid var(--red);
+    font-size: 30px; line-height: 1; color: #fff; font-weight: 600;
     display: flex; align-items: center; justify-content: center;
   }
+  .round:active { background: var(--red); }
   .volume input[type=range] { flex: 1; }
   #volVal { width: 24px; flex: none; text-align: right; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
   .hidden { display: none !important; }
+
+  /* 资料库 tile 上的整列播放钮 */
+  .tile { position: relative; }
+  .tile .c { padding-right: 42px; }
+  .tile .tilePlay {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    width: 38px; height: 38px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--red); color: #fff;
+  }
+  .tile .tilePlay svg { width: 18px; height: 18px; fill: currentColor; }
+  .tile .tilePlay:active { background: #fff; color: var(--red); }
+
+  /* 添加到歌单 */
+  .wide-btn {
+    width: 100%; margin-top: 18px; padding: 14px; border-radius: 14px;
+    background: var(--card); color: #fff; font-size: 15px; font-weight: 600;
+    border: 1px solid rgba(250,45,72,.55);
+  }
+  .wide-btn:active { background: var(--red); }
+  .wide-btn:disabled { opacity: .4; }
+
+  /* 歌单 / 歌词 双页 */
+  .pagetabs { display: flex; gap: 8px; margin-top: 22px; }
+  .pagetab {
+    flex: 1; padding: 11px; border-radius: 12px;
+    background: var(--card); color: var(--dim); font-size: 14px; font-weight: 600;
+  }
+  .pagetab.on { background: var(--red); color: #fff; }
+  #pages { margin-top: 4px; }
+  #pageLyrics { min-height: 320px; }
+  #lyricBox {
+    max-height: 60vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain; padding: 18px 6px;
+  }
+  .lyric-line {
+    padding: 9px 4px; font-size: 14px; line-height: 1.5; text-align: center;
+    color: var(--faint); transition: color .18s, font-size .18s;
+  }
+  .lyric-line .tr { display: block; font-size: 12px; color: var(--faint); }
+  .lyric-line.on { color: #fff; font-size: 17px; font-weight: 700; }
+
+  /* 添加到歌单选择面板 */
+  .overlay {
+    position: fixed; inset: 0; z-index: 15; background: rgba(0,0,0,.62);
+    display: flex; align-items: flex-end;
+  }
+  .overlay .panel {
+    width: 100%; max-height: 70vh; overflow-y: auto;
+    background: #16161a; border-radius: 20px 20px 0 0;
+    padding: 18px 16px calc(24px + env(safe-area-inset-bottom));
+  }
+  .overlay .panel-head { display: flex; align-items: center; margin-bottom: 14px; }
+  .overlay .panel-head h3 { flex: 1; margin: 0; font-size: 17px; }
+  .overlay .panel-head button { color: var(--dim); font-size: 14px; }
+  .overlay .plrow {
+    width: 100%; display: flex; align-items: center; gap: 10px;
+    padding: 14px 4px; border-bottom: 1px solid var(--line);
+    text-align: left; color: #fff;
+  }
+  .overlay .plrow .n { flex: 1; font-size: 15px; }
+  .overlay .plrow .c { font-size: 12px; color: var(--faint); }
 
   /* ---------- 搜索 ---------- */
   .search { display: flex; align-items: center; gap: 8px; margin-top: 22px; }
@@ -216,7 +280,15 @@
       <button class="round" id="volUp" aria-label="音量加">+</button>
     </div>
 
-    <div class="search">
+    <button class="wide-btn" id="addToPlaylist" disabled>＋ 添加到歌单</button>
+
+    <div class="pagetabs">
+      <button class="pagetab on" id="tabList">歌单</button>
+      <button class="pagetab" id="tabLyrics">歌词</button>
+    </div>
+    <div id="pages">
+      <div id="pageList">
+      <div class="search">
       <div class="field">
         <input id="q" type="search" placeholder="搜索歌曲、歌手" enterkeyhint="search" autocomplete="off" autocorrect="off" spellcheck="false">
         <button id="go" aria-label="搜索">
@@ -231,8 +303,8 @@
       <button id="reload">刷新</button>
     </div>
     <div class="tiles">
-      <button class="tile" id="tileLiked"><span class="n" id="likedName">我喜欢的音乐</span><span class="c" id="likedCount">—</span></button>
-      <button class="tile" id="tileCloud"><span class="n" id="cloudName">音乐云盘</span><span class="c" id="cloudCount">—</span></button>
+      <button class="tile" id="tileLiked"><span class="n" id="likedName">我喜欢的音乐</span><span class="c" id="likedCount">—</span><span class="pl tilePlay" id="likedPlay" role="button" aria-label="顺序播放我喜欢的音乐"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span></button>
+      <button class="tile" id="tileCloud"><span class="n" id="cloudName">音乐云盘</span><span class="c" id="cloudCount">—</span><span class="pl tilePlay" id="cloudPlay" role="button" aria-label="顺序播放音乐云盘"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span></button>
     </div>
 
     <div class="sec"><h2>为你推荐</h2><span class="hint" id="quickHint"></span></div>
@@ -258,8 +330,18 @@
     <div class="sec"><h2>推荐歌单</h2><span class="hint" id="recHint"></span></div>
     <div class="rows" id="recs"></div>
 
-    <footer>地址固定为 <b id="host">—</b></footer>
+      <footer>地址固定为 <b id="host">—</b></footer>
+      </div>
+      <div id="pageLyrics" class="hidden"><div id="lyricBox"></div></div>
+    </div>
   </main>
+
+  <div class="overlay hidden" id="addPanel">
+    <div class="panel">
+      <div class="panel-head"><h3>添加到歌单</h3><button id="addClose">关闭</button></div>
+      <div id="addList"></div>
+    </div>
+  </div>
 
   <div class="sheet" id="sheet">
     <div class="sheet-head">
@@ -291,7 +373,9 @@
    'volumeRow', 'vol', 'volVal', 'volUp', 'volDown', 'q', 'go', 'reload', 'likedName', 'likedCount',
    'cloudName', 'cloudCount', 'playlists', 'tops', 'recs', 'libHint', 'plHint', 'topHint', 'recHint',
    'sheet', 'sheetTitle', 'sheetSub', 'sheetBody', 'back', 'toast', 'host', 'tileLiked', 'tileCloud', 'scroll',
-   'dailyRow', 'hbRow', 'quickHint', 'dailyPlay', 'hbPlay'
+   'dailyRow', 'hbRow', 'quickHint', 'dailyPlay', 'hbPlay',
+   'tabList', 'tabLyrics', 'pages', 'pageList', 'pageLyrics', 'lyricBox',
+   'addToPlaylist', 'addPanel', 'addList', 'addClose', 'likedPlay', 'cloudPlay'
   ].forEach(function (id) { el[id] = document.getElementById(id); });
 
   var ws = null;
@@ -305,6 +389,10 @@
   var reconnectTimer = null;
   var connectFails = 0;
   var toastTimer = null;
+
+  var lyricLines = [];               // [{ t, text, trans }]
+  var lyricActive = -1;
+  var currentPage = 'list';           // 默认显示歌单
 
   var library = null;                // { liked, cloud, playlists[] }
   var catalog = null;                // { top[], recommend[] }
@@ -409,6 +497,7 @@
   // ---------- 渲染：正在播放 ----------
 
   function paintNow() {
+    el.addToPlaylist.disabled = !state.title;
     el.title.textContent = state.title || '未在播放';
     el.artist.textContent = state.artist || '—';
     el.playIcon.innerHTML = state.playing ? ICON_PAUSE : ICON_PLAY;
@@ -643,6 +732,7 @@
           localStorage.setItem(K_TOKEN, data.token || '');
           setStatus('已连接 · ' + (data.carName || '车机'), 'on');
           command('getState');
+          command('getLyrics');
           loadAll();
         } else {
           setStatus(data.message || '配对失败', 'warn');
@@ -653,6 +743,7 @@
         if (data.ok) {
           setStatus('已连接 · ' + (data.carName || '车机'), 'on');
           command('getState');
+          command('getLyrics');
           loadAll();
         } else {
           localStorage.removeItem(K_TOKEN);
@@ -674,6 +765,13 @@
         state = data;
         stateAt = Date.now();
         paintNow();
+        highlightLyric();
+        break;
+
+      case 'lyrics':
+        lyricLines = (data.lines || []).slice().sort(function (a, b) { return (a.t || 0) - (b.t || 0); });
+        renderLyrics();
+        highlightLyric();
         break;
 
       case 'library':
@@ -718,6 +816,7 @@
 
       case 'ack':
         if (data.ok === false) toast('指令失败：' + (data.message || data.error || ''));
+        else if (data.action === 'addToPlaylist') { closeAddPanel(); toast('已添加到歌单'); }
         break;
 
       case 'error':
@@ -798,6 +897,113 @@
     }
   });
 
+  // ---------- 歌单 / 歌词 双页 ----------
+
+  function setPage(name) {
+    currentPage = name === 'lyrics' ? 'lyrics' : 'list';
+    el.pageList.classList.toggle('hidden', currentPage !== 'list');
+    el.pageLyrics.classList.toggle('hidden', currentPage !== 'lyrics');
+    el.tabList.classList.toggle('on', currentPage === 'list');
+    el.tabLyrics.classList.toggle('on', currentPage === 'lyrics');
+    if (currentPage === 'lyrics') highlightLyric();
+  }
+
+  function renderLyrics() {
+    var box = el.lyricBox;
+    box.textContent = '';
+    lyricActive = -1;
+    if (!lyricLines.length) {
+      var empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = '暂无歌词';
+      box.appendChild(empty);
+      return;
+    }
+    var frag = document.createDocumentFragment();
+    lyricLines.forEach(function (line) {
+      var d = document.createElement('div');
+      d.className = 'lyric-line';
+      d.textContent = line.text || '';
+      if (line.trans) {
+        var tr = document.createElement('span');
+        tr.className = 'tr';
+        tr.textContent = line.trans;
+        d.appendChild(tr);
+      }
+      frag.appendChild(d);
+    });
+    box.appendChild(frag);
+  }
+
+  function highlightLyric() {
+    if (!lyricLines.length) return;
+    var pos = (state.positionMs || 0) + (state.playing ? Math.min(1500, Date.now() - stateAt) : 0);
+    var idx = -1;
+    for (var i = 0; i < lyricLines.length; i++) {
+      if ((lyricLines[i].t || 0) <= pos) idx = i; else break;
+    }
+    if (idx === lyricActive) return;
+    var nodes = el.lyricBox.children;
+    if (lyricActive >= 0 && nodes[lyricActive]) nodes[lyricActive].classList.remove('on');
+    if (idx >= 0 && nodes[idx]) {
+      nodes[idx].classList.add('on');
+      var box = el.lyricBox;
+      var top = nodes[idx].offsetTop - box.clientHeight / 2 + nodes[idx].clientHeight / 2;
+      if (box.scrollTo) box.scrollTo({ top: top, behavior: 'smooth' });
+      else box.scrollTop = top;
+    }
+    lyricActive = idx;
+  }
+
+  // 左滑切到另一页，右滑同样可切；竖向滚动和拖动进度条时不接管。
+  (function bindSwipe() {
+    var x0 = 0, y0 = 0, tracking = false;
+    el.pages.addEventListener('touchstart', function (e) {
+      var tag = (e.target.tagName || '').toLowerCase();
+      tracking = !(e.touches.length !== 1 || tag === 'input' || tag === 'textarea');
+      if (tracking) { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }
+    }, { passive: true });
+    el.pages.addEventListener('touchend', function (e) {
+      if (!tracking || !e.changedTouches.length) return;
+      tracking = false;
+      var dx = e.changedTouches[0].clientX - x0;
+      var dy = e.changedTouches[0].clientY - y0;
+      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      setPage(currentPage === 'list' ? 'lyrics' : 'list');
+    }, { passive: true });
+  })();
+
+  // ---------- 添加到歌单 ----------
+
+  function openAddPanel() {
+    var items = (library && library.playlists) || [];
+    el.addList.textContent = '';
+    if (!items.length) {
+      var empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = '还没有自建歌单';
+      el.addList.appendChild(empty);
+    } else {
+      items.forEach(function (p) {
+        var b = document.createElement('button');
+        b.className = 'plrow';
+        var n = document.createElement('span'); n.className = 'n'; n.textContent = p.name || '未命名歌单';
+        var c = document.createElement('span'); c.className = 'c'; c.textContent = (p.count || 0) + ' 首';
+        b.appendChild(n); b.appendChild(c);
+        b.addEventListener('click', function () {
+          command('addToPlaylist', { playlistId: String(p.id) });
+        });
+        el.addList.appendChild(b);
+      });
+    }
+    el.addPanel.classList.remove('hidden');
+  }
+
+  function closeAddPanel() { el.addPanel.classList.add('hidden'); }
+
+  // iOS 原生层拦到硬件音量键后调它；dir 为 +1 / -1
+  window.carRemoteStepVolume = function (dir) { stepVolume(dir); };
+
   // ---------- 操作 ----------
 
   el.play.addEventListener('click', function () {
@@ -861,6 +1067,13 @@
     }
   });
 
+  el.tabList.addEventListener('click', function () { setPage('list'); });
+  el.tabLyrics.addEventListener('click', function () { setPage('lyrics'); });
+  el.addToPlaylist.addEventListener('click', openAddPanel);
+  el.addClose.addEventListener('click', closeAddPanel);
+  el.addPanel.addEventListener('click', function (e) { if (e.target === el.addPanel) closeAddPanel(); });
+  el.likedPlay.addEventListener('click', function (e) { e.stopPropagation(); playList('liked', '我喜欢的音乐'); });
+  el.cloudPlay.addEventListener('click', function (e) { e.stopPropagation(); playList('cloud', '音乐云盘'); });
   el.reload.addEventListener('click', function () { loadAll(); });
   el.tileLiked.addEventListener('click', function () { openList('liked', '我喜欢的音乐'); });
   el.tileCloud.addEventListener('click', function () { openList('cloud', '音乐云盘'); });

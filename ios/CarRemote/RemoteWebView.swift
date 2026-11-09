@@ -1,6 +1,22 @@
 import SwiftUI
 import WebKit
 
+/// 原生层 → 网页的单向桥。iOS 不给硬件音量键事件，WKWebView 也收不到，
+/// 所以由 VolumeKeyWatcher 拦到按键后调这里，再交给页面的 stepVolume。
+enum WebViewBridge {
+    static weak var webView: WKWebView?
+
+    static func stepVolume(_ dir: Int) {
+        guard let webView else { return }
+        let js = "window.carRemoteStepVolume(\(dir))"
+        if Thread.isMainThread {
+            webView.evaluateJavaScript(js, completionHandler: nil)
+        } else {
+            DispatchQueue.main.async { webView.evaluateJavaScript(js, completionHandler: nil) }
+        }
+    }
+}
+
 /// 直接加载车机端的 remote.html，WebSocket 由页面自己按 location.host 连到同一个 IP:18765。
 /// 这里不做协议翻译、不注入 JS：网页端有什么功能，App 里就有什么功能。
 struct RemoteWebView: UIViewRepresentable {
@@ -27,6 +43,7 @@ struct RemoteWebView: UIViewRepresentable {
         webView.scrollView.backgroundColor = webView.backgroundColor
         webView.scrollView.bounces = false
         webView.scrollView.contentInsetAdjustmentBehavior = .never
+        WebViewBridge.webView = webView
         return webView
     }
 

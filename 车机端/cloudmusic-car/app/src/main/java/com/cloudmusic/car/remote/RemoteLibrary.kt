@@ -358,6 +358,36 @@ object RemoteLibrary {
         }
     }
 
+    // ---------- 收藏到自建歌单 ----------
+
+    /**
+     * 把一首歌收藏到自建歌单。[trackId] 为空时取当前播放歌曲（经 [PlayerBridge] 拿，不直接碰 PlayerHub）。
+     * 走 IO 线程；成功后让资料库相关缓存失效，下次拉库能拿到新的歌曲数。
+     */
+    fun addTrackToPlaylist(playlistId: String, trackId: Long?, done: (Boolean, String) -> Unit) {
+        scope.launch {
+            runCatching {
+                val pid = playlistId.toLongOrNull() ?: error("歌单 id 无效：$playlistId")
+                val tid = trackId ?: PlayerBridge.currentTrackId() ?: error("当前没有播放的歌曲")
+                NeteaseApi.addTrackToPlaylist(pid, tid)
+                invalidateLibraryCache(playlistId)
+            }.onSuccess { done(true, "") }
+                .onFailure {
+                    Log.w(TAG, "addTrackToPlaylist($playlistId,$trackId) failed", it)
+                    done(false, it.message ?: "收藏失败")
+                }
+        }
+    }
+
+    /** 让资料库首页与该歌单的列表缓存失效：下次请求重新拉，看到新的歌曲数和新增歌曲。 */
+    private fun invalidateLibraryCache(playlistId: String) {
+        synchronized(cacheLock) {
+            listOf("json:library", "list:$playlistId").forEach { key ->
+                cache.remove(key)?.let { cachedBytes -= it.weight }
+            }
+        }
+    }
+
     // ---------- 内部 ----------
 
     private suspend fun load(id: String): List<Track> = when {

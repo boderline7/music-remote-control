@@ -139,6 +139,14 @@ object NeteaseApi {
         return Track.parseList(resp.optJSONArray("songs"), resp.optJSONArray("privileges"))
     }
 
+    /** 收藏歌曲到自建歌单。op=add、pid=歌单 id、tracks=[歌曲 id]；业务码非 200 由 checked() 抛 ApiException。 */
+    suspend fun addTrackToPlaylist(pid: Long, tid: Long) {
+        client.weapi(
+            "/playlist/tracks",
+            json("op" to "add", "pid" to pid, "tracks" to "[$tid]"),
+        ).checked()
+    }
+
     // ---------- 播放 ----------
 
     class SongUrl(val url: String?, val isTrial: Boolean)

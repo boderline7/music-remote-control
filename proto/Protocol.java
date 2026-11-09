@@ -35,11 +35,13 @@ public final class Protocol {
     public static final String TYPE_ERROR = "error";
     public static final String TYPE_LIBRARY = "library";
     public static final String TYPE_TRACKS = "tracks";
+    public static final String TYPE_LYRICS = "lyrics";
 
     // 资料库动作（异步 ack）
     public static final String ACT_LIBRARY = "library";
     public static final String ACT_GET_TRACKS = "getTracks";
     public static final String ACT_PLAY_TRACKS = "playTracks";
+    public static final String ACT_ADD_TO_PLAYLIST = "addToPlaylist";
 
     // ---- 指令动作 ----
     public static final String ACTION_PLAY = "play";
@@ -49,6 +51,7 @@ public final class Protocol {
     public static final String ACTION_SEEK = "seek";
     public static final String ACTION_SET_VOLUME = "setVolume";
     public static final String ACTION_GET_STATE = "getState";
+    public static final String ACTION_GET_LYRICS = "getLyrics";
 
     // ---- 状态推送原因 ----
     public static final String REASON_TICK = "tick";

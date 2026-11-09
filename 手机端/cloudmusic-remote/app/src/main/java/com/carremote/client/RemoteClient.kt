@@ -67,6 +67,12 @@ object RemoteClient {
     private val _now = MutableStateFlow(Now())
     val now: StateFlow<Now> = _now.asStateFlow()
 
+    /** 车机下发的歌词行；t 为毫秒，trans 是翻译（可空）。 */
+    data class LyricLine(val t: Long, val text: String, val trans: String)
+
+    private val _lyrics = MutableStateFlow<List<LyricLine>>(emptyList())
+    val lyrics: StateFlow<List<LyricLine>> = _lyrics.asStateFlow()
+
     private val _hint = MutableStateFlow("")
     val hint: StateFlow<String> = _hint.asStateFlow()
 
@@ -345,6 +351,17 @@ object RemoteClient {
         command(Protocol.ACTION_SET_VOLUME, JSONObject().put("volume", volume))
     }
 
+    fun requestLyrics() {
+        command(Protocol.ACTION_GET_LYRICS)
+    }
+
+    /** 把当前播放的歌（或指定 trackId）加入某个自建歌单。 */
+    fun addToPlaylist(playlistId: String, trackId: String? = null) {
+        val args = JSONObject().put("playlistId", playlistId)
+        if (!trackId.isNullOrEmpty()) args.put("trackId", trackId)
+        command(Protocol.ACTION_ADD_TO_PLAYLIST, args)
+    }
+
     // ---------- 内部 ----------
 
     private fun deviceName(): String = runCatching { android.os.Build.MODEL }.getOrDefault("手机")
@@ -504,7 +521,7 @@ object RemoteClient {
             "ack" -> {
                 val ok = data.optBoolean("ok", true)
                 _hint.value = if (ok) {
-                    ""
+                    if (data.optString("action") == Protocol.ACTION_ADD_TO_PLAYLIST) "已添加到歌单" else ""
                 } else {
                     val code = data.optInt("error")
                     "指令失败：${data.optString("message", "错误 $code")}"
@@ -528,6 +545,16 @@ object RemoteClient {
             }
 
             "pong" -> Unit
+
+            "lyrics" -> {
+                val arr = data.optJSONArray("lines") ?: org.json.JSONArray()
+                val lines = ArrayList<LyricLine>(arr.length())
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    lines.add(LyricLine(o.optLong("t"), o.optString("text"), o.optString("trans")))
+                }
+                _lyrics.value = lines
+            }
 
             "library" -> {
                 if (data.optBoolean("ok")) {
@@ -629,6 +656,7 @@ object RemoteClient {
         dropCount = 0
         retryDelayMs = 1_000L
         command(Protocol.ACTION_GET_STATE)
+        requestLyrics()
         if (_state.value is Conn.Ready) {
             // 重连成功：已经在面板上了，直接把提示恢复成干净状态
             _hint.value = ""

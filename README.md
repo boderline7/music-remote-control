@@ -8,9 +8,12 @@
 
 | 文件 | 说明 |
 |---|---|
-| `cloudmusic-car-v2.2.6-遥控-debug.apk` | 车机端（播放器 + 遥控模块），versionCode 37 |
-| `cloudmusic-car-v2.2.3-汽水包-debug.apk` | 占位包，7.8 KB，只为让车机助手认出「汽水音乐车机版」，见 [docs/08-占位包.md](./docs/08-占位包.md) |
-| `车机遥控-v1.8.7.apk` | 手机端遥控（可选，网页也能用），versionCode 16 |
+| `cloudmusic-car-v2.2.9-遥控-debug.apk` | 车机端（播放器 + 遥控模块），versionCode 40 |
+| `占位包.apk` | 占位包，7.8 KB，只为让车机助手认出「汽水音乐车机版」 |
+| `车机遥控-v1.8.8.apk` | 手机端遥控（可选，网页也能用），versionCode 17 |
+| `CarRemote-unsigned.ipa` | iOS 遥控客户端 1.1.0（未签名），GitHub Actions 云构建，见 [ios/README.md](./ios/README.md) |
+
+另外 `dist/` 里还留着 v2.2.2 的车机端 APK，对应 GitHub 上的备份版本（备案），便于回退。
 
 都是本地构建产物，`dist/` 不入库。现成的安装包见 [Releases](https://github.com/boderline7/music-remote-control/releases)，装哪端看你的场景。
 
@@ -33,7 +36,8 @@ cd 手机端/cloudmusic-remote && ./gradlew assembleDebug
 车机端/cloudmusic-car/     播放器工程，遥控模块在 com.cloudmusic.car.remote
 手机端/cloudmusic-remote/  遥控 APK（Kotlin + Compose）
 proto/                     协议定义与 Java / Python 实现
-docs/                      协议全文、源码勘察、设计与构建说明
+docs/                      协议全文、源码勘察、设计与构建说明（本地留档，不入库）
+ios/                       iOS 遥控客户端源码与云构建配置
 _工具/                      env.sh、联调脚本、自检脚本
 ```
 

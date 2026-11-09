@@ -2,10 +2,12 @@ package com.carremote.client
 
 import android.content.Context
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,6 +36,7 @@ import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Speaker
 import androidx.compose.material.icons.rounded.Wifi
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -62,6 +65,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -69,12 +74,47 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
+/**
+ * 音量步进：界面按钮和硬件音量键共用。
+ * 连按硬件键时车机的 state 还没推回来，所以用 1.2 秒内的乐观值当基准，
+ * 避免连按三下其实只加了 1 格。
+ */
+object VolumeSteps {
+    private var optimistic: Int? = null
+    private var until = 0L
+
+    fun nudge(dir: Int): Boolean {
+        val now = RemoteClient.now.value
+        val max = now.volumeMax
+        if (max <= 0 || now.volume < 0) return false
+        val base = optimistic?.takeIf { System.currentTimeMillis() < until } ?: now.volume
+        val step = (max / 15f).roundToInt().coerceAtLeast(1)
+        val next = (base + dir * step).coerceIn(0, max)
+        if (next == base) return false
+        optimistic = next
+        until = System.currentTimeMillis() + 1200
+        RemoteClient.setVolume(next)
+        return true
+    }
+}
+
 internal val Bg = Color(0xFF0B0B0C)
 internal val Card = Color(0xFF1C1C1E)
 internal val Accent = Color(0xFFFA2D48)
 internal val Secondary = Color(0x99EBEBF5)
 
 class MainActivity : ComponentActivity() {
+    /** 物理音量键改成调车机音量，不再调手机自身音量；未连上车机时交还系统。 */
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            if (RemoteClient.state.value is RemoteClient.Conn.Ready) {
+                val dir = if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) 1 else -1
+                if (VolumeSteps.nudge(dir)) return true
+            }
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Prefs.init(this)
@@ -318,6 +358,8 @@ private fun ReadyPanel(carName: String, hint: String) {
     val now by RemoteClient.now.collectAsState()
     var dragValue by remember { mutableFloatStateOf(-1f) }
     var volumeValue by remember { mutableFloatStateOf(-1f) }
+    var showAdd by remember { mutableStateOf(false) }
+    var page by remember { mutableStateOf("list") }
     val scope = rememberCoroutineScope()
 
     // 断线重连期间面板不切走，只在角标上变个颜色。这样连接抖一下用户几乎无感，
@@ -476,21 +518,123 @@ private fun ReadyPanel(carName: String, hint: String) {
         }
     }
 
+    Button(
+        onClick = { showAdd = true },
+        enabled = now.title.isNotEmpty(),
+        colors = ButtonDefaults.buttonColors(containerColor = Card, contentColor = Color.White),
+        modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+    ) { Text("＋ 添加到歌单") }
+
+    if (showAdd) {
+        val lib by RemoteClient.library.collectAsState()
+        AlertDialog(
+            onDismissRequest = { showAdd = false },
+            title = { Text("添加到歌单") },
+            text = {
+                Column {
+                    if (lib.playlists.isEmpty()) {
+                        Text("还没有自建歌单", color = Secondary, fontSize = 14.sp)
+                    } else {
+                        lib.playlists.forEach { p ->
+                            TextButton(onClick = {
+                                RemoteClient.addToPlaylist(p.id)
+                                showAdd = false
+                            }) { Text(p.name, color = Color.White) }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showAdd = false }) { Text("关闭") } },
+        )
+    }
+
     if (hint.isNotEmpty()) {
         Spacer(Modifier.height(12.dp))
         Text(hint, color = Color(0xFFFF9F0A), fontSize = 13.sp)
     }
 
-    // 音量条之后一路往下排：搜索 → 资料库（喜欢 / 云盘 / 自建歌单）→ 排行榜 / 推荐
-    Spacer(Modifier.height(26.dp))
-    Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x1FEBEBF5)))
+    // 歌单 / 歌词 双页：默认歌单，左右滑动或点按钮切换
     Spacer(Modifier.height(18.dp))
-    SearchSection()
-    Spacer(Modifier.height(26.dp))
-    Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x1FEBEBF5)))
-    Spacer(Modifier.height(18.dp))
-    LibrarySection()
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Button(
+            onClick = { page = "list" },
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (page == "list") Accent else Card,
+                contentColor = Color.White,
+            ),
+            modifier = Modifier.weight(1f),
+        ) { Text("歌单") }
+        Button(
+            onClick = { page = "lyrics" },
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (page == "lyrics") Accent else Card,
+                contentColor = Color.White,
+            ),
+            modifier = Modifier.weight(1f),
+        ) { Text("歌词") }
+    }
+    Spacer(Modifier.height(14.dp))
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .pointerInput(Unit) {
+                var total = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { total = 0f },
+                    onDragEnd = {
+                        if (kotlin.math.abs(total) > 60f) page = if (page == "list") "lyrics" else "list"
+                    },
+                    onDragCancel = { total = 0f },
+                    onHorizontalDrag = { change, dx -> total += dx; change.consume() },
+                )
+            },
+    ) {
+        if (page == "list") {
+            Column(Modifier.fillMaxWidth()) {
+                SearchSection()
+                Spacer(Modifier.height(26.dp))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x1FEBEBF5)))
+                Spacer(Modifier.height(18.dp))
+                LibrarySection()
+            }
+        } else {
+            LyricsPage()
+        }
+    }
     Spacer(Modifier.height(30.dp))
+}
+
+/** 歌词页：车机下发歌词行，按播放进度高亮当前句。 */
+@Composable
+private fun LyricsPage() {
+    val lines by RemoteClient.lyrics.collectAsState()
+    val now by RemoteClient.now.collectAsState()
+    if (lines.isEmpty()) {
+        Text("暂无歌词", color = Secondary, fontSize = 14.sp, modifier = Modifier.padding(vertical = 24.dp))
+        return
+    }
+    val active = lines.indexOfLast { it.t <= now.positionMs }
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        lines.forEachIndexed { i, line ->
+            Text(
+                line.text,
+                color = if (i == active) Color.White else Secondary,
+                fontSize = if (i == active) 18.sp else 14.sp,
+                fontWeight = if (i == active) FontWeight.Bold else FontWeight.Normal,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+            )
+            if (line.trans.isNotEmpty()) {
+                Text(
+                    line.trans,
+                    color = Secondary,
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
 }
 
 /** 音量条下面的 − / + 按钮，一步一格，长按不加速（车机音量走 setStreamVolume，没必要刷太快）。 */
@@ -503,12 +647,12 @@ private fun VolumeStepButton(
 ) {
     Box(
         modifier
-            .height(48.dp)
-            .background(Color(0xFF232326), RoundedCornerShape(24.dp))
+            .height(64.dp)
+            .background(Color(0xFF3A121A), RoundedCornerShape(32.dp))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, desc, tint = Color.White, modifier = Modifier.size(24.dp))
+        Icon(icon, desc, tint = Color.White, modifier = Modifier.size(34.dp))
     }
 }
 

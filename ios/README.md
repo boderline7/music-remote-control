@@ -62,6 +62,33 @@
 
 连不上时按这个顺序查：手机和车机在不在同一个热点/WiFi → 车机「手机遥控」开关开了没 → 车机设置页的 mDNS 自检不用看（本 App 不依赖域名）→ 点「重新搜索 / 扫网段」。
 
+## 1.1.0 新增（与安卓 1.8.8 / 车机端 2.2.9 同步）
+
+这一版壳本身只加了「硬件音量键转发」，其余界面功能全部来自车机端 `remote.html`，网页 / 安卓 / iOS 三端共用同一份页面：
+
+- 取消右上角设置齿轮（部分机型点不中；连接设置仍在未连接页 `ConnectPanel` 里）；
+- 音量加 / 减按钮放大、更显眼；
+- 资料库「我的喜欢」「音乐云盘」补播放按钮；
+- 新增默认显示的「添加到歌单」；
+- 歌单页 ↔ 歌词页，按钮切换或左右滑动，默认歌单页；歌词由车机端新增的 `lyrics` 消息整包下发，按播放进度高亮。
+
+### iOS 硬件音量键的实现与限制
+
+iOS **不开放**物理音量键事件，`WKWebView` 也收不到，所以只能间接识别：
+
+1. 激活 `AVAudioSession`（`.playback` + `.mixWithOthers`）后 KVO 监听 `outputVolume`；
+2. 音量一变就判断加 / 减，**立刻**用离屏 `MPVolumeView` 的 `UISlider` 把系统音量拉回 0.5 锚点，让下一次按键仍能被检测到；
+3. 原生层通过 `WebViewBridge.stepVolume(dir)` 调网页的 `window.carRemoteStepVolume(dir)`，走的是和手动音量按钮完全相同的 `setVolume` 协议命令；
+4. 回拉本身也会触发一次 KVO，用 150ms 冷却吃掉，避免一次按键发出两条相反命令。
+
+真机上重点验这几条（Windows 编不了 Swift，只能靠云构建 + 真机确认）：
+
+- **系统音量已在 0 或 100、或开了静音键**：可能不再产生 `outputVolume` 变化，按键会失效；
+- **App 未连接车机时**：WebView 尚未创建，音量键不转发，属预期行为；
+- **冷启动**：`MPVolumeView` 必须挂到 `keyWindow` 才生效，`attachVolumeView()` 做了最多 6 次、每次 0.3 秒的退避重试；`UISlider` 是异步创建的，`resetSystemVolume()` 另做了 4 次短重试；
+- **抢音频会话**：`.playback` + `.mixWithOthers` 尽量避免影响别的 App，仍建议确认导航播报、蓝牙通话正常；
+- 若一次按键触发两格音量，把 `lastHandled` 的 0.15 秒冷却调大。
+
 ## 权限与边界
 
 - `NSLocalNetworkUsageDescription` + `NSBonjourServices`：发现并连接局域网车机；

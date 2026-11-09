@@ -1,5 +1,8 @@
 import SwiftUI
 import UIKit
+import AVFoundation
+import MediaPlayer
+import Combine
 
 @main
 struct CarRemoteApp: App {
@@ -214,10 +217,10 @@ final class CarLink: ObservableObject {
 
 struct RootView: View {
     @EnvironmentObject private var link: CarLink
-    @State private var showPanel = false
+    @StateObject private var volumeKeys = VolumeKeyWatcher()
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             Color(red: 0.043, green: 0.043, blue: 0.051).ignoresSafeArea()
 
             if link.phase.isReady {
@@ -227,35 +230,99 @@ struct RootView: View {
                     }
                     .ignoresSafeArea()
                 }
-                gearButton.opacity(0.5)
             } else {
                 NavigationView {
                     ConnectPanel(embedded: true)
                 }
             }
         }
-        .sheet(isPresented: $showPanel) {
-            NavigationView {
-                ConnectPanel(embedded: false)
-            }
+        .onAppear {
+            link.start()
+            volumeKeys.start()
         }
-        .onAppear { link.start() }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
             if link.phase.isReady { link.checkConnection() } else { link.rescan() }
         }
     }
+}
 
-    private var gearButton: some View {
-        Button {
-            showPanel = true
-        } label: {
-            Image(systemName: "gearshape.fill")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.8))
-                .padding(10)
-                .background(.black.opacity(0.35), in: Circle())
+/// iOS 不开放硬件音量键事件，WKWebView 更收不到。
+/// 做法：激活 AVAudioSession 监听 outputVolume 变化，判断加/减后立刻用 MPVolumeView
+/// 把系统音量拉回中位 —— 既能持续检测按键，又能挡掉系统音量 HUD。
+/// 拉回动作本身也会触发 KVO，用 150ms 冷却吃掉这次回弹，避免一次按键发两条相反命令。
+final class VolumeKeyWatcher: ObservableObject {
+    private let session = AVAudioSession.sharedInstance()
+    private var observation: NSKeyValueObservation?
+    private let volumeView = MPVolumeView(frame: CGRect(x: -2000, y: -2000, width: 1, height: 1))
+    private let anchor: Float = 0.5
+    private var lastHandled = Date.distantPast
+    private var started = false
+
+    func start() {
+        guard !started else { return }
+        started = true
+        do {
+            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try session.setActive(true, options: [])
+        } catch {
+            print("volume key watcher: audio session unavailable: \(error)")
         }
-        .padding(.top, 12)
-        .padding(.trailing, 14)
+
+        // MPVolumeView 必须在视图层级里才能改系统音量；冷启动时 keyWindow 可能还没就绪
+        attachVolumeView()
+
+        observation = session.observe(\.outputVolume, options: [.old, .new]) { [weak self] session, change in
+            guard let self else { return }
+            let now = Date()
+            guard now.timeIntervalSince(self.lastHandled) > 0.15 else { return }
+            let new = session.outputVolume
+            let old = change.oldValue ?? self.anchor
+            guard abs(new - old) > 0.01 else { return }
+            self.lastHandled = now
+            let dir = new > old ? 1 : -1
+            self.resetSystemVolume()
+            WebViewBridge.stepVolume(dir)
+        }
     }
+
+    /// MPVolumeView 只有挂在 window 上才会创建 UISlider 并能改系统音量。
+    /// 冷启动时 onAppear 可能早于 keyWindow 就绪，所以失败就退避重试，最多 6 次（约 1.8 秒）。
+    private func attachVolumeView(attempt: Int = 0) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            guard let window = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .flatMap({ $0.windows })
+                .first(where: { $0.isKeyWindow }) else {
+                if attempt < 6 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                        self?.attachVolumeView(attempt: attempt + 1)
+                    }
+                }
+                return
+            }
+            if self.volumeView.superview !== window { window.addSubview(self.volumeView) }
+            self.volumeView.showsRouteButton = false
+            self.volumeView.layoutIfNeeded()
+            self.resetSystemVolume()
+        }
+    }
+
+    /// 把系统音量拉回锚点。slider 是 MPVolumeView 异步创建的，找不到时短退避重试。
+    private func resetSystemVolume(attempt: Int = 0) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            guard let slider = self.volumeView.subviews.first(where: { $0 is UISlider }) as? UISlider else {
+                if attempt < 4 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                        self?.resetSystemVolume(attempt: attempt + 1)
+                    }
+                }
+                return
+            }
+            slider.setValue(self.anchor, animated: false)
+        }
+    }
+
+    deinit { observation?.invalidate() }
 }
