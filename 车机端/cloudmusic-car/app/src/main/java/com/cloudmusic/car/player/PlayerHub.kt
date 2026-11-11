@@ -485,7 +485,8 @@ object PlayerHub {
         )
     }
 
-    private fun setPlayMode(mode: Int) {
+    /** 遥控端直接指定模式（0 顺序 / 1 单曲循环 / 2 随机）；与 cyclePlayMode 共用持久化和 ExoPlayer 落地。 */
+    fun setPlayMode(mode: Int) {
         _playMode.value = mode
         PlaybackSnapshotStore.savePlayMode(mode)
         applyPlayMode()

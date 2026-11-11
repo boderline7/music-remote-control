@@ -404,6 +404,10 @@ object RemoteServer : WsServer.Listener {
             broadcastLyrics()
             0
         }
+        "setPlayMode" -> {
+            if (PlayerBridge.setPlayMode(args.optInt("mode", -1))) 0
+            else RemoteConfig.ERR_VALUE_OUT_OF_RANGE
+        }
         "like" -> if (PlayerBridge.toggleLike()) 0 else RemoteConfig.ERR_NOT_AVAILABLE
         else -> RemoteConfig.ERR_UNSUPPORTED_ACTION
     }
@@ -532,8 +536,9 @@ object RemoteServer : WsServer.Listener {
             maybePushLyrics()
             val volume = PlayerBridge.volume()
             val volumeMax = PlayerBridge.volumeMax()
+            val playMode = PlayerBridge.playMode()
             // 暂停且内容没变时，tick 不必重复推同样的东西
-            val key = "${snapshot.playing}|${snapshot.title}|${snapshot.artist}|${snapshot.durationMs}|$volume|${snapshot.liked}"
+            val key = "${snapshot.playing}|${snapshot.title}|${snapshot.artist}|${snapshot.durationMs}|$volume|${snapshot.liked}|$playMode"
             if (reason == "tick" && !snapshot.playing && key == lastStateKey) return@Runnable
             lastStateKey = key
             val data = JSONObject()
@@ -544,6 +549,7 @@ object RemoteServer : WsServer.Listener {
                 .put("positionMs", snapshot.positionMs)
                 .put("durationMs", snapshot.durationMs)
                 .put("liked", snapshot.liked)
+                .put("playMode", playMode)
                 .put("reason", reason)
             if (snapshot.album.isNotEmpty()) data.put("album", snapshot.album)
             if (volume >= 0 && volumeMax > 0) {

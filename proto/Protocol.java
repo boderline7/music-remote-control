@@ -51,6 +51,7 @@ public final class Protocol {
     public static final String ACTION_PREV = "prev";
     public static final String ACTION_SEEK = "seek";
     public static final String ACTION_SET_VOLUME = "setVolume";
+    public static final String ACTION_SET_PLAY_MODE = "setPlayMode";
     public static final String ACTION_GET_STATE = "getState";
     public static final String ACTION_GET_LYRICS = "getLyrics";
 
@@ -122,6 +123,6 @@ public final class Protocol {
         return ACTION_PLAY.equals(action) || ACTION_PAUSE.equals(action)
                 || ACTION_NEXT.equals(action) || ACTION_PREV.equals(action)
                 || ACTION_SEEK.equals(action) || ACTION_SET_VOLUME.equals(action)
-                || ACTION_GET_STATE.equals(action);
+                || ACTION_SET_PLAY_MODE.equals(action) || ACTION_GET_STATE.equals(action);
     }
 }

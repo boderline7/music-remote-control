@@ -108,6 +108,16 @@ object PlayerBridge {
 
     fun previous() = PlayerHub.previous()
 
+    /** 0 顺序 / 1 单曲循环 / 2 随机，与 shared/nowplaying 的 PlayModes 一致。 */
+    fun playMode(): Int = PlayerHub.playMode.value
+
+    /** @return false 表示模式值不在 0..2。 */
+    fun setPlayMode(mode: Int): Boolean {
+        if (mode !in 0..2) return false
+        PlayerHub.setPlayMode(mode)
+        return true
+    }
+
     /** @return false 表示当前没有可跳转的媒体。 */
     fun seekTo(positionMs: Long): Boolean {
         val player = PlayerHub.player

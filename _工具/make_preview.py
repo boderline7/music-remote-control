@@ -25,7 +25,7 @@ FRAME = """
 FAKE = """
 <script>
 (function () {
-  var state = {seq:1,playing:true,title:"晴天",artist:"周杰伦",positionMs:96000,durationMs:269000,liked:true,volume:18,volumeMax:30};
+  var state = {seq:1,playing:true,title:"晴天",artist:"周杰伦",positionMs:96000,durationMs:269000,liked:true,volume:18,volumeMax:30,playMode:0};
   var lib = {ok:true,liked:{id:"liked",name:"我喜欢的音乐",count:128},cloud:{id:"cloud",name:"音乐云盘",count:7},
     playlists:[{id:"1",name:"通勤路上",count:30},{id:"2",name:"深夜电台",count:12},{id:"3",name:"雨天钢琴",count:9}]};
   var cat = {ok:true,top:[{id:"top:1",name:"飙升榜",count:100},{id:"top:2",name:"新歌榜",count:100}],

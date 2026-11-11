@@ -205,6 +205,40 @@ byId('volDown').click();
 byId('volDown').click();
 ok(ws.last('command').data.args.volume < 10, '连点两下减得更多');
 
+console.log('\n[3b] 播放模式');
+ws.push('state', {
+  seq: 3, playing: true, title: '晴天', artist: '周杰伦',
+  positionMs: 3000, durationMs: 200000, liked: true, volume: 10, volumeMax: 30,
+});
+ok(byId('mode').classList.contains('hidden'), '旧车机不带 playMode 时藏起模式钮');
+
+ws.push('state', {
+  seq: 4, playing: true, title: '晴天', artist: '周杰伦',
+  positionMs: 4000, durationMs: 200000, liked: true, volume: 10, volumeMax: 30, playMode: 0,
+});
+ok(!byId('mode').classList.contains('hidden'), '车机回报 playMode 后显示模式钮');
+ok(byId('modeIcon').innerHTML.includes('M17 2l4 4-4 4'), '顺序播放图标');
+byId('mode').click();
+eq(ws.last('command').data, { action: 'setPlayMode', args: { mode: 2 } }, '点一下切随机');
+ok(byId('mode').classList.contains('on'), '随机模式高亮');
+eq(textOf(byId('toast')), '随机播放', '提示当前模式');
+
+ws.push('state', {
+  seq: 5, playing: true, title: '晴天', artist: '周杰伦',
+  positionMs: 5000, durationMs: 200000, liked: true, volume: 10, volumeMax: 30, playMode: 2,
+});
+ok(byId('modeIcon').innerHTML.includes('M4 20L21 3'), '随机播放图标');
+byId('mode').click();
+eq(ws.last('command').data, { action: 'setPlayMode', args: { mode: 0 } }, '再点一下回顺序');
+
+ws.push('state', {
+  seq: 6, playing: true, title: '晴天', artist: '周杰伦',
+  positionMs: 6000, durationMs: 200000, liked: true, volume: 10, volumeMax: 30, playMode: 1,
+});
+ok(byId('modeIcon').innerHTML.includes('M11 10l1-1v6'), '单曲循环图标');
+byId('mode').click();
+eq(ws.last('command').data, { action: 'setPlayMode', args: { mode: 0 } }, '单曲循环时点一下回顺序');
+
 console.log('\n[4] 资料库');
 ws.push('library', {
   ok: true,
@@ -300,8 +334,15 @@ top0.click();
 eq(ws.last('command').data, { action: 'getTracks', args: { id: 'top:0', offset: 0 } }, '点行本身才进列表');
 
 console.log('\n[9] 空列表 / 失败 / 指令错误');
-byId('reload').click();
-ok(ws.count('command', 'library') === 2 && ws.count('command', 'catalog') === 2, '刷新重新拉资料库和榜单');
+byId('refresh').click();
+eq(ws.last('command').data.action, 'refresh', '右上刷新走服务端 refresh 清缓存');
+ws.push('ack', { ok: true, action: 'refresh' });
+ok(!byId('refresh').classList.contains('spin'), 'refresh 回包后停止转圈');
+// refresh 会清掉本地榜单缓存，补一份回来给下面的用例用
+ws.push('catalog', {
+  ok: true, top: tops7,
+  recommend: [{ id: 'rec:9', name: '每日推荐', count: 30 }],
+});
 // 上一段最后停在 top:0 的列表上，这里退回 rec:9 —— 下面要验「这个列表取歌失败」的提示
 byId('recs').children[0].click();
 ws.push('library', { ok: false, message: '车机还没登录网易云' });

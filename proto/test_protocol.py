@@ -134,6 +134,8 @@ GOOD = [
         "action": "seek", "args": {"positionMs": 65000}}},
     {"v": 1, "type": "command", "id": "c-3", "data": {
         "action": "setVolume", "args": {"volume": 15}}},
+    {"v": 1, "type": "command", "id": "c-7", "data": {
+        "action": "setPlayMode", "args": {"mode": 2}}},
     {"v": 1, "type": "ack", "id": "c-1", "data": {"ok": True, "action": "play"}},
     # 资料库：我喜欢的音乐 / 云盘 / 我创建的歌单
     {"v": 1, "type": "command", "id": "c-4", "data": {"action": "library"}},
@@ -150,7 +152,7 @@ GOOD = [
     {"v": 1, "type": "state", "data": {
         "seq": 42, "playing": True, "title": "南方姑娘", "artist": "赵雷",
         "album": "赵小雷", "positionMs": 12000, "durationMs": 320000,
-        "volume": 15, "volumeMax": 30, "reason": "tick"}},
+        "volume": 15, "volumeMax": 30, "playMode": 1, "reason": "tick"}},
     {"v": 1, "type": "state", "data": {
         "seq": 43, "playing": False, "title": "", "artist": "",
         "positionMs": 0, "durationMs": 0, "reason": "event"}},
@@ -175,6 +177,11 @@ BAD = [
     # positionMs 负数
     ({"v": 1, "type": "command", "id": "c-9", "data": {
         "action": "seek", "args": {"positionMs": -1}}}, "< min 0"),
+    # 播放模式缺参数 / 越界
+    ({"v": 1, "type": "command", "id": "c-8", "data": {
+        "action": "setPlayMode", "args": {}}}, "缺少 args.mode"),
+    ({"v": 1, "type": "command", "id": "c-8", "data": {
+        "action": "setPlayMode", "args": {"mode": 9}}}, "不在枚举内"),
     # pin 位数不对
     ({"v": 1, "type": "pair", "id": "p-1", "data": {
         "pin": "12ab", "deviceId": "d"}}, "不匹配"),

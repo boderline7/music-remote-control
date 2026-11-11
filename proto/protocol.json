@@ -153,14 +153,15 @@
             "prev",
             "seek",
             "setVolume",
-        "getState",
-        "getLyrics",
-        "library",
-        "getTracks",
-        "playTracks",
-        "addToPlaylist",
-        "refresh"
-      ]
+            "setPlayMode",
+            "getState",
+            "getLyrics",
+            "library",
+            "getTracks",
+            "playTracks",
+            "addToPlaylist",
+            "refresh"
+          ]
         },
         "args": {
           "type": "object",
@@ -204,6 +205,15 @@
             "type": "integer",
             "required": false,
             "min": 0
+          }
+        },
+        "setPlayMode": {
+          "mode": {
+            "type": "integer",
+            "required": true,
+            "min": 0,
+            "enum": [0, 1, 2],
+            "notes": "0 顺序 / 1 单曲循环 / 2 随机，与车机 PlayModes 一致"
           }
         },
         "getLyrics": {},
@@ -277,6 +287,13 @@
           "type": "integer",
           "required": true,
           "min": 0
+        },
+        "playMode": {
+          "type": "integer",
+          "required": false,
+          "min": 0,
+          "enum": [0, 1, 2],
+          "notes": "0 顺序 / 1 单曲循环 / 2 随机；旧版车机不带此字段"
         },
         "volume": {
           "type": "integer",
