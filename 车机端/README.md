@@ -54,6 +54,31 @@ check(ContainerGate.isPaopaoGuest(this)) { "CloudMusic must run inside Paopao De
 `gradle.properties` 增加 `android.overridePathCheck=true`（工程在中文路径下，AGP 默认拦截；本工程无 NDK，不受影响）
 和代理 `systemProp`；新增 `local.properties` 指向本机 Android SDK。
 
+## 模块分工
+
+`settings.gradle.kts` 里有两个模块：
+
+| 模块 | applicationId | 说明 |
+|---|---|---|
+| `:app` | `com.cloudmusic.car` | 第三方自研播放器（上游 `cloudmusic-car` 的工作副本，见上文改动） |
+| `:lunastub` | `com.luna.music.car` | 桥接层 + 遥控服务，连接官方网易云车机版 |
+
+两者都提供 18765 端口，靠**端口即角色**互斥：谁先绑上谁服务，另一个让位。所以「端口交接成功」不等于「服务交接成功」——切换后要先确认 18765 真的在监听，再确认是哪个包在监听。
+
+`lunastub` 原本是 1.0.0 的空壳占位包（只为让车机助手的音源列表出现这一项）。2.9.0 起它承担真正的遥控职责：
+
+| 文件 | 职责 |
+|---|---|
+| `App.java` / `Main.java` | 进程入口、设置页、音源切换 |
+| `Svc.java` | 前台服务；端口判定、让位、初始化顺序（端口 → 服务 → 前台） |
+| `Server.java` | 18765 的 HTTP + WebSocket，每秒 Tick 驱动状态机超时 |
+| `Ncm.java` | 连接官方 MediaBrowser、语音通道、歌单抓取、单曲点播五态状态机 |
+| `Api.java` | `/api/status`、`/api/logs` 等接口 |
+| `Bridge.java` / `ModeSync.java` | 与车机助手 / 主应用的广播互通 |
+| `LogCapture.java` | 环形日志（默认关，网页手动开，SharedPreferences 记忆） |
+
+状态机、歌单三档来源（自建 / 官方榜 / `playlists.txt`）、日志字段与已知限制，见 [`cloudmusic-car/lunastub/README.md`](./cloudmusic-car/lunastub/README.md)。
+
 ## 构建
 
 ```bash
