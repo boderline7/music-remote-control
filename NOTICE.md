@@ -1,8 +1,8 @@
 # NOTICE / 来源、修改与第三方许可
 
-本仓库包含四个部分：车机端第三方播放器（`车机端/cloudmusic-car/app`）、车机端桥接层
+本仓库包含四个部分：云音乐车机包（`车机端/cloudmusic-car/app`）、桥接包
 （`车机端/cloudmusic-car/lunastub`）、安卓手机端（`手机端/cloudmusic-remote`）、iOS 客户端（`ios/`）。
-其中只有第三方播放器派生自其它项目，路径与义务如下。
+其中只有云音乐车机包派生自其它项目，路径与义务如下。
 
 ---
 

@@ -12,24 +12,28 @@
 - 内容：我喜欢的音乐、歌单（含官方榜单）、搜索、按歌名点播
 - 显示：封面、歌名歌手、逐行歌词（含翻译）、播放队列
 - 连接：手机 App 自动发现（Bonjour / 网段扫描），或浏览器直接打开 `http://<车机IP>:18765`
-- 音源：第三方自研播放器（默认）或官方网易云车机版（桥接层），二选一
+- 音源：云音乐车机包（默认）或奇瑞车机上的官方网易云，二选一
 
 ## 车机端的两个包
 
-车机上装的是**两个独立 APK**，都是网易云音乐的第三方客户端，都不是官方包：
+车机上装两个独立 APK，一个放音乐，一个做桥接：
 
-| 包名 | 桌面名 | 角色 |
+| 包名 | 桌面名 | 是什么 |
 |---|---|---|
-| `com.cloudmusic.car` | 云音乐 | 第三方自研播放器（模块 `app`）。自带播放内核与曲库，默认由它提供服务：在 18765 起遥控服务，同时自己向车机助手发「汽水音乐」通道的广播 |
-| `com.luna.music.car` | 汽水音乐 | 桥接层（模块 `lunastub`）。**不放音乐**，只做三件事：撑住助手音源列表里的「汽水音乐车机版」、把官方网易云车机版（`com.netease.cloudmusic.iot`）包成可遥控后端、在「官方」模式下起 18765 服务 |
+| `com.cloudmusic.car` | 云音乐 | **云音乐车机包**。完整客户端，自带播放内核与曲库，默认由它提供服务 |
+| `com.luna.music.car` | 汽水音乐 | **桥接包**（模块 `lunastub`）。不放音乐，借用车机助手音源表里空着的包名，把助手、官方网易云和车机播放器接到一起 |
 
-### 桥接包为什么叫「汽水音乐」
+桥接包干三件事：
 
-车机助手（`com.navi.tool`）的音源表按包名硬编码：`cn.kuwo.kwmusiccar` → 酷我、`com.kugou.android.auto` → 酷狗、`com.netease.cloudmusic.iot` → 网易云、`com.luna.music.car` → **汽水音乐**。前三个包名都被真实 App 占着，只有最后一个是空的；而「汽水音乐」通道又是四条里最开放的（纯广播、不校验签名和包名）。所以借这个包名把歌词、封面、控制直连进助手。它跟字节的汽水音乐没有任何关系，也不含汽水音乐的代码。
+- 让车机助手的音源列表出现这一项
+- 针对奇瑞车机适配车机助手：语音点歌、方控、歌词与封面
+- 适配奇瑞车机上的官方网易云（`com.netease.cloudmusic.iot`）
+
+桌面名「汽水音乐」只是车机助手音源表里的槽位名，跟字节的汽水音乐无关。
 
 ### 默认与切换
 
-默认走第三方自研：桥接包不占 18765、不发广播，只让助手列表里有这一项。手动切到「官方网易云」后，桥接包才连官方并起服务；切回第三方时桥接包主动停服、释放端口。
+默认走云音乐车机包，桥接包不启动、不占 18765。点「官方网易云」后桥接包才连官方并起服务；切回来它主动停服、释放端口。
 
 官方模式下的单曲点播走「语音搜索 + 显式状态机」，因为官方车机版没有按 songId 播放的入口。状态机、歌单来源、日志口径见 [`车机端/cloudmusic-car/lunastub/README.md`](./车机端/cloudmusic-car/lunastub/README.md)。
 
@@ -54,8 +58,8 @@ cd 手机端/cloudmusic-remote && ./gradlew assembleDebug
 
 ```
 车机端/   播放器与遥控服务
-  cloudmusic-car/app       第三方自研播放器（桌面名「云音乐」）
-  cloudmusic-car/lunastub  桥接层（助手里的「汽水音乐车机版」）+ 遥控服务
+  cloudmusic-car/app       云音乐车机包
+  cloudmusic-car/lunastub  桥接包 + 遥控服务
 手机端/   安卓 WebView 壳
 ios/      iOS 客户端
 proto/    协议定义与自检
@@ -68,6 +72,6 @@ docs/     本地留档，不入库（08-占位包 已过期，仅作协议依据
 
 GNU LGPL-3.0。
 
-- 车机端第三方播放器派生自 [xuqian-git/cloudmusic-car](https://github.com/xuqian-git/cloudmusic-car)（LGPL-3.0）。
+- 云音乐车机包派生自 [xuqian-git/cloudmusic-car](https://github.com/xuqian-git/cloudmusic-car)（LGPL-3.0）。
 - 接口加密、接口清单与应用图标来自它的上游 [missuo/kumone](https://github.com/missuo/kumone)（LGPL-3.0）。
 - 派生作品沿用 LGPL-3.0；逐条改动、依赖许可、商标与免责声明见 [NOTICE.md](./NOTICE.md)。
