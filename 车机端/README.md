@@ -60,10 +60,10 @@ check(ContainerGate.isPaopaoGuest(this)) { "CloudMusic must run inside Paopao De
 
 | 模块 | applicationId | 说明 |
 |---|---|---|
-| `:app` | `com.cloudmusic.car` | 第三方自研播放器（上游 `cloudmusic-car` 的工作副本，见上文改动） |
-| `:lunastub` | `com.luna.music.car` | 桥接层 + 遥控服务，连接官方网易云车机版 |
+| `:app` | `com.cloudmusic.car` | 第三方自研播放器，桌面名「云音乐」（上游 `cloudmusic-car` 的工作副本，见上文改动） |
+| `:lunastub` | `com.luna.music.car` | 桥接层（助手里的「汽水音乐车机版」）+ 遥控服务，只用于官方网易云模式 |
 
-两者都提供 18765 端口，靠**端口即角色**互斥：谁先绑上谁服务，另一个让位。所以「端口交接成功」不等于「服务交接成功」——切换后要先确认 18765 真的在监听，再确认是哪个包在监听。
+两者不同时服务：默认走 `:app`，`:lunastub` 不启动、不绑端口；用户切「官方网易云」后 `:lunastub` 才连官方并起服务。此时如果 18765 还被 `:app` 占着，`:lunastub` 让位而不是抢端口。所以「端口交接成功」不等于「服务交接成功」——切换后要先确认 18765 真的在监听，再确认是哪个包在监听。
 
 `lunastub` 原本是 1.0.0 的空壳占位包（只为让车机助手的音源列表出现这一项）。2.9.0 起它承担真正的遥控职责：
 
