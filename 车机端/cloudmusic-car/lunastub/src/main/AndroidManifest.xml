@@ -1,27 +1,80 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 显式启动主应用需要能看到它（Android 11+ 包可见性）；startActivity 用显式组件其实不受限，
-         这里补上是为了 getLaunchIntentForPackage 之类的顺带调用也不至于返回 null。 -->
+    <!--
+        汽水音乐车机版（桥接层）
+
+        职责：
+          1) 让车机助手（com.navi.tool）的音源候选列表出现「汽水音乐车机版」（按包名 com.luna.music.car 判断）
+          2) 把官方网易云车机版（com.netease.cloudmusic.iot）包装成 MediaBrowser 可用的播放后端
+          3) 在 18765 端口提供遥控网页与 WebSocket（局域网手机遥控）
+
+        端口即角色：18765 被占说明第三方自研播放器在服务，本包让位；空闲则由本包连官方并起服务。
+    -->
+
     <queries>
         <package android:name="com.cloudmusic.car" />
+        <package android:name="com.netease.cloudmusic.iot" />
+        <package android:name="com.wb.ncmremote" />
+        <package android:name="com.navi.tool" />
     </queries>
 
-    <application
-        android:allowBackup="false"
-        android:icon="@android:drawable/ic_media_play"
-        android:label="汽水音乐"
-        android:supportsRtl="true">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 
+    <application
+        android:name=".App"
+        android:label="汽水音乐"
+        android:icon="@android:drawable/ic_media_play"
+        android:allowBackup="false"
+        android:supportsRtl="true"
+        android:extractNativeLibs="false">
+
+        <!-- 入口：Main（LaunchStub 已停用，功能被 Main 的「打开音乐 App」按钮覆盖） -->
         <activity
-            android:name=".LaunchStub"
+            android:name=".Main"
             android:exported="true"
-            android:excludeFromRecents="true"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+            前台服务：必须声明 foregroundServiceType。
+            targetSdk 34+ 缺少该属性时 startForeground 会抛 MissingForegroundServiceTypeException。
+            另外 startForegroundService 之后必须在 5 秒内进入前台，否则 ANR 杀进程。
+        -->
+        <service
+            android:name=".Svc"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <receiver
+            android:name=".Boot"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 模式同步：接收第三方自研播放器切模式的广播 -->
+        <receiver
+            android:name=".ModeSync$Receiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.cloudmusic.car.remote.MODE_SYNC" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

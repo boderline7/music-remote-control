@@ -1,0 +1,1449 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="车机遥控">
+<meta name="theme-color" content="#0b0b0d">
+<link rel="apple-touch-icon" href="/icon.png">
+<title>车机遥控</title>
+<style>
+  :root {
+    --red: #fa2d48;
+    --fg: #ffffff;
+    --dim: rgba(255,255,255,.55);
+    --faint: rgba(255,255,255,.32);
+    --line: rgba(255,255,255,.12);
+    --card: rgba(255,255,255,.06);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: radial-gradient(120% 60% at 50% 0%, #1b1b22 0%, #0b0b0d 62%) fixed;
+    color: var(--fg);
+    font-family: -apple-system, system-ui, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  button { border: 0; background: none; color: var(--fg); padding: 0; cursor: pointer; font: inherit; }
+  button:active { opacity: .55; }
+  /* 手机 WebView 里默认那条白色滚动条非常扎眼，三端统一隐藏（内容照样能滚） */
+  * { scrollbar-width: none; -ms-overflow-style: none; }
+  *::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+  /* 宽屏浏览器 / 平板也保持手机版式居中，不然标题和右侧按钮会被拉到屏幕两头 */
+  header, main { width: 100%; max-width: 560px; margin-left: auto; margin-right: auto; }
+  header {
+    flex: none;
+    display: flex; align-items: center; gap: 8px;
+    padding: calc(10px + env(safe-area-inset-top)) 20px 6px;
+    font-size: 13px; color: var(--dim);
+  }
+  #dot { width: 8px; height: 8px; border-radius: 50%; background: #8e8e93; flex: none; transition: background .2s; }
+  #dot.on { background: #34c759; }
+  #dot.warn { background: #ff9f0a; }
+  #status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .icon-btn {
+    flex: none; width: 38px; height: 38px; border-radius: 50%;
+    background: var(--card); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .icon-btn svg { width: 19px; height: 19px; fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .icon-btn:active { background: var(--red); }
+  .icon-btn.spin svg { animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  main {
+    flex: 1;
+    overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    padding: 4px 20px calc(22px + env(safe-area-inset-bottom));
+  }
+
+  /* ---------- 正在播放 ---------- */
+  /* 标题和歌手要在同一列紧挨着：以前 #artist 在 head-row 外面，
+     被右侧竖排按钮撑出一大片空白，看上去像两截不相关的东西 */
+  .head-row { display: flex; align-items: center; gap: 12px; }
+  .head-text { flex: 1; min-width: 0; }
+  #title {
+    margin: 0; font-size: 26px; font-weight: 700; line-height: 1.25;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  /* 右侧横排：爱心圆钮 */
+  .side-actions { flex: none; display: flex; flex-direction: row; align-items: center; gap: 8px; }
+  .side-btn {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: var(--card); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .side-btn:disabled { opacity: .35; }
+  .side-btn svg { width: 21px; height: 21px; fill: none; stroke: rgba(255,255,255,.8); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  #like.on svg { fill: var(--red); stroke: var(--red); }
+  #artist { margin: 3px 0 0; font-size: 14px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .progress { margin-top: 16px; }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 6px; border-radius: 3px; outline: none; margin: 0;
+    background: linear-gradient(to right, var(--red) var(--p, 0%), var(--line) var(--p, 0%));
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,.55);
+  }
+  input[type=range]:disabled { opacity: .35; }
+  .times { display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+  /* 三键固定居中：左右各留一列等宽空白，不加其它按钮 */
+  .controls {
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+    margin: 20px 0 4px;
+  }
+  .ctl-core { display: flex; align-items: center; gap: 44px; }
+  .skip svg { width: 32px; height: 32px; fill: rgba(255,255,255,.9); }
+  .main { width: 70px; height: 70px; border-radius: 50%; background: var(--red); box-shadow: 0 10px 24px rgba(250,45,72,.32); }
+  .main svg { width: 30px; height: 30px; fill: #fff; }
+
+  .volume { display: flex; align-items: center; gap: 10px; margin-top: 16px; }
+  /* 音量加减只是微调，不该比播放键还抢眼：收成和右上刷新钮同一套低调小圆钮 */
+  .round {
+    flex: none; width: 38px; height: 38px; border-radius: 50%;
+    background: var(--card); border: 1px solid var(--line);
+    font-size: 21px; line-height: 1; color: var(--dim); font-weight: 400;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .round:active { background: rgba(250,45,72,.2); border-color: rgba(250,45,72,.5); color: #fff; }
+  .volume input[type=range] { flex: 1; height: 4px; }
+  .volume input[type=range]::-webkit-slider-thumb { width: 15px; height: 15px; }
+  #volVal { min-width: 24px; flex: none; text-align: right; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .hidden { display: none !important; }
+
+  /* 资料库卡片：彩色渐变大方框，图标 + 播放钮在框内同一行，不再悬空 */
+  .tile {
+    position: relative; min-height: 108px; padding: 14px;
+    border-radius: 18px; border: 1px solid rgba(255,255,255,.16);
+    display: flex; flex-direction: column; justify-content: space-between;
+    text-align: left; overflow: hidden;
+  }
+  .tile.liked { background: linear-gradient(135deg, #7d1e30 0%, #3a1119 100%); }
+  .tile .tile-top { display: flex; align-items: center; justify-content: space-between; }
+  .tile .ico {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: rgba(255,255,255,.16);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .tile .ico svg { width: 18px; height: 18px; fill: #fff; }
+  .tile .tilePlay {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: rgba(255,255,255,.94); color: #1a1a1f;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .tile .tilePlay svg { width: 16px; height: 16px; fill: currentColor; }
+  .tile .tilePlay:active { background: var(--red); color: #fff; }
+
+  /* 页面最顶部的歌词方框：固定显示 3 行，每行等高，当前行高亮。
+     行高固定后 JS 可以用「行号 × 行高」精确定位，不会因为高亮字号变化而抖动；
+     内部不允许手动滑（overflow hidden），手势交给外层 main 滚整页。 */
+  .lyric-card {
+    margin: 2px 0 18px; border-radius: 18px;
+    background: rgba(255,255,255,.045); border: 1px solid var(--line);
+    padding: 12px 10px 10px;
+  }
+  .lyric-card .cap {
+    display: flex; align-items: baseline; gap: 8px;
+    font-size: 12px; color: var(--dim); margin: 0 6px 6px;
+  }
+  .lyric-card .cap b { color: #fff; font-weight: 600; font-size: 13px; }
+  #lyricBox {
+    --lyric-row: 34px;
+    height: calc(var(--lyric-row) * 3);
+    overflow: hidden; position: relative;
+    scrollbar-width: none; scroll-behavior: smooth;
+    /* 禁止手动滑动，但手势仍能冒泡给 main 滚整页 */
+    touch-action: pan-y;
+    /* 只有 3 行，不再用渐隐遮罩，避免吞掉首尾两行 */
+  }
+  #lyricBox::-webkit-scrollbar { display: none; }
+  #lyricBox .empty {
+    height: calc(var(--lyric-row) * 3); padding: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .lyric-line {
+    height: var(--lyric-row); line-height: var(--lyric-row);
+    padding: 0 10px; font-size: 13px; text-align: center;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: rgba(255,255,255,.44); transition: color .2s, background .2s;
+  }
+  /* 译文并排在同一行，不额外占高度，保证「固定 3 行」 */
+  .lyric-line .tr { display: inline; margin-left: 8px; font-size: 11px; color: rgba(255,255,255,.3); }
+  .lyric-line.on { color: #fff; font-size: 15px; font-weight: 700; }
+  .lyric-line.on .tr { color: rgba(255,255,255,.62); }
+
+  /* 添加到歌单选择面板 */
+  .overlay {
+    position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 15; background: rgba(0,0,0,.62);
+    display: flex; align-items: flex-end;
+  }
+  .overlay .panel {
+    width: 100%; max-height: 70vh; overflow-y: auto;
+    background: #16161a; border-radius: 20px 20px 0 0;
+    padding: 18px 16px calc(24px + env(safe-area-inset-bottom));
+  }
+  .overlay .panel-head { display: flex; align-items: center; margin-bottom: 14px; }
+  .overlay .panel-head h3 { flex: 1; margin: 0; font-size: 17px; }
+  .overlay .panel-head button { color: var(--dim); font-size: 14px; }
+  .overlay .panel-sub { margin: -8px 0 12px; font-size: 12px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .overlay .plrow {
+    width: 100%; display: flex; align-items: center; gap: 10px;
+    padding: 14px 4px; border-bottom: 1px solid var(--line);
+    text-align: left; color: #fff;
+  }
+  .overlay .plrow .n { flex: 1; font-size: 15px; }
+  .overlay .plrow .c { font-size: 12px; color: var(--faint); }
+
+  /* ---------- 区块 ---------- */
+  .sec { margin-top: 26px; display: flex; align-items: baseline; gap: 8px; }
+  .sec h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .sec .hint { font-size: 12px; color: var(--faint); flex: 1; }
+
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+  .tile .n { display: block; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile .c { display: block; margin-top: 4px; font-size: 12px; color: rgba(255,255,255,.68);
+             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* 每日推荐卡片与喜欢并排：暖金色，跟左边深红拉开，一眼分得清哪张是哪张 */
+  .tile.daily { background: linear-gradient(135deg, #7a4a12 0%, #33200a 100%); }
+
+  .rows { margin-top: 12px; }
+  .row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 13px 14px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 8px; text-align: left; }
+  .row .n { flex: 1; min-width: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .c { font-size: 12px; color: var(--faint); flex: none; }
+  .row .chev { color: var(--faint); font-size: 17px; flex: none; }
+  /* 行内「随机播放」：整行是入口，这个小圆钮不进去，直接从头随机播整列 */
+  .row .pl { flex: none; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #1a1a1f; background: rgba(255,255,255,.94); }
+  .row .pl svg { width: 16px; height: 16px; fill: currentColor; }
+  .row .pl:active { background: var(--red); color: #fff; }
+  /* 带副标题的行（每日推荐 / 心动模式）：主标题在上，说明在下 */
+  .row .t { flex: 1; min-width: 0; }
+  .row .sub { margin-top: 3px; font-size: 12px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 折叠时末尾那个「展开全部 / 收起」 */
+  .row.more { justify-content: center; padding: 11px 14px; }
+  .row.more .n { flex: none; font-size: 13px; color: var(--dim); }
+  .empty { font-size: 13px; color: var(--faint); padding: 4px 2px; }
+
+  /* 页面整体禁选中防误触，但地址要能长按复制 */
+  footer { margin: 26px 0 0; font-size: 11px; color: var(--faint); text-align: center;
+           user-select: text; -webkit-user-select: text; }
+  footer button.furl { background:none; border:none; color:inherit; font:inherit;
+    cursor:pointer; padding:0; text-decoration:underline; text-decoration-style:dotted; }
+  footer b { color: var(--dim); font-weight: 500; }
+
+  /* ---------- 曲目面板 ---------- */
+  /* 用 display 切换而不是 transform 滑入：部分国产浏览器内核（vivo 自带浏览器实测）
+     对 fixed 元素的 translateY(100%) 不生效，面板会以「只有标题条」的样子露在页面上。 */
+  .sheet {
+    position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 9; background: #0d0d10;
+    display: none; flex-direction: column;
+  }
+  .sheet.open { display: flex; }
+  .sheet-head {
+    flex: none; display: flex; align-items: center; gap: 10px;
+    padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .sheet-head .t { flex: 1; min-width: 0; }
+  .sheet-head h2 { margin: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sheet-head .s { margin-top: 3px; font-size: 12px; color: var(--faint); }
+  #back { flex: none; width: 40px; height: 40px; font-size: 26px; line-height: 1; color: var(--dim); }
+  .sheet-body {
+    flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    padding: 6px 16px calc(20px + env(safe-area-inset-bottom));
+  }
+  .track { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 4px; border-bottom: 1px solid rgba(255,255,255,.06); text-align: left; cursor: pointer; }
+  .track:active { background: rgba(255,255,255,.08); }
+  .track .idx { width: 22px; flex: none; text-align: right; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .track .t { flex: 1; min-width: 0; }
+  .track .nm { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .track .ar { margin-top: 3px; font-size: 12px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .track .dur { flex: none; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  #toast {
+    position: fixed; left: 50%; bottom: calc(28px + env(safe-area-inset-bottom));
+    transform: translate(-50%, 12px); opacity: 0; pointer-events: none;
+    background: rgba(30,30,36,.96); color: #fff; font-size: 13px;
+    padding: 10px 18px; border-radius: 999px; transition: opacity .18s, transform .18s; z-index: 20;
+    max-width: 80vw; text-align: center;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  /* ---------- 车机设置（/api/status 驱动） ---------- */
+  #setupBack { flex: none; width: 40px; height: 40px; font-size: 26px; line-height: 1; color: var(--dim); }
+  .kv {
+    display: flex; align-items: baseline; gap: 12px;
+    padding: 13px 2px; border-bottom: 1px solid rgba(255,255,255,.07); font-size: 14px;
+  }
+  .kv span { flex: none; width: 78px; color: var(--faint); }
+  .kv b {
+    flex: 1; min-width: 0; text-align: right; font-weight: 500; color: #fff;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    cursor: pointer; border-bottom: 1px dotted rgba(255,255,255,.25);
+  }
+  .seg { display: flex; gap: 10px; margin: 12px 0 4px; }
+  .seg button {
+    flex: 1; padding: 13px 8px; border-radius: 14px; font-size: 14px;
+    background: var(--card); border: 1px solid var(--line); color: var(--dim);
+  }
+  .seg button.on { background: rgba(250,45,72,.16); border-color: rgba(250,45,72,.5); color: #fff; }
+  .seg.hide { display: none; }
+  .acts { display: flex; gap: 10px; margin: 12px 0 4px; flex-wrap: wrap; }
+  .btn2 {
+    flex: 1; min-width: 130px; padding: 13px; border-radius: 14px; font-size: 14px;
+    background: var(--card); border: 1px solid var(--line); color: #fff;
+  }
+  .btn2:active { background: rgba(255,255,255,.14); }
+  .hint2 { margin: 8px 2px 14px; font-size: 12px; line-height: 1.65; color: var(--faint); }
+
+  /* ---------- 宽屏（车机横屏 1920×720 这类） ---------- */
+  /* 窄屏时两列容器不参与布局，等同于没有这层包裹 */
+  .col { display: contents; }
+
+  @media (min-width: 1000px) {
+    header, main { max-width: 1760px; }
+    header { padding: calc(10px + env(safe-area-inset-top)) 40px 4px; font-size: 15px; }
+    #dot { width: 10px; height: 10px; }
+    .icon-btn { width: 44px; height: 44px; }
+
+    /* 左栏放正在播放，右栏放歌词与歌单：720 的高度一屏塞不下整页，两栏各自滚 */
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+      grid-template-rows: minmax(0, 1fr);
+      column-gap: 56px;
+      padding: 4px 40px calc(14px + env(safe-area-inset-bottom));
+      overflow: hidden;
+    }
+    .col {
+      display: block; min-height: 0; height: 100%;
+      overflow-y: auto; -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      touch-action: pan-y;
+    }
+    .col-a { padding-right: 10px; display: flex; flex-direction: column; justify-content: safe center; }
+
+    #title { font-size: 32px; }
+    #artist { font-size: 15px; }
+    .side-btn { width: 50px; height: 50px; }
+    .side-btn svg { width: 24px; height: 24px; }
+    .lyric-card { margin-bottom: 20px; }
+    #lyricBox { --lyric-row: 40px; }
+    .lyric-line { font-size: 15px; }
+    .lyric-line.on { font-size: 18px; }
+    .progress { margin-top: 20px; }
+    .main { width: 84px; height: 84px; }
+    .main svg { width: 36px; height: 36px; }
+    .skip svg { width: 38px; height: 38px; }
+    .ctl-core { gap: 56px; }
+    .volume { margin-top: 20px; }
+    .sec { margin-top: 22px; }
+    .sec h2 { font-size: 16px; }
+    .row { padding: 15px 16px; }
+    .row .n, .track .nm { font-size: 16px; }
+
+    /* 曲目面板不该拉满整块 1920 的屏 */
+    .sheet {
+      top: 0; bottom: 0; right: auto; left: 50%;
+      width: min(760px, 100%);
+      transform: translateX(-50%);
+    }
+    #toast { max-width: 520px; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <span id="dot"></span>
+    <span id="status">正在连接车机…</span>
+    <button class="icon-btn" id="gear" aria-label="车机设置">
+      <svg viewBox="0 0 24 24"><path d="M4 6h9M18 6h2M4 12h3M12 12h8M4 18h9M18 18h2"/><circle cx="15.5" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="15.5" cy="18" r="2"/></svg>
+    </button>
+    <button class="icon-btn" id="refresh" aria-label="刷新">
+      <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+    </button>
+  </header>
+
+  <main id="scroll">
+    <section class="col col-a">
+    <div class="lyric-card">
+      <div class="cap"><b>歌词</b></div>
+      <div id="lyricBox"></div>
+    </div>
+
+    <div class="head-row">
+      <div class="head-text">
+        <h1 id="title">未在播放</h1>
+        <p id="artist">—</p>
+      </div>
+      <div class="side-actions">
+        <button class="side-btn" id="like" aria-label="喜欢" disabled>
+          <svg viewBox="0 0 24 24"><path d="M12 20.5s-7.6-4.7-9.2-9C1.6 7.9 3.6 4.8 6.8 4.8c2 0 3.4 1.1 4.2 2.3.3.4.9.4 1.2 0 .8-1.2 2.2-2.3 4.2-2.3 3.2 0 5.2 3.1 4 6.7-1.6 4.3-9.2 9-9.2 9z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="progress">
+      <input id="prog" type="range" min="0" max="1000" value="0" disabled aria-label="进度">
+      <div class="times"><span id="cur">0:00</span><span id="dur">0:00</span></div>
+    </div>
+
+    <div class="controls">
+      <span></span>
+      <div class="ctl-core">
+        <button class="skip" id="prev" aria-label="上一首">
+          <svg viewBox="0 0 24 24"><path d="M6 6h2.4v12H6zm3.6 6L18 6v12z"/></svg>
+        </button>
+        <button class="main" id="play" aria-label="播放/暂停">
+          <svg id="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+        <button class="skip" id="next" aria-label="下一首">
+          <svg viewBox="0 0 24 24"><path d="M15.6 6H18v12h-2.4zM6 6l8.4 6L6 18z"/></svg>
+        </button>
+      </div>
+      <span></span>
+    </div>
+
+    <div class="volume hidden" id="volumeRow">
+      <button class="round" id="volDown" aria-label="音量减">−</button>
+      <input id="vol" type="range" min="0" max="30" value="0" aria-label="音量">
+      <span id="volVal">0</span>
+      <button class="round" id="volUp" aria-label="音量加">+</button>
+    </div>
+    </section>
+
+    <section class="col col-b">
+    <div class="sec">
+      <h2>资料库</h2>
+      <span class="hint" id="libHint"></span>
+    </div>
+    <div class="tiles">
+      <button class="tile liked" id="tileLiked">
+        <span class="tile-top">
+          <span class="ico"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.6-4.7-9.2-9C1.6 7.9 3.6 4.8 6.8 4.8c2 0 3.4 1.1 4.2 2.3.3.4.9.4 1.2 0 .8-1.2 2.2-2.3 4.2-2.3 3.2 0 5.2 3.1 4 6.7-1.6 4.3-9.2 9-9.2 9z"/></svg></span>
+          <span class="pl tilePlay" id="likedPlay" role="button" aria-label="播放我喜欢的音乐"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+        </span>
+        <span class="n" id="likedName">我喜欢的音乐</span>
+        <span class="c" id="likedCount">—</span>
+      </button>
+      <button class="tile daily" id="tileDaily">
+        <span class="tile-top">
+          <span class="ico"><svg viewBox="0 0 24 24"><path d="M12 2.6l2.3 6.4 6.8.2-5.4 4.1 1.9 6.5L12 15.8l-5.6 4 1.9-6.5L2.9 9.2l6.8-.2z"/></svg></span>
+          <span class="pl tilePlay" id="dailyPlay" role="button" aria-label="播放每日推荐"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+        </span>
+        <span class="n">每日推荐</span>
+        <span class="c">点一下直接播</span>
+      </button>
+    </div>
+
+    <div class="sec"><h2>歌单</h2><span class="hint" id="plHint"></span></div>
+    <div class="rows" id="playlists"></div>
+
+    <footer><button class="furl" id="copyUrl" title="点一下复制完整地址">当前 IP 地址 <b id="host">—</b> · 点击复制</button></footer>
+    </section>
+  </main>
+
+  <div class="sheet" id="sheet">
+    <div class="sheet-head">
+      <button id="back" aria-label="返回">‹</button>
+      <div class="t">
+        <h2 id="sheetTitle">列表</h2>
+        <div class="s" id="sheetSub"></div>
+      </div>
+    </div>
+    <div class="sheet-body" id="sheetBody"></div>
+  </div>
+
+  <div class="sheet" id="setup">
+    <div class="sheet-head">
+      <button id="setupBack" aria-label="返回">‹</button>
+      <div class="t">
+        <h2>车机设置</h2>
+        <div class="s" id="setupSub">读取中…</div>
+      </div>
+      <button class="icon-btn" id="setupReload" aria-label="重新读取">
+        <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+      </button>
+    </div>
+    <div class="sheet-body" id="setupBody">
+      <div class="kv"><span>音源</span><b id="stMode">—</b></div>
+      <div class="seg hide" id="stSeg">
+        <button data-mode="official">官方网易云</button>
+        <button data-mode="third_party">第三方自研</button>
+      </div>
+      <div class="hint2" id="stModeHint"></div>
+
+      <div class="kv"><span>服务</span><b id="stSvc">—</b></div>
+      <div class="acts">
+        <button class="btn2" id="stRestart">重启服务</button>
+        <button class="btn2" id="stOpen">打开音乐 App</button>
+      </div>
+
+      <div class="kv"><span>日志采样</span><b id="stLog">—</b></div>
+      <div class="hint2" id="stLogHint">打开后复现问题，点「下载」自动复制日志；要存成文件，点下方「复制日志地址」，用手机浏览器打开即可下载。</div>
+      <div class="acts">
+        <button class="btn2" id="stLogToggle">开启采样</button>
+        <button class="btn2" id="stLogView">查看日志</button>
+        <button class="btn2" id="stLogDownload">下载</button>
+      </div>
+      <div class="kv"><span>日志地址</span><b id="stLogUrl">—</b></div>
+      <div class="acts">
+        <button class="btn2" id="stLogCopy">复制日志地址</button>
+      </div>
+      <textarea id="stLogBox" rows="10" readonly style="display:none;width:100%;box-sizing:border-box;margin-top:8px;font:11px/1.4 monospace;color:#333;background:#f5f5f5;border:1px solid #ddd;border-radius:4px;padding:6px;"></textarea>
+
+      <div class="kv"><span>地址</span><b id="stHost">—</b></div>
+      <div class="kv"><span>屏幕</span><b id="stScreen">—</b></div>
+      <div class="kv"><span>网页视口</span><b id="stView">—</b></div>
+      <div class="kv"><span>版本</span><b id="stVer">—</b></div>
+      <div class="hint2" id="stMsg"></div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var PROTO_VERSION = 1;
+  // 壳层（安卓 WebView / iOS WKWebView）在 URL 上带客户端标识，车机侧能看到是谁连进来了；
+  // 浏览器直接打开时没有这两个参数，走默认值。
+  var qs = new URLSearchParams(location.search);
+  var CLIENT = {
+    name: qs.get('client') || 'Safari',
+    version: qs.get('cv') || '1.0.0'
+  };
+  var K_TOKEN = 'carremote.token';
+  var K_DEVICE = 'carremote.deviceId';
+
+  var ICON_PLAY = '<path d="M8 5v14l11-7z"/>';
+  var ICON_PAUSE = '<path d="M6.5 5h4v14h-4zm7 0h4v14h-4z"/>';
+
+  var el = {};
+  ['dot', 'status', 'title', 'artist', 'prog', 'cur', 'dur', 'play', 'playIcon', 'prev', 'next',
+   'volumeRow', 'vol', 'volVal', 'volUp', 'volDown', 'likedName', 'likedCount',
+   'playlists', 'libHint', 'plHint',
+   'toast', 'host', 'tileLiked', 'scroll',
+   'refresh', 'lyricBox', 'likedPlay', 'like',
+   'dailyPlay', 'tileDaily',
+   'sheet', 'sheetTitle', 'sheetSub', 'sheetBody', 'back',
+   'gear', 'setup', 'setupSub', 'setupBody', 'setupBack', 'setupReload',
+   'stMode', 'stSeg', 'stModeHint', 'stSvc', 'stRestart', 'stOpen',
+   'stHost', 'stScreen', 'stView', 'stVer', 'stMsg',
+   'stLog', 'stLogHint', 'stLogToggle', 'stLogView', 'stLogDownload', 'stLogUrl', 'stLogCopy', 'stLogBox',
+   'copyUrl'
+  ].forEach(function (id) { el[id] = document.getElementById(id); });
+
+  var ws = null;
+  var seq = 0;
+  var state = {};
+  var lastSeq = -1;
+  var stateAt = 0;
+  var draggingSeek = false;
+  var pendingSeek = 0;
+  var reconnectDelay = 500;
+  var reconnectTimer = null;
+  var connectFails = 0;
+  var toastTimer = null;
+
+  var lyricLines = [];               // [{ t, text, trans }]
+  var lyricActive = -1;
+  var lyricTrackId = '';             // 这份歌词属于哪首歌
+  var lyricFresh = false;            // 刚换歌词：第一次定位必须钉在第一句
+  var lastLyricTitle = '';           // 上一次 state 的「歌名|歌手」，用来识别换歌
+  var lastLyricPos = -1;             // 上一次 state 的播放位置，用来识别进度回退
+
+  var library = null;                // { liked, playlists[] }
+  var list = null;
+
+  // 歌单默认只铺 5 个，默认收着，想看全的点「展开全部」。
+  var COLLAPSE_MAX = 5;
+  var plExpanded = false;
+
+  el.host.textContent = location.hostname;
+
+  // ---------- 基础 ----------
+
+  function deviceId() {
+    var v = localStorage.getItem(K_DEVICE);
+    if (!v) {
+      v = 'web-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      localStorage.setItem(K_DEVICE, v);
+    }
+    return v;
+  }
+
+  function setStatus(text, kind) {
+    el.status.textContent = text;
+    el.dot.className = kind || '';
+    // 主动把连接状态告诉原生壳：安卓据此决定是否拦截硬件音量键、记住成功的地址。
+    // iOS 壳没有注入这个对象，可选调用直接跳过；浏览器打开也安全。
+    try {
+      if (window.CarRemoteNative && window.CarRemoteNative.onConnection) {
+        window.CarRemoteNative.onConnection(kind === 'on', text);
+      }
+    } catch (e) {}
+  }
+
+  // 复制文本：非 HTTPS 页面 navigator.clipboard 不可用，用隐藏 textarea + execCommand 兜底
+  function copyText(t) {
+    var ta = document.createElement('textarea');
+    ta.value = t;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, t.length);
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+    return ok;
+  }
+
+  function toast(text) {
+    el.toast.textContent = text;
+    el.toast.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.toast.classList.remove('show'); }, 1800);
+  }
+
+  function send(type, data) {
+    if (!ws || ws.readyState !== 1) return;
+    seq += 1;
+    ws.send(JSON.stringify({
+      v: PROTO_VERSION, type: type, id: 'w' + seq, ts: Date.now(), data: data || {}
+    }));
+  }
+
+  function command(action, args) {
+    var payload = { action: action };
+    if (args) payload.args = args;
+    send('command', payload);
+  }
+
+  function fmt(ms) {
+    if (!ms || ms < 0) ms = 0;
+    var total = Math.floor(ms / 1000);
+    var m = Math.floor(total / 60);
+    var s = total % 60;
+    return m + ':' + (s < 10 ? '0' + s : s);
+  }
+
+  function setBar(input, ratio) {
+    input.style.setProperty('--p', (Math.max(0, Math.min(1, ratio)) * 100).toFixed(2) + '%');
+  }
+
+  /** 清空一个容器。不用 replaceChildren，老 Safari 没有。 */
+  function clear(node) {
+    while (node.firstChild) node.removeChild(node.firstChild);
+  }
+
+  function el_(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  /**
+   * 一个入口行：点整行进列表看曲目，点右边的小圆钮直接随机播整列。
+   * 圆钮用 span 不用 button —— button 里套 button 是非法结构，浏览器会把内层拆出去。
+   */
+  function row(name, count, onClick, onPlay) {
+    var b = el_('button', 'row');
+    b.appendChild(el_('span', 'n', name));
+    if (count != null) b.appendChild(el_('span', 'c', count + ' 首'));
+    if (onPlay) b.appendChild(playBtn('随机播放 ' + name, onPlay));
+    b.appendChild(el_('span', 'chev', '›'));
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  function playBtn(label, onPlay) {
+    var s = el_('span', 'pl');
+    s.setAttribute('role', 'button');
+    s.setAttribute('aria-label', label);
+    s.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+    s.addEventListener('click', function (e) {
+      e.stopPropagation();   // 别让整行的 click 把列表也打开了
+      onPlay();
+    });
+    return s;
+  }
+
+  // ---------- 渲染：正在播放 ----------
+
+  function paintNow() {
+    el.title.textContent = state.title || '未在播放';
+    el.artist.textContent = state.artist || '—';
+    el.playIcon.innerHTML = state.playing ? ICON_PAUSE : ICON_PLAY;
+    paintLike();
+
+    var dur = state.durationMs || 0;
+    el.dur.textContent = fmt(dur);
+    if (!draggingSeek) {
+      var pos = Math.min(dur || 0, state.positionMs || 0);
+      el.prog.max = dur || 1000;
+      el.prog.value = pos;
+      el.cur.textContent = fmt(pos);
+      setBar(el.prog, dur ? pos / dur : 0);
+    }
+    el.prog.disabled = !dur;
+
+    var max = state.volumeMax || 0;
+    if (max > 0 && typeof state.volume === 'number' && state.volume >= 0) {
+      el.volumeRow.classList.remove('hidden');
+      el.vol.max = max;
+      if (document.activeElement !== el.vol) {
+        el.vol.value = state.volume;
+        setBar(el.vol, state.volume / max);
+        el.volVal.textContent = state.volume;
+      }
+    } else {
+      el.volumeRow.classList.add('hidden');
+    }
+  }
+
+  /** 爱心只有收藏 / 取消收藏两态；没在放歌就置灰，免得发出去被官方回 -3。 */
+  function paintLike() {
+    var on = state.liked === true;
+    var has = !!(state.title && state.title !== '未在播放');
+    el.like.disabled = !has;
+    if (on) el.like.classList.add('on'); else el.like.classList.remove('on');
+    el.like.setAttribute('aria-label', on ? '取消喜欢' : '喜欢');
+  }
+
+  // 进度条自己走：车机每秒推一次 tick，中间靠本地插值补齐
+  setInterval(function () {
+    if (draggingSeek || !state.playing || !state.durationMs) return;
+    var pos = Math.min(state.durationMs, (state.positionMs || 0) + (Date.now() - stateAt));
+    el.prog.value = pos;
+    el.cur.textContent = fmt(pos);
+    setBar(el.prog, pos / state.durationMs);
+  }, 250);
+
+  // ---------- 渲染：资料库 ----------
+
+  function paintLibrary() {
+    var lib = library;
+    if (!lib) {
+      el.libHint.textContent = '读取中…';
+      return;
+    }
+    el.libHint.textContent = '';
+    el.likedName.textContent = lib.liked.name || '我喜欢的音乐';
+    el.likedCount.textContent = lib.liked.count > 0 ? lib.liked.count + ' 首' : '';
+
+    var items = lib.playlists || [];
+    el.plHint.textContent = items.length ? items.length + ' 个' : '';
+    paintPlaylists(items);
+  }
+
+  /** 自建歌单单独抽出来，是因为「展开 / 收起」要就地重画这一块，不能整页重来。 */
+  function paintPlaylists(items) {
+    fillEntries(el.playlists, items, plExpanded, function () {
+      plExpanded = !plExpanded;
+      paintPlaylists(items);
+    }, '还没有歌单。在车机私有目录 playlists.txt 写「歌单名|歌单id」，每行一个。');
+  }
+
+  /**
+   * 铺一列可折叠的入口：超过 COLLAPSE_MAX 个就只铺前 5 个。
+   * 点整行进歌曲列表，右侧小圆钮直接随机播放整张歌单。
+   */
+  function fillEntries(box, items, expanded, onToggle, emptyText) {
+    clear(box);
+    items = items || [];
+    if (!items.length) {
+      box.appendChild(el_('div', 'empty', emptyText));
+      return;
+    }
+    var shown = expanded ? items : items.slice(0, COLLAPSE_MAX);
+    shown.forEach(function (p) {
+      box.appendChild(row(
+        p.name, null,
+        function () { openList(p.id, p.name); },
+        function () { playList(p.id, p.name); }
+      ));
+    });
+    if (items.length > COLLAPSE_MAX) {
+      var more = el_('button', 'row more');
+      more.appendChild(el_('span', 'n', expanded ? '收起' : '展开全部（' + items.length + ' 个）'));
+      more.addEventListener('click', onToggle);
+      box.appendChild(more);
+    }
+  }
+
+  // ---------- 歌单 / 曲目双页 ----------
+
+  function openSheet() { el.sheet.classList.add('open'); }
+  function closeSheet() { el.sheet.classList.remove('open'); list = null; }
+
+  /** 右侧小圆钮 / 歌单内「随机播放全部」：整单播交给车机，随机序由车机内部排。 */
+  function playList(id, title) {
+    // 只带歌单名：车机侧按「从头播放」整单播（官方 playlist_play），不再有逐首/指定首点播
+    command('playTracks', { id: id, name: title });
+    toast('正在播放：' + title);
+    el.scroll.scrollTop = 0;
+  }
+
+  function openList(id, title) {
+    list = { id: id, title: title, total: 0, items: [], loading: true, error: null };
+    el.sheetTitle.textContent = title;
+    el.sheetSub.textContent = '读取中…';
+    paintList();
+    openSheet();
+    command('getTracks', { id: id });
+  }
+
+  function paintList() {
+    if (!list) return;
+    clear(el.sheetBody);
+
+    if (list.error) {
+      el.sheetSub.textContent = '';
+      el.sheetBody.appendChild(el_('div', 'empty', list.error));
+      var again = el_('button', 'row');
+      again.appendChild(el_('span', 'n', '重试'));
+      again.addEventListener('click', function () { reloadList(); });
+      el.sheetBody.appendChild(again);
+      return;
+    }
+
+    el.sheetSub.textContent = list.loading && !list.items.length
+      ? '读取中…'
+      : (list.total ? list.items.length + ' / ' + list.total + ' 首' : list.items.length + ' 首');
+
+    // 歌单内容只读展示；播放唯一入口：整单「随机播放全部」（随机序由车机内部排）
+    if (!list.error) {
+      var all = el_('button', 'row');
+      all.appendChild(el_('span', 'n', '随机播放全部'));
+      all.appendChild(el_('span', 'chev', '▶'));
+      all.addEventListener('click', function () {
+        playList(list.id, list.title);
+        closeSheet();
+      });
+      el.sheetBody.appendChild(all);
+    }
+
+    list.items.forEach(function (t) {
+      // 单曲点播：官方没有「按歌曲 ID 播放」入口，只能按「歌名+歌手」走语音搜索通道；
+      // 播完这首或官方切成别的版本时，桥接层自动接管到本歌单随机播放，打断版本循环。
+      var r = el_('div', 'track');
+      r.addEventListener('click', function () {
+        command('playOne', { song: t.name, artist: t.artist, listId: list.id, listName: list.title });
+        closeSheet();
+        toast('点播：' + t.name);
+      });
+      r.appendChild(el_('span', 'idx', String(t.index + 1)));
+      var box = el_('div', 't');
+      box.appendChild(el_('div', 'nm', t.name));
+      box.appendChild(el_('div', 'ar', t.artist || '未知歌手'));
+      r.appendChild(box);
+      r.appendChild(el_('span', 'dur', fmt(t.durationMs)));
+      el.sheetBody.appendChild(r);
+    });
+
+    if (list.loading) {
+      el.sheetBody.appendChild(el_('div', 'empty', '加载中…'));
+    } else if (!list.items.length) {
+      el.sheetBody.appendChild(el_('div', 'empty', '这里没有歌'));
+    }
+  }
+
+  /** 曲目一次性取全（车机端不分页），重试时整份重取。 */
+  function reloadList() {
+    if (!list) return;
+    list.loading = true;
+    list.error = null;
+    list.items = [];
+    paintList();
+    command('getTracks', { id: list.id });
+  }
+
+  // ---------- 消息 ----------
+
+  function handle(type, data) {
+    switch (type) {
+      case 'pair_result':
+        if (data.ok) {
+          localStorage.setItem(K_TOKEN, data.token || '');
+          setStatus('已连接 · ' + (data.carName || '车机'), 'on');
+          command('getState');
+          command('getLyrics');
+          loadAll();
+        } else {
+          setStatus(data.message || '配对失败', 'warn');
+        }
+        break;
+
+      case 'auth_result':
+        if (data.ok) {
+          setStatus('已连接 · ' + (data.carName || '车机'), 'on');
+          command('getState');
+          command('getLyrics');
+          loadAll();
+        } else {
+          localStorage.removeItem(K_TOKEN);
+          setStatus('授权失效，重新配对…', 'warn');
+          send('pair', { pin: '', deviceId: deviceId(), deviceName: CLIENT.name, clientVersion: CLIENT.version });
+        }
+        break;
+
+      case 'state':
+        if (typeof data.seq === 'number') {
+          if (data.seq <= lastSeq) return;
+          lastSeq = data.seq;
+        }
+        // 松手 seek 后车机要过一会儿才推到新位置，这期间别让进度条跳回旧值
+        if (pendingSeek && Math.abs((data.positionMs || 0) - pendingSeek) < 2500) {
+          pendingSeek = 0;
+          draggingSeek = false;
+        }
+        state = data;
+        stateAt = Date.now();
+        // 换歌 / 进度回退（切上一首、拖回首）时把歌词锁回第一句。
+        // 车机端换歌是先推「空歌词」再推「新歌词」，中间那几帧 state 还是上一首的
+        // positionMs（可能已经两三分钟），不锁住就会先甩到歌词中段再弹回来，看着像乱跑。
+        var titleKey = (data.title || '') + '|' + (data.artist || '');
+        var pos = data.positionMs || 0;
+        if (titleKey !== lastLyricTitle || (lastLyricPos >= 0 && pos < lastLyricPos - 1500)) {
+          lockFirstLyric();
+        }
+        lastLyricTitle = titleKey;
+        lastLyricPos = pos;
+        paintNow();
+        highlightLyric();
+        break;
+
+      case 'lyrics':
+        var lines = (data.lines || []).slice().sort(function (a, b) { return (a.t || 0) - (b.t || 0); });
+        var hadLines = lyricLines.length > 0;
+        var tid = data.trackId || '';
+        var swapped = tid !== lyricTrackId || (!hadLines && lines.length > 0) || !lines.length;
+        lyricTrackId = tid;
+        lyricLines = lines;
+        renderLyrics();
+        // 换歌 / 歌词刚异步到位：一律从第一句起步，不拿旧的 state 位置去乱定位
+        if (swapped) lockFirstLyric();
+        // 只有真正换歌/歌词才钉第一句；同一首歌补推译文之类不打断正在跟随的位置
+        lyricFresh = swapped && lyricLines.length > 0;
+        highlightLyric();
+        break;
+
+      case 'library':
+        if (data.ok) {
+          library = {
+            liked: data.liked || { name: '我喜欢的音乐', count: 0 },
+            playlists: data.playlists || []
+          };
+          paintLibrary();
+        } else {
+          library = null;
+          el.libHint.textContent = data.message || '资料库读取失败';
+        }
+        break;
+
+      case 'tracks':
+        if (!list || data.id !== list.id) return;   // 迟到的上一份列表，丢掉
+        if (data.ok) {
+          list.items = data.tracks || [];
+          list.total = data.total || list.items.length;
+          list.error = null;
+        } else {
+          list.error = data.message || '读取失败';
+        }
+        list.loading = false;
+        paintList();
+        break;
+
+      case 'ack':
+        if (data.ok === false) {
+          // 爱心是先翻转再发，被拒就得翻回来，别让页面显示假状态
+          if (data.action === 'like') { state.liked = state.liked !== true; paintLike(); }
+          toast('指令失败：' + (data.message || data.error || ''));
+        } else if (data.action === 'refresh') {
+          el.refresh.classList.remove('spin');
+          toast('已刷新');
+        }
+        break;
+
+      case 'error':
+        toast(data.message || ('错误 ' + data.error));
+        break;
+
+      case 'revoked':
+        localStorage.removeItem(K_TOKEN);
+        send('pair', { pin: '', deviceId: deviceId(), deviceName: CLIENT.name, clientVersion: CLIENT.version });
+        break;
+    }
+  }
+
+  function loadAll() {
+    library = null;
+    el.libHint.textContent = '';
+    paintLibrary();
+    command('library');
+  }
+
+  /** 真正的刷新：走服务端 refresh 重推资料库/状态/歌词；断线时改为重载页面。 */
+  var refreshTimer = null;
+  function refreshAll(silent) {
+    if (!ws || ws.readyState > 1) {
+      if (!silent) toast('连接已断开，正在重新加载…');
+      location.reload();
+      return;
+    }
+    if (!silent) toast('正在刷新…');
+    el.refresh.classList.add('spin');
+    if (refreshTimer) clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(function () { el.refresh.classList.remove('spin'); }, 8000);
+    library = null;
+    lyricLines = [];
+    lyricActive = -1;
+    lyricTrackId = '';
+    lyricFresh = false;
+    lastLyricTitle = '';
+    lastLyricPos = -1;
+    renderLyrics();
+    paintLibrary();
+    command('refresh');
+  }
+
+  // ---------- 连接 ----------
+
+  function connect() {
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    // 车机侧的 seq 在服务重启后从 1 重新数；页面若沿用断线前的值，
+    // 新连接的每条 state 都会被「seq <= lastSeq」判成过期丢掉，表现为页面卡在旧歌不动。
+    lastSeq = -1;
+    setStatus('正在连接车机…', '');
+    var scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(scheme + '://' + location.host + '/');
+
+    ws.onopen = function () {
+      reconnectDelay = 500;
+      connectFails = 0;
+      var token = localStorage.getItem(K_TOKEN) || '';
+      if (token) {
+        send('auth', { token: token, deviceId: deviceId(), clientVersion: CLIENT.version });
+        setStatus('正在认证…', '');
+      } else {
+        send('pair', { pin: '', deviceId: deviceId(), deviceName: CLIENT.name, clientVersion: CLIENT.version });
+        setStatus('正在配对…', '');
+      }
+    };
+
+    ws.onmessage = function (ev) {
+      var msg;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      handle(msg.type, msg.data || {});
+    };
+
+    ws.onclose = function () {
+      ws = null;
+      connectFails++;
+      // 车机热点重启后 IP 会变，而浏览器对域名的解析结果有自己的缓存（我们发的 A 记录
+      // TTL 是 120 秒，期间不会重新问）。所以这里不能一直闷头重试：
+      // 超过 20 秒还连不上就明确告诉用户「刷新一下」，刷新会让浏览器重新解析域名。
+      if (connectFails >= 4) {
+        setStatus('连不上车机 · 点右上角刷新或下拉重试', 'warn');
+      } else {
+        setStatus('已断开，重连中…', 'warn');
+      }
+      reconnectTimer = setTimeout(connect, reconnectDelay);
+      // 服务切换/重启后要尽快回到连上状态，退避封顶 2 秒
+      reconnectDelay = Math.min(reconnectDelay * 2, 2000);
+    };
+
+    ws.onerror = function () { /* onclose 会跟着来，这里不重复处理 */ };
+  }
+
+  // 心跳：协议要求 20 秒一次，车机 90 秒没收到任何帧就断
+  setInterval(function () { send('ping', {}); }, 20000);
+
+  // 从后台切回来时立刻重连，不用等退避
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && (!ws || ws.readyState > 1)) {
+      reconnectDelay = 500;
+      connect();
+    }
+  });
+
+  // ---------- 歌单 / 歌词 双页 ----------
+
+  function renderLyrics() {
+    var box = el.lyricBox;
+    box.textContent = '';
+    lyricActive = -1;
+    if (!lyricLines.length) {
+      var empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = '暂无歌词';
+      box.appendChild(empty);
+      box.scrollTop = 0;
+      return;
+    }
+    var frag = document.createDocumentFragment();
+    lyricLines.forEach(function (line) {
+      var d = document.createElement('div');
+      d.className = 'lyric-line';
+      d.appendChild(document.createTextNode(line.text || ''));
+      if (line.trans) {
+        var tr = document.createElement('span');
+        tr.className = 'tr';
+        tr.textContent = line.trans;
+        d.appendChild(tr);
+      }
+      frag.appendChild(d);
+    });
+    box.appendChild(frag);
+    // 重建 DOM 后立刻把滚动位置钉回顶部（不走 CSS smooth，避免开场动画乱跑）
+    setLyricScroll(0, true);
+  }
+
+  /** 清掉高亮并把方框拉回第一行；instant=true 时跳过平滑动画。 */
+  function lockFirstLyric() {
+    var box = el.lyricBox;
+    Array.prototype.forEach.call(box.children, function (n) { n.classList.remove('on'); });
+    lyricActive = -1;
+    setLyricScroll(0, true);
+  }
+
+  function setLyricScroll(top, instant) {
+    var box = el.lyricBox;
+    if (instant) {
+      var old = box.style.scrollBehavior;
+      box.style.scrollBehavior = 'auto';
+      box.scrollTop = top;
+      box.style.scrollBehavior = old;
+    } else {
+      // CSS 里的 scroll-behavior: smooth 负责逐行跟随
+      box.scrollTop = top;
+    }
+  }
+
+  function highlightLyric() {
+    if (!lyricLines.length) return;
+    var pos = (state.positionMs || 0) + (state.playing ? Math.min(1500, Date.now() - stateAt) : 0);
+    var idx = -1;
+    for (var i = 0; i < lyricLines.length; i++) {
+      if ((lyricLines[i].t || 0) <= pos) idx = i; else break;
+    }
+    // 前奏 / 还没到第一句：也钉在第一句，不显示「没有高亮行」的空框
+    if (idx < 0) idx = 0;
+    // 新歌开头 2.5 秒内、或歌词刚换好：固定第一句，等真正的 state 位置到了再跟随
+    var pinFirst = lyricFresh || pos < 2500;
+    lyricFresh = false;
+    if (pinFirst) idx = 0;
+    var nodes = el.lyricBox.children;
+    if (idx === lyricActive && !pinFirst) return;
+    if (lyricActive >= 0 && nodes[lyricActive]) nodes[lyricActive].classList.remove('on');
+    if (nodes[idx]) nodes[idx].classList.add('on');
+    lyricActive = idx;
+
+    // 固定 3 行：当前行落在中间那行（第 0 行时自然是顶部三行）。
+    // 行高从真实 DOM 量出来，CSS 改 --lyric-row 也不用同步改这里。
+    var base = nodes[0] ? nodes[0].offsetTop : 0;
+    var rowH = nodes[1] ? nodes[1].offsetTop - base : el.lyricBox.clientHeight / 3;
+    var top = pinFirst ? 0 : Math.max(0, (nodes[idx] ? nodes[idx].offsetTop : base) - base - rowH);
+    setLyricScroll(top, pinFirst);
+  }
+
+  // 下拉刷新：只在页面已经滚到顶、且不是拖输入框/滑杆时接管。三端共用这一份手势。
+  (function bindPullRefresh() {
+    // iOS 壳用 WKWebView 的 UIRefreshControl（有 spinner 反馈），这里别重复触发刷新
+    if (CLIENT.name === 'ios') return;
+    var y0 = 0, tracking = false;
+    el.scroll.addEventListener('touchstart', function (e) {
+      var tag = (e.target.tagName || '').toLowerCase();
+      tracking = (e.touches.length === 1 && el.scroll.scrollTop <= 0
+                  && tag !== 'input' && tag !== 'textarea');
+      if (tracking) y0 = e.touches[0].clientY;
+    }, { passive: true });
+    el.scroll.addEventListener('touchend', function (e) {
+      if (!tracking || !e.changedTouches.length) return;
+      tracking = false;
+      if (e.changedTouches[0].clientY - y0 > 75) refreshAll(false);
+    }, { passive: true });
+  })();
+
+  // ---------- 原生层挂钩 ----------
+
+  // 原生层（安卓 onKeyDown / iOS VolumeKeyWatcher）拦到硬件音量键后调它；dir 为 +1 / -1。
+  // iOS 壳在 documentStart 注入了一个「先排队」的同名函数，页面没加载完时按下的音量键
+  // 不会丢；这里换成真实现后把队列补放一遍（安卓 / 浏览器没有注入脚本，队列为空）。
+  var stepVolumeImpl = function (dir) { stepVolume(dir); };
+  window.carRemoteStepVolume = stepVolumeImpl;
+  (window.__carRemoteVolumeQueue || []).forEach(stepVolumeImpl);
+  window.__carRemoteVolumeQueue = [];
+  // 原生层从后台切回、或需要主动刷新时调用
+  window.carRemoteRefresh = function () { refreshAll(true); };
+
+  // ---------- 操作 ----------
+
+  el.play.addEventListener('click', function () {
+    command(state.playing ? 'pause' : 'play');
+  });
+  el.prev.addEventListener('click', function () { command('prev'); });
+  el.next.addEventListener('click', function () { command('next'); });
+
+  el.prog.addEventListener('input', function () {
+    draggingSeek = true;
+    el.cur.textContent = fmt(+el.prog.value);
+    setBar(el.prog, state.durationMs ? (+el.prog.value) / state.durationMs : 0);
+  });
+  el.prog.addEventListener('change', function () {
+    pendingSeek = +el.prog.value;
+    command('seek', { positionMs: Math.round(pendingSeek) });
+    // 兜底：车机没回新位置（不支持 seek 之类）也要把拖动状态放掉
+    setTimeout(function () {
+      pendingSeek = 0;
+      draggingSeek = false;
+    }, 1500);
+  });
+
+  function pushVolume(v) {
+    var max = state.volumeMax || 0;
+    if (!max) return;
+    command('setVolume', { volume: Math.max(0, Math.min(max, Math.round(v))) });
+  }
+
+  el.vol.addEventListener('input', function () {
+    el.volVal.textContent = el.vol.value;
+    setBar(el.vol, (+el.vol.value) / (state.volumeMax || 1));
+  });
+  el.vol.addEventListener('change', function () { pushVolume(+el.vol.value); });
+
+  function stepVolume(dir) {
+    var max = state.volumeMax || 0;
+    if (!max) return;
+    var cur = state.volume >= 0 ? state.volume : Math.round(max / 2);
+    var step = Math.max(1, Math.round(max / 15));
+    pushVolume(cur + dir * step);
+  }
+  el.volUp.addEventListener('click', function () { stepVolume(1); });
+  el.volDown.addEventListener('click', function () { stepVolume(-1); });
+
+  el.likedPlay.addEventListener('click', function (e) { e.stopPropagation(); playList('liked', '我喜欢的音乐'); });
+  // 「我喜欢的音乐」整个卡片 = 直接播放官方收藏；列表数据拿不到真实收藏（公开接口只有 demo），
+  // 展示 demo 曲目反而误导，所以不再打开列表。
+  el.tileLiked.addEventListener('click', function () { playList('liked', '我喜欢的音乐'); });
+  // 每日推荐的内容只存在于官方 App 里，没有列表可看，点整张卡就是开播
+  el.tileDaily.addEventListener('click', function () { playList('daily', '每日推荐'); });
+  el.dailyPlay.addEventListener('click', function (e) { e.stopPropagation(); playList('daily', '每日推荐'); });
+  el.back.addEventListener('click', function () { closeSheet(); });
+  el.refresh.addEventListener('click', function () { refreshAll(false); });
+
+  // ---------- 车机设置 ----------
+  // 音源切换、重启服务、后台白名单这些以前只在车机的原生入口页里，
+  // 现在走 /api/*，手机连上来也能改，不用跑去点车机屏幕。
+  function api(path, body, cb) {
+    var x = new XMLHttpRequest();
+    x.open(body ? 'POST' : 'GET', path, true);
+    x.timeout = 8000;
+    if (body) x.setRequestHeader('Content-Type', 'application/json');
+    x.onreadystatechange = function () {
+      if (x.readyState !== 4) return;
+      var d = null;
+      try { d = JSON.parse(x.responseText); } catch (e) {}
+      cb(d, x.status);
+    };
+    x.ontimeout = function () { cb(null, -2); };
+    x.onerror = function () { cb(null, -1); };
+    try { x.send(body ? JSON.stringify(body) : null); } catch (e) { cb(null, -3); }
+  }
+
+  function openSetup() {
+    el.stView.textContent = window.innerWidth + '×' + window.innerHeight;
+    el.setup.classList.add('open');
+    loadSetup();
+  }
+
+  function closeSetup() { el.setup.classList.remove('open'); }
+
+  function loadSetup(cb) {
+    el.setupSub.textContent = '读取中…';
+    api('/api/status', null, function (d, code) {
+      if (!d || d.ok === false) {
+        el.setupSub.textContent = '读不到设置（' + code + '）';
+        el.stMsg.textContent = '这台车机的 18765 可能由第三方自研播放器提供，或桥接 app 版本过旧。';
+        if (cb) cb(false);
+        return;
+      }
+      try {
+        paintSetup(d);
+        if (cb) cb(d.running === true);
+      } catch (e) {
+        el.setupSub.textContent = '渲染失败：' + (e && e.message ? e.message : e);
+        if (cb) cb(false);
+      }
+    });
+  }
+
+  // 服务切换/重启后端口要重绑，状态会先「未运行」一阵子；每 2 秒轮询一次，
+  // 直到服务运行起来才停，面板上的状态不会停在旧的「切换中」。
+  function pollSetup(left) {
+    loadSetup(function (running) {
+      if (running) return;
+      if (left > 0) setTimeout(function () { pollSetup(left - 1); }, 2000);
+    });
+  }
+
+  function paintSetup(d) {
+    el.stMode.textContent = d.modeLabel || '—';
+    el.stSvc.textContent = (d.running ? '运行中' : '未运行') + ' · ' + (d.clients || 0) + ' 台设备'
+      + (d.bridge ? ' · 已连官方' : ' · 未连官方');
+    el.stHost.textContent = 'http://' + (d.ip || location.hostname) + ':' + (d.port || 18765);
+    el.stLogUrl.textContent = 'http://' + (d.ip || location.hostname) + ':' + (d.port || 18765) + '/api/logs';
+    el.stScreen.textContent = d.screen || '—';
+    el.stVer.textContent = (d.version || '—') + (d.oldProbe ? ' · 有旧探针' : '');
+    el.setupSub.textContent = d.both ? '两个音源都在，可切换' : '自动识别音源';
+
+    // 日志采样开关状态
+    var logOn = d.logOn === true;
+    el.stLog.textContent = logOn ? '采集中' : '未开启';
+    el.stLogToggle.textContent = logOn ? '关闭采样' : '开启采样';
+
+    if (d.both) el.stSeg.classList.remove('hide');
+    else el.stSeg.classList.add('hide');
+    var want = d.mode === 'official' ? 'official' : 'third_party';
+    var bs = el.stSeg.getElementsByTagName('button');
+    for (var i = 0; i < bs.length; i++) {
+      if (bs[i].getAttribute('data-mode') === want) bs[i].classList.add('on');
+      else bs[i].classList.remove('on');
+    }
+
+    if (d.oldProbe) {
+      el.stMsg.textContent = '车上还留着旧版单遥控 APK（com.wb.ncmremote），和本包抢 18765，请卸掉。';
+    } else if (d.mode === 'third_party') {
+      el.stMsg.textContent = '当前由第三方自研播放器放歌并提供 18765，本包只占包名；切到官方网易云才走桥接。';
+    } else {
+      el.stMsg.textContent = '';
+    }
+  }
+
+  el.gear.addEventListener('click', openSetup);
+  el.setupBack.addEventListener('click', closeSetup);
+  el.setupReload.addEventListener('click', loadSetup);
+
+  el.stSeg.addEventListener('click', function (e) {
+    var n = e.target;
+    while (n && n !== el.stSeg && n.tagName !== 'BUTTON') n = n.parentNode;
+    if (!n || n.tagName !== 'BUTTON') return;
+    var m = n.getAttribute('data-mode');
+    if (!m) return;
+    if (!window.confirm('切到「' + n.textContent + '」会重启服务，所有设备会短暂断开。继续？')) return;
+    el.stMsg.textContent = '正在切换…';
+    api('/api/mode', { mode: m }, function (d) {
+      el.stMsg.textContent = (d && d.message) || '已切换';
+      setTimeout(function () { pollSetup(8); }, 1200);
+    });
+  });
+
+  el.stRestart.addEventListener('click', function () {
+    if (!window.confirm('重启服务？所有设备会短暂断开。')) return;
+    el.stMsg.textContent = '重启中…';
+    api('/api/service', { op: 'restart' }, function (d) {
+      el.stMsg.textContent = (d && d.message) || '重启中';
+      setTimeout(function () { pollSetup(8); }, 1200);
+    });
+  });
+
+  el.stOpen.addEventListener('click', function () {
+    api('/api/open', {}, function (d) {
+      el.stMsg.textContent = (d && d.message) || '';
+    });
+  });
+
+  // 日志采样开关：打开后复现问题，再点下载导出
+  el.stLogToggle.addEventListener('click', function () {
+    var turnOn = el.stLogToggle.textContent === '开启采样';
+    api('/api/logs', { on: turnOn }, function (d) {
+      if (d && d.ok) {
+        el.stLog.textContent = turnOn ? '采集中' : '未开启';
+        el.stLogToggle.textContent = turnOn ? '关闭采样' : '开启采样';
+        el.stMsg.textContent = d.message || '';
+      } else {
+        el.stMsg.textContent = (d && d.message) || '开关失败';
+      }
+    });
+  });
+
+  // 查看日志：把日志文本直接显示在设置面板的文本框里，长按即可全选复制，
+  // 不依赖 WebView 的下载能力（Life Container 等容器常不触发 Blob 下载）。
+  el.stLogView.addEventListener('click', function () {
+    fetch('/api/logs')
+      .then(function (r) { return r.text(); })
+      .then(function (text) {
+        el.stLogBox.value = text;
+        el.stLogBox.style.display = 'block';
+        el.stLogBox.select();
+        el.stMsg.textContent = '日志已显示在下方，长按全选复制后发给开发者。';
+      })
+      .catch(function () {
+        el.stMsg.textContent = '读取失败，检查网络。';
+      });
+  });
+
+  // 下载日志：不弹窗了。直接导航到 /api/logs —— Server 对 GET 请求带
+  // Content-Disposition: attachment，安卓浏览器/WebView 会真正下载成文件；
+  // 不支持下载的容器（如 iOS WKWebView）就显示原始文本，可直接长按复制。
+  el.stLogDownload.addEventListener('click', function () {
+    window.location.href = location.protocol + '//' + location.host + '/api/logs';
+  });
+
+  // 日志文本框：点一下全选，方便直接复制
+  el.stLogBox.addEventListener('click', function () { this.select(); });
+
+  // 设置面板里所有「值」（.kv 的 b）：点一下复制到剪贴板
+  [].forEach.call(document.querySelectorAll('#setup .kv b'), function (b) {
+    b.addEventListener('click', function () {
+      toast(copyText(b.textContent) ? '已复制：' + b.textContent : '复制失败，长按手动复制');
+    });
+  });
+
+  // 复制日志地址：拿到后手机浏览器打开就是下载
+  el.stLogCopy.addEventListener('click', function () {
+    var url = el.stLogUrl.textContent || (location.protocol + '//' + location.host + '/api/logs');
+    el.stMsg.textContent = copyText(url)
+      ? '日志地址已复制：' + url + '，手机浏览器打开即可下载文件。'
+      : '复制失败，长按地址手动复制。';
+  });
+
+  // 页脚地址：点一下复制完整遥控地址
+  el.copyUrl.addEventListener('click', function () {
+    var url = location.protocol + '//' + location.host;
+    toast(copyText(url) ? '地址已复制：' + url : '复制失败，长按手动复制');
+  });
+
+  el.like.addEventListener('click', function () {
+    if (!state.title || state.title === '未在播放') return;
+    var want = state.liked !== true;
+    // 先本地翻转，车机把 star_action 发出去后回执会再推一次 state 校正
+    state.liked = want;
+    paintLike();
+    command('like', { on: want });
+    toast(want ? '已加入我喜欢的音乐' : '已取消喜欢');
+  });
+
+  connect();
+})();
+</script>
+</body>
+</html>
