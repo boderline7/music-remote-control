@@ -52,4 +52,8 @@ docs/     本地留档，不入库（08-占位包 已过期，仅作协议依据
 
 ## 许可
 
-GNU LGPL-3.0。车机端派生自 [xuqian-git/cloudmusic-car](https://github.com/xuqian-git/cloudmusic-car)（同为 LGPL-3.0），派生作品沿用同一许可证。改动逐条见 [NOTICE.md](./NOTICE.md)。
+GNU LGPL-3.0。
+
+- 车机端第三方播放器派生自 [xuqian-git/cloudmusic-car](https://github.com/xuqian-git/cloudmusic-car)（LGPL-3.0）。
+- 接口加密、接口清单与应用图标来自它的上游 [missuo/kumone](https://github.com/missuo/kumone)（LGPL-3.0）。
+- 派生作品沿用 LGPL-3.0；逐条改动、依赖许可、商标与免责声明见 [NOTICE.md](./NOTICE.md)。

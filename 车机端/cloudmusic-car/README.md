@@ -1,7 +1,9 @@
 # 云音乐 车机版（Android）
 
 网易云音乐非官方车机客户端，Apple Music 风格，横屏 / 竖屏自适应。
-接口与 weapi/eapi 加密移植自 [missuo/kumone](https://github.com/missuo/kumone)（LGPL-3.0）。
+本模块派生自 [xuqian-git/cloudmusic-car](https://github.com/xuqian-git/cloudmusic-car)（LGPL-3.0），
+接口与 eapi 加密移植自其上游 [missuo/kumone](https://github.com/missuo/kumone)（LGPL-3.0），应用图标亦取自后者。
+来源链、改动逐条与第三方许可见仓库根目录 [`NOTICE.md`](../../NOTICE.md)。
 
 ## 功能
 - 扫码登录（请用**网易云音乐 App** 扫码，微信扫码无效）
