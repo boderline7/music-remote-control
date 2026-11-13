@@ -16,7 +16,7 @@ import kotlin.random.Random
 class ApiException(val code: Int, message: String) : IOException(message)
 
 /**
- * 网易云音乐传输层：管理 Cookie，执行 weapi / eapi 加密请求。
+ * 网易云音乐传输层：管理 Cookie，执行 eapi 加密请求。
  * 移植自 Kumone 的 NeteaseClient.swift。
  */
 object NeteaseClient {
@@ -126,7 +126,7 @@ object NeteaseClient {
     suspend fun refreshIfDue() = withContext(Dispatchers.IO) { refreshIfDueBlocking() }
 
     /**
-     * 续签登录态（与 NeteaseCloudMusicApi login_refresh 一致走 eapi，失败再试一次 weapi）。
+     * 续签登录态（eapi `/login/token/refresh`，与 Kumone 现行实现一致）。
      * 续签明确返回 301 说明 MUSIC_U 已作废：清掉本地登录并回调 [onSessionExpired]。
      */
     fun refreshSessionBlocking(): RefreshResult = synchronized(refreshLock) {
@@ -137,12 +137,9 @@ object NeteaseClient {
         val result = runCatching {
             val eapiCode = eapiRaw("/login/token/refresh", JSONObject(), emptyMap()).optInt("code", 200)
             codes += eapiCode
-            if (eapiCode == 200) return@runCatching RefreshResult.OK
-            val weapiCode = weapiRaw("/login/token/refresh", JSONObject(), emptyMap()).optInt("code", 200)
-            codes += weapiCode
-            when {
-                weapiCode == 200 -> RefreshResult.OK
-                eapiCode == 301 && weapiCode == 301 -> RefreshResult.EXPIRED
+            when (eapiCode) {
+                200 -> RefreshResult.OK
+                301 -> RefreshResult.EXPIRED
                 else -> RefreshResult.FAILED
             }
         }.getOrElse {
@@ -173,23 +170,11 @@ object NeteaseClient {
         return all.entries.joinToString("; ") { "${it.key}=${it.value}" }
     }
 
-    suspend fun weapi(
-        path: String,
-        payload: JSONObject = JSONObject(),
-        cookieOverrides: Map<String, String> = emptyMap(),
-    ): JSONObject = withContext(Dispatchers.IO) { weapiBlocking(path, payload, cookieOverrides) }
-
     suspend fun eapi(
         path: String,
         payload: JSONObject = JSONObject(),
         cookieOverrides: Map<String, String> = emptyMap(),
     ): JSONObject = withContext(Dispatchers.IO) { eapiBlocking(path, payload, cookieOverrides) }
-
-    fun weapiBlocking(
-        path: String,
-        payload: JSONObject = JSONObject(),
-        cookieOverrides: Map<String, String> = emptyMap(),
-    ): JSONObject = withAuthRetry(path) { weapiRaw(path, payload, cookieOverrides) }
 
     fun eapiBlocking(
         path: String,
@@ -203,19 +188,6 @@ object NeteaseClient {
         if (first.optInt("code", 200) != 301 || !isLoggedIn || path.substringBefore('?') in AUTH_PATHS) return first
         Log.i(TAG, "301 on $path, refreshing")
         return if (refreshSessionBlocking() == RefreshResult.OK) request() else first
-    }
-
-    private fun weapiRaw(
-        path: String,
-        payload: JSONObject,
-        cookieOverrides: Map<String, String>,
-    ): JSONObject {
-        val csrf = cookie("__csrf").orEmpty()
-        payload.put("csrf_token", csrf)
-        var fullPath = path
-        if (csrf.isNotEmpty()) fullPath += (if ("?" in fullPath) "&" else "?") + "csrf_token=$csrf"
-        val form = NeteaseCrypto.weapi(payload.toString())
-        return post("https://music.163.com/weapi$fullPath", form, cookieOverrides)
     }
 
     private fun eapiRaw(

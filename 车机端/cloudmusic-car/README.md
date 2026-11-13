@@ -28,7 +28,7 @@ Release 使用正式签名：读取根目录 `keystore.properties` 与 `keystore
 | 语言 | Kotlin 2.0.21（JVM 17） |
 | UI | Jetpack Compose + Material 3（BOM 2024.09.03） |
 | 播放器 | Media3 / ExoPlayer 1.4.1 + MediaSessionService |
-| 网络 | OkHttp 4.12，网易云接口自行实现 weapi/eapi 加密（AES + RSA） |
+| 网络 | OkHttp 4.12，网易云接口统一走 eapi 加密（AES-128-ECB） |
 | 图片 | Coil 2.7 |
 | 其他 | Palette（封面取色）、ZXing（扫码登录）、kotlinx-coroutines |
 | 构建 | Gradle 8.x + AGP 8.7.3，Kotlin DSL |

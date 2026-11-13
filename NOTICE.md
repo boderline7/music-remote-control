@@ -4,8 +4,9 @@
 
 - `车机端/cloudmusic-car` 派生自 **[xuqian-git/cloudmusic-car](https://github.com/xuqian-git/cloudmusic-car)**（网易云音乐非官方车机客户端），
   以 GNU LGPL-3.0 发布。原始许可证保留在 `车机端/cloudmusic-car/LICENSE`（LGPL-3.0）与 `车机端/cloudmusic-car/COPYING.GPL`（GPL-3.0）。
-- 其中的 weapi / eapi 接口加密移植自 **[missuo/kumone](https://github.com/missuo/kumone)**（LGPL-3.0）。
-  eapi 与上游现行 `RequestCrypto.swift` 一致；weapi（双 AES-CBC + 预置 RSA 密文）取自上游 2026-10-28 前的历史版 —— 该提交起上游已全量转 eapi 并删掉 weapi，接口层现名 `MusicAPI.swift` / `MusicClient.swift`。
+- 其中的 eapi 接口加密移植自 **[missuo/kumone](https://github.com/missuo/kumone)**（LGPL-3.0）。
+  现行实现与上游 `RequestCrypto.swift` 一致（AES-128-ECB + MD5，大写 hex）。上游自 2026-10-28 起已全量转 eapi 并删掉 weapi，本工程 2.3.0 起同步：旧 weapi（双 AES-CBC + 预置 RSA 密文）已移除，不再保留回退路径，接口层对应上游 `MusicAPI.swift` / `MusicClient.swift`。
+  应用图标取自该仓库 `ios/KumoneIOS/Assets.xcassets/AppIcon.appiconset/AppIcon.png`，未作重绘。
 - 车机端里的 `qqmusic/`、`kugoumusic/`、`shared/` 是上游自带的多应用变体，本工程没有使用（`settings.gradle.kts` 只 `include(":app")`），原样保留以方便对照上游。
 
 ## 本仓库对上游做的修改

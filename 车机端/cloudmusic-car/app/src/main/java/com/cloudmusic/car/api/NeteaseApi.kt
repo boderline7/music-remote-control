@@ -28,32 +28,32 @@ object NeteaseApi {
     }
 
     suspend fun logout() {
-        runCatching { client.weapi("/logout") }
+        runCatching { client.eapi("/logout") }
         client.clearAuthCookies()
     }
 
     suspend fun userAccount(): Profile? {
-        val p = client.weapi("/w/nuser/account/get").checked().optJSONObject("profile") ?: return null
+        val p = client.eapi("/nuser/account/get").checked().optJSONObject("profile") ?: return null
         return Profile(p.optLong("userId"), p.optString("nickname"), p.optStringOrNull("avatarUrl"), p.optInt("vipType"))
     }
 
     // ---------- 资料库 ----------
 
     suspend fun userPlaylists(uid: Long): List<Playlist> =
-        client.weapi("/user/playlist", json("uid" to uid, "limit" to 1000, "offset" to 0, "includeVideo" to true))
+        client.eapi("/user/playlist", json("uid" to uid, "limit" to 1000, "offset" to 0, "includeVideo" to true))
             .checked().optJSONArray("playlist").objects().map(Playlist::parse)
 
     suspend fun likedTrackIds(uid: Long): Set<Long> {
-        val ids = client.weapi("/song/like/get", json("uid" to uid)).checked().optJSONArray("ids") ?: JSONArray()
+        val ids = client.eapi("/song/like/get", json("uid" to uid)).checked().optJSONArray("ids") ?: JSONArray()
         return (0 until ids.length()).map { ids.optLong(it) }.toSet()
     }
 
     suspend fun likeTrack(id: Long, like: Boolean) {
-        client.weapi("/radio/like?alg=itembased&trackId=$id&time=3", json("trackId" to id, "like" to like)).checked()
+        client.eapi("/radio/like", json("trackId" to id, "like" to like, "alg" to "itembased", "time" to 3)).checked()
     }
 
     suspend fun playRecords(uid: Long): List<Track> =
-        client.weapi("/v1/play/record", json("uid" to uid, "type" to 0)).checked()
+        client.eapi("/v1/play/record", json("uid" to uid, "type" to 0)).checked()
             .optJSONArray("allData").objects().mapNotNull { it.optJSONObject("song")?.let(Track::parse) }
 
     class CloudDrive(val tracks: List<Track>, val usedBytes: Long, val maxBytes: Long)
@@ -65,7 +65,7 @@ object NeteaseApi {
         var max = 0L
         var offset = 0
         while (offset < maxTracks) {
-            val resp = client.weapi("/v1/cloud/get", json("limit" to 500, "offset" to offset)).checked()
+            val resp = client.eapi("/v1/cloud/get", json("limit" to 500, "offset" to offset)).checked()
             // size / maxSize 有时是数字、有时是字符串
             used = resp.optString("size").toLongOrNull() ?: used
             max = resp.optString("maxSize").toLongOrNull() ?: max
@@ -84,27 +84,27 @@ object NeteaseApi {
     // ---------- 推荐 ----------
 
     suspend fun recommendResource(): List<Playlist> =
-        client.weapi("/v1/discovery/recommend/resource").checked().optJSONArray("recommend").objects().map(Playlist::parse)
+        client.eapi("/v1/discovery/recommend/resource").checked().optJSONArray("recommend").objects().map(Playlist::parse)
 
     suspend fun personalizedPlaylists(limit: Int = 30): List<Playlist> =
-        client.weapi("/personalized/playlist", json("limit" to limit, "total" to true, "n" to 1000))
+        client.eapi("/personalized/playlist", json("limit" to limit, "total" to true, "n" to 1000))
             .checked().optJSONArray("result").objects().map(Playlist::parse)
 
     suspend fun dailySongs(): List<Track> {
-        val data = client.weapi("/v3/discovery/recommend/songs").checked().optJSONObject("data") ?: return emptyList()
+        val data = client.eapi("/v3/discovery/recommend/songs").checked().optJSONObject("data") ?: return emptyList()
         return Track.parseList(data.optJSONArray("dailySongs"), data.optJSONArray("privileges"))
     }
 
     suspend fun personalFm(): List<Track> =
-        Track.parseList(client.weapi("/v1/radio/get").checked().optJSONArray("data"), null)
+        Track.parseList(client.eapi("/v1/radio/get").checked().optJSONArray("data"), null)
 
     suspend fun fmTrash(id: Long) {
-        client.weapi("/radio/trash/add?alg=RT&songId=$id&time=25", json("songId" to id)).checked()
+        client.eapi("/radio/trash/add", json("songId" to id, "alg" to "RT", "time" to 25)).checked()
     }
 
     /** 心动模式：以一首歌为种子生成队列。 */
     suspend fun intelligenceList(songId: Long, playlistId: Long): List<Track> =
-        client.weapi(
+        client.eapi(
             "/playmode/intelligence/list",
             json(
                 "songId" to songId, "type" to "fromPlayOne", "playlistId" to playlistId,
@@ -121,7 +121,7 @@ object NeteaseApi {
 
     /** 歌单详情。/v6/playlist/detail 只带第一页歌曲，其余按 trackIds 分批补全（最多 [maxTracks] 首）。 */
     suspend fun playlistDetail(id: Long, maxTracks: Int = 3000): PlaylistDetail {
-        val resp = client.weapi("/v6/playlist/detail", json("id" to id, "n" to 100_000, "s" to 8)).checked()
+        val resp = client.eapi("/v6/playlist/detail", json("id" to id, "n" to 100_000, "s" to 8)).checked()
         val p = resp.getJSONObject("playlist")
         val tracks = Track.parseList(p.optJSONArray("tracks"), resp.optJSONArray("privileges")).toMutableList()
         val allIds = p.optJSONArray("trackIds").objects().map { it.optLong("id") }
@@ -135,7 +135,7 @@ object NeteaseApi {
     suspend fun songDetails(ids: List<Long>): List<Track> {
         if (ids.isEmpty()) return emptyList()
         val c = ids.joinToString(",", "[", "]") { "{\"id\":$it}" }
-        val resp = client.weapi("/v3/song/detail", json("c" to c)).checked()
+        val resp = client.eapi("/v3/song/detail", json("c" to c)).checked()
         return Track.parseList(resp.optJSONArray("songs"), resp.optJSONArray("privileges"))
     }
 
@@ -143,11 +143,10 @@ object NeteaseApi {
     /**
      * 把歌曲加进自建歌单。
      *
-     * 2026-11 实测：老的 /weapi/playlist/tracks 已被网易云下线，返回 code=404「接口未找到！」
+     * 2026-11 实测：老的 playlist/tracks 接口已被网易云下线，返回 code=404「接口未找到！」
      * —— 这正是遥控端点「添加到歌单」报错的原因，不是权限或架构限制。
-     * 现行接口为 /weapi/playlist/manipulate/tracks，参数也从 tracks(逗号分隔) 改成
-     * trackIds(JSON 数组字符串) + imme=true；匿名探测该路径返回 301，说明路径有效、需登录。
-     * 保留 v1 变体作为回退，网易云再改路径时不至于整个功能立刻失效。
+     * 现行接口为 `/playlist/manipulate/tracks`（按 Kumone 方案统一走 eapi），参数从 tracks(逗号分隔) 改成
+     * trackIds(JSON 数组字符串) + imme=true；保留 v1 变体作为回退，网易云再改路径时不至于整个功能立刻失效。
      */
     suspend fun addTrackToPlaylist(pid: Long, tid: Long) {
         val payload = json(
@@ -156,8 +155,8 @@ object NeteaseApi {
             "trackIds" to "[$tid]",
             "imme" to "true",
         )
-        runCatching { client.weapi("/playlist/manipulate/tracks", payload).checked() }
-            .recoverCatching { client.weapi("/v1/playlist/manipulate/tracks", payload).checked() }
+        runCatching { client.eapi("/playlist/manipulate/tracks", payload).checked() }
+            .recoverCatching { client.eapi("/v1/playlist/manipulate/tracks", payload).checked() }
             .getOrThrow()
     }
 
@@ -182,7 +181,7 @@ object NeteaseApi {
         val v1 = runCatching {
             client.eapi("/song/lyric/v1", json("id" to id, "cp" to false, "lv" to 0, "tv" to 0, "rv" to 0, "kv" to 0, "yv" to 0, "ytv" to 0, "yrv" to 0))
         }.getOrNull()?.takeIf { it.optJSONObject("lrc") != null || it.optJSONObject("yrc") != null }
-        val resp = v1 ?: client.weapi("/song/lyric", json("id" to id, "lv" to -1, "kv" to -1, "tv" to -1, "rv" to -1))
+        val resp = v1 ?: client.eapi("/song/lyric", json("id" to id, "lv" to -1, "kv" to -1, "tv" to -1, "rv" to -1))
         val lrc = resp.optJSONObject("lrc")?.optString("lyric").orEmpty()
         val tlyric = resp.optJSONObject("tlyric")?.optString("lyric").orEmpty()
         val lines = LyricsParser.merge(lrc, tlyric)
