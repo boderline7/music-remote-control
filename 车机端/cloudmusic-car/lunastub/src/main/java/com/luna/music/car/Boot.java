@@ -28,6 +28,7 @@ public class Boot extends BroadcastReceiver {
         String action = intent.getAction();
         if (Alive.HEARTBEAT.equals(action)) {
             Log.i(Cfg.TAG, "心跳到点，确认服务在场");
+            // Svc.start 内部判断：用户手动停过 / 当前音源是第三方都不拉起
             Svc.start(context);
             return;
         }
@@ -39,7 +40,7 @@ public class Boot extends BroadcastReceiver {
             Svc.start(context);
             // 开机同步模式给第三方 App（官方则让它停，第三方则让它把服务拉起来）
             ModeSync.notify(context, Mode.current(context));
-            Alive.schedule(context);
+            if (Svc.autoAllowed(context)) Alive.schedule(context);
         }
     }
 }

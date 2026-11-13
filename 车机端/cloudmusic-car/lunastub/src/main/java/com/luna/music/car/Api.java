@@ -246,7 +246,8 @@ final class Api2 {
     static void restartSoon(final Context c) {
         UI.postDelayed(new Runnable() {
             @Override public void run() {
-                if (Mode.isOfficial(c)) Svc.start(c);
+                // 网页上点「重启/切回官方」是用户主动操作，要覆盖「已停服」标记
+                if (Mode.isOfficial(c)) Svc.startByUser(c);
             }
         }, 900L);
     }

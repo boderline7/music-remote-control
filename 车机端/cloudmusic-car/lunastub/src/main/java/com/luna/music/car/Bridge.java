@@ -48,7 +48,7 @@ import android.util.Log;
  *   用 MediaBrowser 连它的 {@code AutomotiveService} 拿 MediaController，把它的
  *   MediaSession 翻译成助手的五条广播，并把助手的控制指令转回去。
  *
- * 判定由 {@link Mode#current} 统一负责；默认 OFFICIAL（官方车机）。
+ * 判定由 {@link Mode#current} 统一负责；默认 THIRD_PARTY（第三方自研播放器，本包不占端口）。
  */
 class Bridge {
 

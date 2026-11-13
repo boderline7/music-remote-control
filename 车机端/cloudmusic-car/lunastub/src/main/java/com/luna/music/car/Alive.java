@@ -39,4 +39,23 @@ final class Alive {
             Log.w(Cfg.TAG, "心跳排不上", t);
         }
     }
+
+    /** 撤掉心跳。用户主动停服时必须调：setInexactRepeating 排下的闹钟不会因为
+     *  stopService 消失，不撤的话 15 分钟后它又把服务拉起来重新占 18765。 */
+    static void cancel(Context c) {
+        try {
+            AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
+            if (am == null) return;
+            Intent i = new Intent(c, Boot.class);
+            i.setAction(HEARTBEAT);
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+            if (Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
+            PendingIntent pi = PendingIntent.getBroadcast(c, 0, i, flags);
+            am.cancel(pi);
+            pi.cancel();
+            Log.i(Cfg.TAG, "心跳已撤销");
+        } catch (Throwable t) {
+            Log.w(Cfg.TAG, "心跳撤不掉", t);
+        }
+    }
 }

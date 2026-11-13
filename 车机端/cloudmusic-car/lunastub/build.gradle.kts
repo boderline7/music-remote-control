@@ -27,8 +27,8 @@ android {
         minSdk = 28
         targetSdk = 35
         // 与主应用区分版本线，避免车机助手把两个包的版本号混在一起看
-        versionCode = 36
-        versionName = "2.9.8"
+        versionCode = 38
+        versionName = "2.9.10"
     }
 
     val keystoreProps = Properties().apply {

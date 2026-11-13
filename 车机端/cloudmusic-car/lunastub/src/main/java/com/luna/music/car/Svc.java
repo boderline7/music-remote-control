@@ -40,7 +40,53 @@ public class Svc extends Service {
     /** 主动停服（切音源）标记：否则 onDestroy 会以为是「被杀」又用心跳把自己拉回来。 */
     private static volatile boolean wantStop;
 
+    /** 用户手动停服的持久标记：停过就不再被心跳 / 开机 / 进程重建 / 入口页自动拉起。
+     *  只靠内存里的 wantStop 不够——进程被杀之后闹钟广播照样会来，服务又会被拉起来抢端口。 */
+    private static final String SP = "svc-state";
+    private static final String K_STOPPED = "stopped";
+
+    static boolean isStopped(Context c) {
+        try {
+            return c.getSharedPreferences(SP, Context.MODE_PRIVATE).getBoolean(K_STOPPED, false);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private static void setStopped(Context c, boolean v) {
+        try {
+            c.getSharedPreferences(SP, Context.MODE_PRIVATE).edit().putBoolean(K_STOPPED, v).apply();
+        } catch (Throwable ignored) {}
+    }
+
+    /** 自动拉起是否允许：用户手动停过、或当前音源是第三方，都不允许。 */
+    static boolean autoAllowed(Context c) {
+        return !isStopped(c) && !Mode.isThirdParty(c);
+    }
+
+    /** 自动路径（心跳 / 开机 / 进程重建 / 入口页）：停过或音源是第三方就不拉起。 */
     static void start(Context c) {
+        if (!autoAllowed(c)) {
+            String why = isStopped(c) ? "用户已手动停服" : "当前音源是第三方";
+            Log.i(Cfg.TAG, "start 跳过：" + why);
+            LogCapture.logAlways("SVC 跳过启动：" + why);
+            return;
+        }
+        startNow(c);
+    }
+
+    /** 用户点「启动 / 重启服务」、切回官方：清掉停服标记后强制拉起。 */
+    static void startByUser(Context c) {
+        setStopped(c, false);
+        if (Mode.isThirdParty(c)) {
+            Log.i(Cfg.TAG, "startByUser 跳过：当前音源是第三方");
+            LogCapture.logAlways("SVC 跳过启动：当前音源是第三方，端口继续交给它");
+            return;
+        }
+        startNow(c);
+    }
+
+    private static void startNow(Context c) {
         wantStop = false;
         Intent i = new Intent(c, Svc.class);
         try {
@@ -52,9 +98,19 @@ public class Svc extends Service {
         }
     }
 
+    /** 真停服要三件事一起做：撤心跳（否则 15 分钟后自己回来）、立刻关监听 socket
+     *  （不等 onDestroy，端口马上还给系统、第三方立刻能绑）、再 stopService。
+     *  同时落持久标记，进程被杀后心跳广播来了也不会再拉起来。 */
     static void stop(Context c) {
         wantStop = true;
-        c.stopService(new Intent(c, Svc.class));
+        setStopped(c, true);
+        Alive.cancel(c);
+        Server.I.stop();
+        Nsd.I.unregister();
+        Bridge.I.stopAll();
+        Log.i(Cfg.TAG, "主动停服：心跳已撤、端口已关");
+        LogCapture.logAlways("SVC 主动停服：撤心跳 + 关 18765 + stopService");
+        try { c.stopService(new Intent(c, Svc.class)); } catch (Throwable ignored) {}
     }
 
     /** 角色只看端口：18765 已被别人监听，说明第三方播放器在提供服务，本包让位；
@@ -64,6 +120,10 @@ public class Svc extends Service {
     @Override public void onCreate() {
         super.onCreate();
         try {
+            if (!autoAllowed(this)) {
+                standDown(isStopped(this) ? "用户已手动停服" : "当前音源是第三方", Mode.isThirdParty(this));
+                return;
+            }
             if (Server.I.isRunning()) {
                 active = true;
                 Alive.schedule(this);
@@ -82,6 +142,17 @@ public class Svc extends Service {
             active = false;
             Alive.schedule(this);
         }
+    }
+
+    /** 本次不提供服务（用户手动停服 / 音源是第三方）：不绑端口，直接退场。
+     *  仍要先 foreground 满足 startForegroundService 的 5 秒契约，否则系统按 ANR 杀进程。 */
+    private void standDown(String why, boolean thirdParty) {
+        Log.i(Cfg.TAG, why + "，本包不提供服务");
+        LogCapture.logAlways("SVC 不提供服务：" + why);
+        active = false;
+        Server.I.yielded = thirdParty;
+        try { foreground(false); } catch (Throwable ignored) {}
+        stopSelf();
     }
 
     /** 让位给第三方：本包不提供服务。注意必须先调用 startForeground 满足
@@ -133,6 +204,10 @@ public class Svc extends Service {
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         try {
+            if (!autoAllowed(this)) {
+                standDown(isStopped(this) ? "用户已手动停服" : "当前音源是第三方", Mode.isThirdParty(this));
+                return START_NOT_STICKY;
+            }
             if (Server.I.isRunning()) {
                 active = true;
                 return START_STICKY;
@@ -158,17 +233,23 @@ public class Svc extends Service {
         Bridge.I.stopAll();
         try { if (wake != null && wake.isHeld()) wake.release(); } catch (Throwable ignored) {}
         wake = null;
-        LogCapture.logAlways("SVC 已销毁，active=" + active);
-        // 不是用户主动停服的话，留个心跳让它过一会儿自己回来。
-        // 已经让位给第三方时本包本来就不干活，别每 15 分钟把它白拉起来一次。
-        if (active && !wantStop) Alive.schedule(this);
+        LogCapture.logAlways("SVC 已销毁，active=" + active + "，stopped=" + isStopped(this));
+        // 用户手动停过：连心跳一起撤掉，别让它在 15 分钟后把自己拉回来抢端口。
+        // 不是主动停服的话，留个心跳让它过一会儿自己回来；已让位给第三方时本来就不干活，不必再排。
+        if (isStopped(this) || Mode.isThirdParty(this)) Alive.cancel(this);
+        else if (active && !wantStop) Alive.schedule(this);
         active = false;
         wantStop = false;
         super.onDestroy();
     }
 
-    /** 从最近任务划掉不等于要停服务，重新拉一次。 */
+    /** 从最近任务划掉不等于要停服务，重新拉一次；但用户手动停服 / 音源是第三方时不许拉。 */
     @Override public void onTaskRemoved(Intent rootIntent) {
+        if (!autoAllowed(this)) {
+            Log.i(Cfg.TAG, "onTaskRemoved 不重启服务：用户停服或音源是第三方");
+            super.onTaskRemoved(rootIntent);
+            return;
+        }
         Svc.start(this);
         super.onTaskRemoved(rootIntent);
     }

@@ -15,8 +15,8 @@ import android.util.Log;
  *   OFFICIAL     com.netease.cloudmusic.iot 官方网易云车机版，本包桥接它的 MediaSession
  * </pre>
  *
- * 只装了一个就直接用那一个，界面不给选；两个都在才让用户在入口页选。默认 OFFICIAL ——
- * 用户明确要求「默认官方车机」。
+ * 只装了一个就直接用那一个，界面不给选；两个都在才让用户在入口页选。默认 THIRD_PARTY ——
+ * 两个都装时把 18765 让给第三方自研播放器，本包默认不绑端口（想桥接官方再手动切）。
  */
 final class Mode {
 
@@ -85,8 +85,9 @@ final class Mode {
         boolean t = hasThirdParty(c);
         boolean o = hasOfficial(c);
         if (t && o) {
-            // 默认 OFFICIAL：没选过 / 旧值无效都落到官方车机
-            return saved(c) == THIRD_PARTY ? THIRD_PARTY : OFFICIAL;
+            // 默认 THIRD_PARTY：没选过 / 旧值无效都落到第三方自研播放器，本包不占 18765。
+            // 只有用户明确存过 OFFICIAL 才切回官方桥接。
+            return saved(c) == OFFICIAL ? OFFICIAL : THIRD_PARTY;
         }
         if (o) return OFFICIAL;
         if (t) return THIRD_PARTY;

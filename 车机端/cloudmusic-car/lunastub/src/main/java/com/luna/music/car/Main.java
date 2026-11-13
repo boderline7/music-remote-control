@@ -26,7 +26,7 @@ import java.util.Arrays;
  *
  * 音源只有两个候选：第三方自研播放器 {@code com.cloudmusic.car} 与官方网易云车机版。
  * 装了一个就直接用那一个，这里只显示结果；两个都装过才出现「官方网易云 / 第三方自研」两个
- * 切换钮（默认官方车机，选择持久化保存，不会自动跳回去）。
+ * 切换钮（默认第三方自研，选择持久化保存，不会自动跳回去）。
  *
  * 布局：按钮全部靠上，一个一个小方块（不做全屏长条）；状态文字放在按钮下方的
  * 小方框里，超高可以滚动，不再占满整屏把按钮顶到屏幕外面。
@@ -201,11 +201,16 @@ public class Main extends Activity {
 
     void refresh() {
         if (tv == null || tvMini == null) return;
-        // 角色只看端口：本包占着 18765 就是它在服务，被占就是让位给第三方
+        // 角色：本包占着 18765 就是它在服务；音源是第三方、或用户手动停过，本包都不干活
         boolean running = Server.I.isRunning();
         boolean yielded = Server.I.yielded;
+        boolean third = Mode.isThirdParty(this);
+        boolean stopped = Svc.isStopped(this);
+        String role = running ? "运行中"
+                : (third || yielded) ? "第三方托管"
+                : stopped ? "已停止" : "未运行";
         tvMini.setText(Mode.name(this) + (Mode.both(this) ? "（可切换）" : "（自动）")
-                + "　服务：" + (running ? "运行中" : (yielded ? "第三方托管" : "未运行")));
+                + "　服务：" + role);
         StringBuilder sb = new StringBuilder();
         String addr = "";
         String[] ips = Ip.all();
@@ -223,6 +228,17 @@ public class Main extends Activity {
                     .append(Ncm.I.describe()).append("\n")
                     .append("地址：http://").append(addr).append(":").append(Cfg.PORT).append("\n")
                     .append("歌单：").append(Arrays.toString(Ncm.I.playlists()));
+        } else if (third) {
+            sb.append("服务：交给第三方自研播放器\n")
+                    .append("当前音源是第三方，本包不占 18765；心跳和开机也不会再拉起它\n")
+                    .append("地址：http://").append(addr).append(":").append(Cfg.PORT)
+                    .append("（由第三方提供）");
+        } else if (stopped) {
+            sb.append("服务：已停止（你手动停的）\n")
+                    .append("心跳已撤销、18765 已关闭，不会自动拉起\n")
+                    .append("点「启动 / 重启服务」恢复桥接\n")
+                    .append("地址：http://").append(addr).append(":").append(Cfg.PORT)
+                    .append("（当前无人监听）");
         } else if (yielded) {
             sb.append("服务：交给第三方自研播放器\n")
                     .append("18765 已被占用，本包自动让位，不抢端口\n")
@@ -239,7 +255,8 @@ public class Main extends Activity {
         }
         if (addrBar != null) {
             String base = "http://" + addr + ":" + Cfg.PORT;
-            addrBar.setText("地址：" + base + (running ? "" : (yielded ? "（第三方提供）" : "")) + "　点一下复制");
+            String tag = running ? "" : ((third || yielded) ? "（第三方提供）" : "");
+            addrBar.setText("地址：" + base + tag + "　点一下复制");
         }
         tv.setText(sb.toString());
         if (oldProbeBtn != null) {
@@ -247,11 +264,11 @@ public class Main extends Activity {
         }
 
         switchRow.setVisibility(Mode.both(this) ? View.VISIBLE : View.GONE);
-        // 高亮跟着「谁在服务」走：本包在跑 = 官方音源，否则算第三方
+        // 高亮跟着「当前音源」走，不再跟「谁占着端口」走：停着的时候也看得出选的是哪个
         for (int n = 0; n < switchRow.getChildCount(); n++) {
             View v = switchRow.getChildAt(n);
             if (!(v instanceof Button)) continue;
-            boolean active = (n == 0) == running;
+            boolean active = (n == 0) == !third;
             v.setBackgroundColor(active ? 0xFF3A3A3C : 0xFF1C1C1E);
             ((Button) v).setTextColor(active ? 0xFFFFFFFF : 0xFF8E8E93);
         }
@@ -260,8 +277,12 @@ public class Main extends Activity {
     void click(int code) {
         try {
             if (code == 1) {
-                // 谁来提供服务只看 18765：端口空闲本包就接管，被第三方占用则自动让位
-                Svc.start(this);
+                // 当前音源是第三方时本包不该占端口，点了也只解释一句，免得又抢回去
+                if (Mode.isThirdParty(this)) {
+                    toast("当前音源是第三方自研，18765 交给它；要桥接官方请先切「官方网易云」");
+                } else {
+                    Svc.startByUser(this);
+                }
             } else if (code == 4) {
                 Svc.stop(this);
             } else if (code == 6) {
@@ -296,11 +317,16 @@ public class Main extends Activity {
         Mode.save(this, target);
         // 同步给第三方 App：它按新模式自己启停 RemoteServer
         ModeSync.notify(this, target);
+        // 停服会撤心跳 + 立刻关 18765，端口马上还给系统
         Svc.stop(this);
         LogCapture.logAlways("MAIN 切换音源 → " + Mode.label(target));
-        toast(target == Mode.OFFICIAL
-                ? "已切回官方；若仍显示「第三方托管」，请先关掉第三方播放器再点启动"
-                : "已切到「" + Mode.label(target) + "」，端口交给它");
+        if (target == Mode.THIRD_PARTY) {
+            // 切到第三方后本包彻底退出，不能 600ms 后又去把端口抢回来
+            toast("已切到「" + Mode.label(target) + "」，18765 交给它，本包不再自动拉起");
+            refresh();
+            return;
+        }
+        toast("已切回官方，桥接服务正在重新接管 18765");
         refresh();
         handler.postDelayed(new MainRestart(this), 600L);
     }
@@ -344,8 +370,8 @@ class MainRestart implements Runnable {
     private final Main a;
     MainRestart(Main a) { this.a = a; }
     @Override public void run() {
-        // 端口空闲就接管，被第三方占用 Svc 自己会让位
-        Svc.start(a);
+        // 切回官方：清掉「用户停服」标记后重新接管（端口空闲才会真的绑上）
+        Svc.startByUser(a);
         a.refresh();
     }
 }

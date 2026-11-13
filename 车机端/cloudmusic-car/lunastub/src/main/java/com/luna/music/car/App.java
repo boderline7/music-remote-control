@@ -24,7 +24,8 @@ public class App extends Application {
             Svc.start(this);
             // 开机 / 进程重建时把模式同步过去：官方则让第三方停，第三方则让它把服务拉起来
             ModeSync.notify(this, Mode.current(this));
-            Alive.schedule(this);
+            // 用户手动停服 / 音源是第三方时不再排心跳，否则 15 分钟后服务自己回来抢 18765
+            if (Svc.autoAllowed(this)) Alive.schedule(this);
         } catch (Throwable t) {
             // Application.onCreate 抛异常 = 整个进程闪退，绝不能放出去
             Log.w(Cfg.TAG, "app start failed（已兜底，不闪退）", t);
