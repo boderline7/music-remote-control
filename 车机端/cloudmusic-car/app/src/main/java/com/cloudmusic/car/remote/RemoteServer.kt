@@ -150,8 +150,11 @@ object RemoteServer : WsServer.Listener {
         }
     }
 
+    /**
+     * 关服务。`stopService=false` 只释放端口/线程/连接，保留前台壳。
+     */
     @Synchronized
-    fun stop() {
+    fun stop(stopService: Boolean = true) {
         unregisterScreenReceiver()
         runCatching { NetworkMonitor.stop() }
         runCatching { scheduler?.shutdownNow() }
@@ -165,7 +168,7 @@ object RemoteServer : WsServer.Listener {
         clients.forEach { runCatching { it.conn.close() } }
         clients.clear()
         pushUi()
-        appContext?.let { RemoteService.stop(it) }
+        if (stopService) appContext?.let { RemoteService.stop(it) }
     }
 
     fun isRunning(): Boolean = ws != null

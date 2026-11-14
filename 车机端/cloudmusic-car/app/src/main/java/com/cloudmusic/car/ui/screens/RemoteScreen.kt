@@ -41,6 +41,7 @@ import com.cloudmusic.car.remote.OnlineDevice
 import com.cloudmusic.car.remote.RemoteHealth
 import com.cloudmusic.car.remote.RemotePrefs
 import com.cloudmusic.car.remote.RemoteServer
+import com.cloudmusic.car.remote.RemoteService
 import com.cloudmusic.car.remote.RemoteUiState
 import com.cloudmusic.car.ui.Nav
 import com.cloudmusic.car.ui.components.Label
@@ -98,8 +99,10 @@ fun RemoteScreen(nav: Nav) {
             if (running) {
                 RemoteServer.stop()
                 Settings.setRemoteEnabled(false)
-            } else if (RemoteServer.start(context)) {
+            } else {
                 Settings.setRemoteEnabled(true)
+                // 只拉起前台壳；热点没开它会待机，等热点就绪再绑端口
+                RemoteService.start(context)
             }
         }
         if (stacked) {

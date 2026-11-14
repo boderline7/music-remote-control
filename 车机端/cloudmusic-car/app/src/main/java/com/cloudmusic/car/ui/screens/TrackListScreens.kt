@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import com.cloudmusic.car.api.NeteaseApi
 import com.cloudmusic.car.api.Track
 import com.cloudmusic.car.data.AccountStore
+import com.paopao.music.nowplaying.PlayModes
 import com.cloudmusic.car.player.PlayerHub
 import com.cloudmusic.car.ui.Nav
 import com.cloudmusic.car.ui.Route
@@ -217,7 +218,13 @@ private fun TrackListPage(
                     Spacer(Modifier.height(22.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                         PillButton("播放", Icons.Rounded.PlayArrow) {
-                            PlayerHub.play(tracks, source = source, sourceId = sourceId)
+                            // 当前是随机模式时，第一首也随机，保持「点了随机就一直随机」的手感
+                            PlayerHub.play(
+                                tracks,
+                                shuffle = PlayerHub.playMode.value == PlayModes.SHUFFLE,
+                                source = source,
+                                sourceId = sourceId,
+                            )
                             nav.nowPlayingOpen = true
                         }
                         PillButton("随机", Icons.Rounded.Shuffle) {

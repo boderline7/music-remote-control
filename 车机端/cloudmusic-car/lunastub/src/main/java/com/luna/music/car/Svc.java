@@ -15,7 +15,6 @@ import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
-import android.os.PowerManager;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -33,7 +32,6 @@ import java.util.List;
 public class Svc extends Service {
     private static final String CHANNEL = "ncmremote";
     private static final int NOTIF_ID = 18765;
-    private PowerManager.WakeLock wake;
     /** 本包当前是否真的在提供遥控服务（占着 18765）。让位给第三方时为 false。 */
     private boolean active;
 
@@ -113,10 +111,7 @@ public class Svc extends Service {
         try { c.stopService(new Intent(c, Svc.class)); } catch (Throwable ignored) {}
     }
 
-    /** 角色只看端口：18765 已被别人监听，说明第三方播放器在提供服务，本包让位；
-     *  端口空闲才由本包连官方 App 并开始服务。不再按包名/持久化模式猜，避免两边互顶。
-     *  初始化不管炸在哪一步都不能闪退（官方 App 没装/刚卸载时 MediaBrowser、Asset、
-     *  广播注册任意一环都会抛），整段 try-catch，失败只记日志，由 Alive 心跳兜底重试。 */
+    /** 启动条件只看两件事：用户没停服、音源是官方。开关开着就一直提供服务，不按网络起停。 */
     @Override public void onCreate() {
         super.onCreate();
         try {
@@ -126,7 +121,6 @@ public class Svc extends Service {
             }
             if (Server.I.isRunning()) {
                 active = true;
-                Alive.schedule(this);
                 return;
             }
             if (Server.portTaken()) {
@@ -138,9 +132,8 @@ public class Svc extends Service {
         } catch (Throwable t) {
             Log.w(Cfg.TAG, "service init failed（已兜底，不闪退）", t);
             LogCapture.logAlways("SVC onCreate 异常：" + t);
-            try { foreground(false); } catch (Throwable ignored) {}
+            try { foreground(false, "启动失败，稍后重试"); } catch (Throwable ignored) {}
             active = false;
-            Alive.schedule(this);
         }
     }
 
@@ -180,21 +173,6 @@ public class Svc extends Service {
         Nsd.I.register(this);
         Bridge.I.start(this);
         foreground(true);
-        // 部分车机/手机在息屏后会把后台进程挂起，持有唤醒锁能明显降低被冻结的概率。
-        // 只在还没有锁的时候建：端口被占时 isRunning() 为 false，onStartCommand 会反复
-        // 调 initAll，每次都 new 一个 WakeLock 会把旧的引用顶掉、永远释放不掉。
-        if (wake == null) {
-            try {
-                PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-                if (pm != null) {
-                    wake = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ncmremote:svc");
-                    wake.setReferenceCounted(false);
-                    wake.acquire();
-                }
-            } catch (Throwable t) {
-                Log.w(Cfg.TAG, "wakelock failed", t);
-            }
-        }
         Log.i(Cfg.TAG, "service created, server=" + ok);
         // 三阶段分开记：端口探测（portTaken）、HTTP 监听（Server 已启动）、服务进入前台。
         // 「端口交接成功」不等于「服务交接成功」，分开记才能看出卡在哪一段。
@@ -222,7 +200,7 @@ public class Svc extends Service {
             LogCapture.logAlways("SVC onStartCommand 异常：" + t);
             // startForegroundService 要求 5 秒内必须 startForeground，
             // 初始化失败也要先满足契约，否则系统按 ANR 直接杀进程。
-            try { foreground(false); } catch (Throwable ignored) {}
+            try { foreground(false, "启动失败，稍后重试"); } catch (Throwable ignored) {}
         }
         return START_STICKY;
     }
@@ -231,13 +209,12 @@ public class Svc extends Service {
         Server.I.stop();
         Nsd.I.unregister();
         Bridge.I.stopAll();
-        try { if (wake != null && wake.isHeld()) wake.release(); } catch (Throwable ignored) {}
-        wake = null;
         LogCapture.logAlways("SVC 已销毁，active=" + active + "，stopped=" + isStopped(this));
         // 用户手动停过：连心跳一起撤掉，别让它在 15 分钟后把自己拉回来抢端口。
         // 不是主动停服的话，留个心跳让它过一会儿自己回来；已让位给第三方时本来就不干活，不必再排。
         if (isStopped(this) || Mode.isThirdParty(this)) Alive.cancel(this);
         else if (active && !wantStop) Alive.schedule(this);
+        else Alive.cancel(this);
         active = false;
         wantStop = false;
         super.onDestroy();
@@ -257,6 +234,11 @@ public class Svc extends Service {
     @Override public IBinder onBind(Intent intent) { return null; }
 
     private void foreground(boolean ok) {
+        foreground(ok, ok ? null : "18765 端口被占用");
+    }
+
+    /** text 不为空时用它做副标题：热点待机 / 启动失败 / 端口被占。 */
+    private void foreground(boolean ok, String text) {
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm != null) {
@@ -272,7 +254,7 @@ public class Svc extends Service {
         PendingIntent pi = PendingIntent.getActivity(this, 0, new Intent(this, Main.class), piFlags);
         Notification n = b.setSmallIcon(android.R.drawable.ic_media_play)
                 .setContentTitle("网易云遥控")
-                .setContentText(ok ? "http://" + Ip.local() + ":" + Cfg.PORT : "18765 端口被占用")
+                .setContentText(text != null ? text : "http://" + Ip.local() + ":" + Cfg.PORT)
                 .setContentIntent(pi)
                 .setOngoing(true)
                 .build();

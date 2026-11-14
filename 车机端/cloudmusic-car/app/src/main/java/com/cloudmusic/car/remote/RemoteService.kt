@@ -10,14 +10,16 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import com.cloudmusic.car.data.Settings
 
 /**
- * 遥控服务的前台壳。
+ * 遥控服务的前台壳，只做两件事：
+ * 1. 把进程钉住，别被系统冻结（实测 vivo 直接把进程状态打成 T/stopped，
+ *    冻结后内核照样回 SYN，但应用层不读数据，手机端表现是「一直正在连接」）；
+ * 2. 按用户开关启停 WebSocket 服务，开关开着就一直提供服务，不按网络状态起停。
  *
- * 为什么必须有：系统会冻结后台进程（实测 vivo 直接把进程状态打成 T/stopped）。
- * 冻结之后内核照样回 SYN、TCP 连接能建立，但应用层不再读数据，
- * 手机端表现就是「一直正在连接」，日志里一条都没有。
- * 挂前台通知后进程不会被冻，熄屏也能继续响应。
+ * 不持有 WakeLock，也不跑定时任务；端口常开本身不耗电。
+ * 网络变化由 RemoteServer 里的 NetworkMonitor 处理，只用来刷新 mDNS / 地址。
  */
 class RemoteService : Service() {
 
@@ -27,6 +29,7 @@ class RemoteService : Service() {
         super.onCreate()
         createChannel()
         startForeground(NOTIF_ID, buildNotification())
+        sync()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -35,8 +38,7 @@ class RemoteService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        // 服务被系统重建时把监听一并恢复（此时已在前台，不会循环启动服务）
-        if (!RemoteServer.isRunning()) RemoteServer.start(this, ensureForeground = false)
+        sync()
         return START_STICKY
     }
 
@@ -44,6 +46,34 @@ class RemoteService : Service() {
         RemoteServer.stop()
         super.onDestroy()
     }
+
+    /** 只认用户的遥控开关，不再看热点/Wi-Fi。 */
+    private fun sync() {
+        if (Settings.remoteEnabled.value) {
+            if (!RemoteServer.isRunning()) {
+                RemoteHealth.log("遥控开关已开，启动服务")
+                if (!RemoteServer.start(this, ensureForeground = false)) {
+                    RemoteHealth.warn("遥控服务启动失败")
+                }
+            }
+        } else if (RemoteServer.isRunning()) {
+            RemoteServer.stop(stopService = false)
+        }
+        updateNotification()
+    }
+
+    private fun updateNotification() {
+        runCatching {
+            getSystemService(NotificationManager::class.java)?.notify(NOTIF_ID, buildNotification())
+        }
+    }
+
+    private fun notificationText(): String =
+        if (RemoteServer.isRunning()) {
+            "端口 ${RemoteConfig.PORT}，手机连同一 Wi-Fi 即可控制"
+        } else {
+            "遥控已关闭"
+        }
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -79,12 +109,12 @@ class RemoteService : Service() {
             Notification.Builder(this)
         }
         return builder
-            .setContentTitle("手机遥控已开启")
-            .setContentText("端口 ${RemoteConfig.PORT}，手机连同一 Wi-Fi 即可控制")
+            .setContentTitle(if (RemoteServer.isRunning()) "手机遥控已开启" else "手机遥控待机")
+            .setContentText(notificationText())
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pending)
             .setOngoing(true)
-            .addAction(Notification.Action.Builder(null, "关闭遥控", stop).build())
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "关闭遥控", stop)
             .build()
     }
 
@@ -93,7 +123,7 @@ class RemoteService : Service() {
         private const val NOTIF_ID = 18765
         const val ACTION_STOP = "com.cloudmusic.car.remote.STOP"
 
-        /** 启动前台壳。Android 12+ 后台起前台服务会被拒，这里吞掉异常走降级（不挂前台也能连，只是可能被冻结）。 */
+        /** Android 12+ 后台起前台服务会被拒，这里吞掉异常；服务仍会以普通 Service 起来。 */
         fun start(context: Context) {
             val intent = Intent(context, RemoteService::class.java)
             runCatching {

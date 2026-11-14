@@ -20,8 +20,8 @@ class BootReceiver : BroadcastReceiver() {
         if (action != Intent.ACTION_BOOT_COMPLETED && action != "android.intent.action.QUICKBOOT_POWERON") return
         if (!Settings.remoteEnabled.value) return
         val app = context.applicationContext
-        runCatching { RemoteServer.start(app) }
-            .onSuccess { Log.i(RemoteConfig.TAG, "remote autostart on boot") }
-            .onFailure { Log.w(RemoteConfig.TAG, "remote autostart on boot failed", it) }
+        // 交给前台壳：由它判断热点是否就绪，热点没开就待机，不提前绑端口
+        RemoteService.start(app)
+        Log.i(RemoteConfig.TAG, "remote autostart on boot")
     }
 }
