@@ -106,8 +106,8 @@ object RemoteServer : WsServer.Listener {
     /** 写线程卡在一次 write 超过这个时间，判定慢客户端并断开。 */
     private const val WRITE_STALL_MS = 12_000L
 
-    /** 诊断快照复用窗口：pushUi 调得很频繁，线程枚举不必每次都做。 */
-    private const val HEALTH_INTERVAL_MS = 2_000L
+    /** 诊断快照复用窗口：watchdog 5 秒一次，15 秒窗口下每三次才枚举一次全线程栈。 */
+    private const val HEALTH_INTERVAL_MS = 15_000L
 
     private val _ui = MutableStateFlow(RemoteUiState())
     val ui: StateFlow<RemoteUiState> = _ui.asStateFlow()
@@ -768,8 +768,9 @@ object RemoteServer : WsServer.Listener {
     }
 
     /**
-     * 诊断快照 2 秒内复用。`Thread.getAllStackTraces()` 不便宜，
-     * 而 pushUi 在连接/断开/网络变化时都会调，没必要每次都重新枚举线程。
+     * 诊断快照 15 秒内复用。`Thread.getAllStackTraces()` 不便宜，
+     * 而 pushUi 在 watchdog / 连接 / 断开 / 网络变化时都会调，
+     * 窗口必须大于 watchdog 的 5 秒周期，否则缓存永远不命中。
      */
     private fun healthSnapshot(): RemoteHealth.Snapshot {
         val now = System.currentTimeMillis()

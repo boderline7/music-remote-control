@@ -74,13 +74,19 @@ class El {
 }
 
 const ids = [...html.matchAll(/id="([^"]+)"/g)].map((m) => m[1]);
-const store = new Map(ids.map((id) => [id, new El(id === 'prog' || id === 'vol' ? 'input' : 'div')]));
+const store = new Map(ids.map((id) => {
+  const e = new El(id === 'prog' || id === 'vol' ? 'input' : 'div');
+  e.id = id;
+  return [id, e];
+}));
 
 const doc = {
   activeElement: null,
   hidden: false,
   visibilityListeners: [],
   getElementById(id) { return store.get(id) || null; },
+  // 最小 DOM 不解析标签：断线遮罩要批量禁用控件，这里把已建元素全交出去
+  querySelectorAll() { return [...store.values()]; },
   createElement(tag) { return new El(tag); },
   addEventListener(t, f) { if (t === 'visibilitychange') this.visibilityListeners.push(f); },
 };
@@ -396,11 +402,30 @@ ws.readyState = 3;
 ws.onclose();
 ok(textOf(byId('status')).includes('重连'), '断线后状态栏提示重连');
 ok(timeouts.length > 0, '安排了重连定时器');
+ok(!byId('offline').classList.contains('hidden'), '断线后全屏遮罩显示');
+ok(byId('play').disabled, '断线后播放键被禁用');
+ok(!byId('offlineNow').disabled, '遮罩上的「立即重试」仍可点');
+ok(textOf(byId('offlineSync')).includes('前') || textOf(byId('offlineSync')) === '尚未同步', '显示最后同步时间');
+const sentBeforeOffline = ws.sent.length;
+byId('play').dispatch('click');
+eq(ws.sent.length, sentBeforeOffline, '断线时点击不发指令');
 
 ls.setItem('carremote.token', 'tok-old');
 ws.push('auth_result', { ok: false });
 eq(ls.getItem('carremote.token'), null, '授权失效后清掉 token');
 eq(ws.last('pair').data.deviceId.slice(0, 4), 'web-', '自动重新配对');
+
+console.log('\n[12] 重连后 seq 从头重新计数');
+timeouts[timeouts.length - 1].f();           // 手动跑掉重连定时器
+const ws2 = wsInstance;
+ok(!!ws2 && ws2 !== ws, '重连创建了新的 WebSocket');
+ws2.open();
+ws2.push('pair_result', { ok: true, token: 'tok-2', carName: '车机' });
+ws2.push('state', { seq: 1, playing: false, title: '重连后的歌', artist: '新歌手',
+  positionMs: 0, durationMs: 180000, liked: false, volume: 10, volumeMax: 30 });
+eq(textOf(byId('title')), '重连后的歌', 'seq 从 1 重数时新 state 不再被判成过期');
+ok(byId('offline').classList.contains('hidden'), '拿到 state 后遮罩消失');
+ok(!byId('play').disabled, '恢复后控件重新可用');
 
 console.log(`\n${failures === 0 ? 'ALL WEB REMOTE CHECKS PASSED' : failures + ' CHECK(S) FAILED'}`);
 process.exit(failures === 0 ? 0 : 1);

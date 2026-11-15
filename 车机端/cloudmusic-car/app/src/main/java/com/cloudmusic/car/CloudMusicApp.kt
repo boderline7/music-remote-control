@@ -46,7 +46,7 @@ class CloudMusicApp : Application(), ImageLoaderFactory {
         // 遥控服务必须在播放器初始化之后：适配层直接读 PlayerHub。
         // 启动失败（端口占用等）只影响遥控，播放照常，所以这里吞掉异常、只记日志。
         if (Settings.remoteEnabled.value) {
-            // 只拉起前台壳，真正的监听由它按热点状态决定
+            // 只拉起前台壳，真正的监听由它按遥控开关决定
             RemoteService.start(this)
         }
     }

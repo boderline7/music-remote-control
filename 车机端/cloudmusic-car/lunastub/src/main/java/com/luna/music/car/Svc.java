@@ -53,7 +53,9 @@ public class Svc extends Service {
 
     private static void setStopped(Context c, boolean v) {
         try {
-            c.getSharedPreferences(SP, Context.MODE_PRIVATE).edit().putBoolean(K_STOPPED, v).apply();
+            // 同步落盘：ACC 突然断电时 apply() 的异步写可能丢掉「用户已停服」标记，
+            // 开机广播照旧值判断就会把服务拉起来抢 18765。停服是低频操作，commit 可接受。
+            c.getSharedPreferences(SP, Context.MODE_PRIVATE).edit().putBoolean(K_STOPPED, v).commit();
         } catch (Throwable ignored) {}
     }
 

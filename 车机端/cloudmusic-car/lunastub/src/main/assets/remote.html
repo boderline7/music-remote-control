@@ -362,6 +362,39 @@
     }
     #toast { max-width: 520px; }
   }
+  /* 断线遮罩：断连后旧 state 不可信，盖住整页并禁用控件，别让人误以为车机还在执行 */
+  #offline {
+    position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px; background: rgba(11,11,13,.94);
+  }
+  #offline .box {
+    width: 100%; max-width: 340px; text-align: center;
+    padding: 30px 24px 24px; border-radius: 20px;
+    background: #1b1b22; border: 1px solid var(--line);
+    box-shadow: 0 24px 60px rgba(0,0,0,.55);
+  }
+  #offline .mark {
+    width: 46px; height: 46px; margin: 0 auto 16px; border-radius: 50%;
+    background: rgba(255,159,10,.14); border: 1px solid rgba(255,159,10,.45);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #offline .mark::after { content: ''; width: 10px; height: 10px; border-radius: 50%; background: #ff9f0a; }
+  #offline h2 { margin: 0 0 8px; font-size: 19px; font-weight: 700; }
+  #offline .sub { margin: 0 0 20px; font-size: 13px; line-height: 1.6; color: var(--dim); }
+  #offline .kv {
+    display: flex; justify-content: space-between;
+    font-size: 13px; padding: 7px 0; color: var(--dim);
+  }
+  #offline .kv b { color: var(--fg); font-weight: 500; }
+  #offline .bar { height: 3px; margin: 12px 0 18px; border-radius: 2px; background: var(--line); overflow: hidden; }
+  #offline .bar span { display: block; height: 100%; width: 0; background: var(--red); transition: width .2s linear; }
+  #offline .retry {
+    width: 100%; padding: 12px; border-radius: 12px;
+    background: var(--red); color: #fff; font-size: 14px; font-weight: 600;
+  }
+  #offline .tip { margin: 14px 0 0; font-size: 12px; color: var(--faint); }
+
 </style>
 </head>
 <body>
@@ -514,6 +547,20 @@
 
   <div id="toast"></div>
 
+  <!-- 断线时盖住整页；hidden 由 setOffline() 切换 -->
+  <div id="offline" class="hidden">
+    <div class="box">
+      <div class="mark"></div>
+      <h2>与车机断开连接</h2>
+      <p class="sub">页面状态已冻结，操作不会被车机执行</p>
+      <div class="kv"><span>最后同步</span><b id="offlineSync">—</b></div>
+      <div class="kv"><span>自动重连</span><b id="offlineRetry">—</b></div>
+      <div class="bar"><span id="offlineBar"></span></div>
+      <button class="retry" id="offlineNow">立即重试</button>
+      <p class="tip">连上后会自动拉取车机的最新状态</p>
+    </div>
+  </div>
+
 <script>
 (function () {
   'use strict';
@@ -544,7 +591,8 @@
    'stMode', 'stSeg', 'stModeHint', 'stSvc', 'stRestart', 'stOpen',
    'stHost', 'stScreen', 'stView', 'stVer', 'stMsg',
    'stLog', 'stLogHint', 'stLogToggle', 'stLogView', 'stLogDownload', 'stLogUrl', 'stLogCopy', 'stLogBox',
-   'copyUrl'
+   'copyUrl',
+   'offline', 'offlineSync', 'offlineRetry', 'offlineBar', 'offlineNow'
   ].forEach(function (id) { el[id] = document.getElementById(id); });
 
   var ws = null;
@@ -558,6 +606,13 @@
   var reconnectTimer = null;
   var connectFails = 0;
   var toastTimer = null;
+
+  // 断连 fail-safe：断线后旧 state 不可信，遮罩覆盖期间所有控件都不可点
+  var offline = false;
+  var offlineControls = [];
+  var offlineTick = null;
+  var nextRetryAt = 0;
+  var retrySpan = 0;
 
   var lyricLines = [];               // [{ t, text, trans }]
   var lyricActive = -1;
@@ -622,8 +677,57 @@
     toastTimer = setTimeout(function () { el.toast.classList.remove('show'); }, 1800);
   }
 
+  /** 刷新遮罩上的「最后同步」与重连倒计时；只在断线期间每 250ms 跑一次。 */
+  function updateOffline() {
+    if (!offline) return;
+    var sec = stateAt ? Math.max(0, Math.floor((Date.now() - stateAt) / 1000)) : -1;
+    el.offlineSync.textContent = sec < 0 ? '尚未同步' : (sec < 60 ? sec + ' 秒前' : Math.floor(sec / 60) + ' 分钟前');
+    var left = Math.max(0, nextRetryAt - Date.now());
+    el.offlineRetry.textContent = left > 0 ? Math.ceil(left / 1000) + ' 秒后' : '正在连接…';
+    el.offlineBar.style.width = (retrySpan > 0 ? Math.max(0, Math.min(100, (1 - left / retrySpan) * 100)) : 0).toFixed(1) + '%';
+  }
+
+  /**
+   * 断线时盖住整页并禁用所有控件（只留「立即重试」一个出口），
+   * 收到服务端 state 才解除 —— 认证成功时已经发出 getState / getLyrics / loadAll。
+   */
+  function setOffline(on) {
+    if (on === offline) return;
+    offline = on;
+    if (on) el.offline.classList.remove('hidden'); else el.offline.classList.add('hidden');
+    if (on) {
+      offlineControls = [];
+      var nodes = document.querySelectorAll ? document.querySelectorAll('button, input, select, textarea') : [];
+      for (var i = 0; i < nodes.length; i++) {
+        var n = nodes[i];
+        if (n.disabled || n.id === 'offlineNow') continue;
+        n.disabled = true;
+        n.setAttribute('data-offline-off', '1');
+        offlineControls.push(n);
+      }
+      updateOffline();
+      if (!offlineTick) offlineTick = setInterval(updateOffline, 250);
+    } else {
+      if (offlineTick) { clearInterval(offlineTick); offlineTick = null; }
+      for (var j = 0; j < offlineControls.length; j++) {
+        var c = offlineControls[j];
+        if (c.getAttribute('data-offline-off')) {
+          c.disabled = false;
+          c.setAttribute('data-offline-off', '');
+        }
+      }
+      offlineControls = [];
+      paintNow();   // 按真实状态还原，别把本来该置灰的按钮放开
+    }
+  }
+
   function send(type, data) {
-    if (!ws || ws.readyState !== 1) return;
+    if (!ws || ws.readyState !== 1) {
+      // 不再静默丢指令：断线时的任何一次点击都把遮罩立起来
+      setOffline(true);
+      return;
+    }
+
     seq += 1;
     ws.send(JSON.stringify({
       v: PROTO_VERSION, type: type, id: 'w' + seq, ts: Date.now(), data: data || {}
@@ -730,7 +834,8 @@
 
   // 进度条自己走：车机每秒推一次 tick，中间靠本地插值补齐
   setInterval(function () {
-    if (draggingSeek || !state.playing || !state.durationMs) return;
+    // 断线后别再用本地时间把进度条往前推，那样看着像车机还在播
+    if (!ws || ws.readyState !== 1 || draggingSeek || !state.playing || !state.durationMs) return;
     var pos = Math.min(state.durationMs, (state.positionMs || 0) + (Date.now() - stateAt));
     el.prog.value = pos;
     el.cur.textContent = fmt(pos);
@@ -917,6 +1022,7 @@
         }
         state = data;
         stateAt = Date.now();
+        setOffline(false);   // 拿到车机的真实状态才算恢复
         // 换歌 / 进度回退（切上一首、拖回首）时把歌词锁回第一句。
         // 车机端换歌是先推「空歌词」再推「新歌词」，中间那几帧 state 还是上一首的
         // positionMs（可能已经两三分钟），不锁住就会先甩到歌词中段再弹回来，看着像乱跑。
@@ -1066,6 +1172,9 @@
       } else {
         setStatus('已断开，重连中…', 'warn');
       }
+      retrySpan = reconnectDelay;
+      nextRetryAt = Date.now() + reconnectDelay;
+      setOffline(true);
       reconnectTimer = setTimeout(connect, reconnectDelay);
       // 服务切换/重启后要尽快回到连上状态，退避封顶 2 秒
       reconnectDelay = Math.min(reconnectDelay * 2, 2000);
@@ -1249,6 +1358,12 @@
   el.dailyPlay.addEventListener('click', function (e) { e.stopPropagation(); playList('daily', '每日推荐'); });
   el.back.addEventListener('click', function () { closeSheet(); });
   el.refresh.addEventListener('click', function () { refreshAll(false); });
+
+  // 断线遮罩上唯一的出口：跳过退避立刻再试一次
+  el.offlineNow.addEventListener('click', function () {
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    connect();
+  });
 
   // ---------- 车机设置 ----------
   // 音源切换、重启服务、后台白名单这些以前只在车机的原生入口页里，
