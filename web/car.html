@@ -148,6 +148,8 @@
     font:inherit;font-size:12.5px;color:var(--dim);
   }
   .svc-btn.on{color:#fff}
+  a.svc-btn{display:flex;align-items:center;justify-content:center;text-decoration:none;
+    -webkit-tap-highlight-color:transparent}
   header,#scroll{transition:transform .26s cubic-bezier(.32,.72,0,1)}
 
   #toast{
@@ -229,10 +231,18 @@
 <div class="svc">
   <div class="svc-seg">
     <span class="svc-knob"></span>
-    <button class="svc-btn on">车机控制</button>
-    <button class="svc-btn" id="svcMusic">音乐控制</button>
+    <a class="svc-btn on" href="javascript:void 0">车机控制</a>
+    <a class="svc-btn" id="goMusic" href="http://127.0.0.1:18765/">音乐控制</a>
   </div>
 </div>
+<script>
+  /* 独立小脚本：只负责把地址换成当前主机的 18765，别的什么都不管 */
+  (function () {
+    var h = location.hostname || '127.0.0.1';
+    var b = document.getElementById('goMusic');
+    if (b) b.href = 'http://' + h + ':18765/';
+  })();
+</script>
 
 <div id="scroll">
   <div id="cards"></div>
@@ -1050,18 +1060,7 @@
     if (!document.hidden) loadCards();
   });
 
-  // ---------- 顶部切换 + 右滑去音乐页 ----------
-  // 两个服务在不同端口，没法同页并排，所以「切换」= 整页跳转。
-  function musicUrl() {
-    return location.protocol + '//' + location.hostname + ':18765/';
-  }
-
-  /* 换到音乐页：直接跳 18765。不做滑动、不做页内动画。 */
-  function slideToMusic() {
-    location.href = musicUrl();
-  }
-
-  document.getElementById('svcMusic').addEventListener('click', slideToMusic);
+  // 顶部两个按钮是 <a href>，地址在上面那段小脚本里设好，这里不再绑事件。
 
   refreshAll();
   setInterval(function () { if (!document.hidden) loadCards(); }, POLL_MS);

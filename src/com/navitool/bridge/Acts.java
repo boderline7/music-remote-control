@@ -213,11 +213,12 @@ final class Acts {
     // ---------- 温度 ----------
 
     /**
-     * 温度：SceneModeManager 里 hvac_temp 走 0x0A，值 = 摄氏度 - 15（车机只认 15-30 整度）。
-     * 下发用助手的 actionSendCommand(Context, 0x50001, 0x0A, 值)，跟原生场景动作同一条路。
+     * 温度：SceneModeManager 里 hvac_temp 走 actionSendCommand(context, 0x5000A, 0x0A, 摄氏度-15)。
+     * 注意第一个参数是空调通道 0x5000A，不是座椅那组 0x50001 —— 发错通道车机一声不响。
+     * 值域 15-30 整度，parseTemp 也是这么夹的。
      */
     private static final int CMD_TEMP = 0x0A;
-    private static final int VD_CONTROL = 0x50001;
+    private static final int VD_HVAC = 0x5000A;
     private static final int TEMP_MIN = 15;
     private static final int TEMP_MAX = 30;
 
@@ -236,7 +237,7 @@ final class Acts {
                 Bridge.onMainSync(new Callable<Object>() {
                     public Object call() throws Exception {
                         send.setAccessible(true);
-                        send.invoke(null, ctx, Integer.valueOf(VD_CONTROL),
+                        send.invoke(null, ctx, Integer.valueOf(VD_HVAC),
                                 Integer.valueOf(CMD_TEMP), Integer.valueOf(deg - TEMP_MIN));
                         return null;
                     }

@@ -423,7 +423,11 @@
     font: inherit; font-size: 12.5px; color: var(--dim); transition: color .18s;
   }
   .svc-btn.on { color: #fff; }
-  /* 滑动切页时整块跟手，所以给这两层留一条过渡 */
+  /* 切换按钮是真正的链接：不依赖脚本绑定，脚本报错也点得动 */
+  a.svc-btn {
+    display: flex; align-items: center; justify-content: center;
+    text-decoration: none; -webkit-tap-highlight-color: transparent;
+  }
   body > header, #scroll { transition: transform .26s cubic-bezier(.32,.72,0,1); }
 
   /* ==================================================================
@@ -664,7 +668,7 @@
   <header>
     <span id="dot"></span>
     <span id="status">正在连接车机…</span>
-    <i class="ver">2.10.10</i>
+    <i class="ver">2.10.11</i>
     <button class="icon-btn" id="gear" aria-label="车机设置">
       <svg viewBox="0 0 24 24"><path d="M4 6h9M18 6h2M4 12h3M12 12h8M4 18h9M18 18h2"/><circle cx="15.5" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="15.5" cy="18" r="2"/></svg>
     </button>
@@ -680,10 +684,18 @@
   <div class="svc">
     <div class="svc-seg" data-view="music">
       <span class="svc-knob"></span>
-      <button class="svc-btn" data-view="car">车机控制</button>
-      <button class="svc-btn on" data-view="music">音乐控制</button>
+      <a class="svc-btn" id="goCar" data-view="car" href="http://127.0.0.1:18766/">车机控制</a>
+      <a class="svc-btn on" data-view="music" href="javascript:void 0">音乐控制</a>
     </div>
   </div>
+  <script>
+    /* 单独一段，放在按钮正下方：不依赖下面任何脚本，崩了也点得动 */
+    (function () {
+      var h = location.hostname || '127.0.0.1';
+      var a = document.getElementById('goCar');
+      if (a) a.href = 'http://' + h + ':18766/';
+    })();
+  </script>
 
   <main id="scroll">
     <section class="col col-a">
@@ -841,14 +853,6 @@
       <button class="icon-btn" id="closeCar" aria-label="返回音乐">
         <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
-    </div>
-
-    <div class="svc">
-      <div class="svc-seg" data-view="car">
-        <span class="svc-knob"></span>
-        <button class="svc-btn on" data-view="car">车机控制</button>
-        <button class="svc-btn" data-view="music">音乐控制</button>
-      </div>
     </div>
 
     <div id="carScroll">
@@ -2769,30 +2773,8 @@
     else closeCar();
   }
 
-  for (var si = 0; si < svcBtns.length; si++) {
-    (function (b) {
-      b.addEventListener('click', function () {
-        svcGo(b.getAttribute('data-view'));
-      });
-      // 车机 WebView 里，起手那点位移一旦被判成横滑，touchmove 的 preventDefault
-      // 会把后面的 click 一起吃掉 —— 按钮就像没接上。这里自己补一次 touchend：
-      // 手指没怎么挪动就当点击。openCar / closeCar 都是幂等的，不会执行两遍。
-      var t0 = null;
-      b.addEventListener('touchstart', function (e) {
-        t0 = e.touches.length === 1
-          ? { x: e.touches[0].clientX, y: e.touches[0].clientY }
-          : null;
-      }, { passive: true });
-      b.addEventListener('touchend', function (e) {
-        if (!t0) return;
-        var t = e.changedTouches[0];
-        var moved = Math.abs(t.clientX - t0.x) + Math.abs(t.clientY - t0.y);
-        t0 = null;
-        if (moved > 12) return;
-        svcGo(b.getAttribute('data-view'));
-      });
-    })(svcBtns[si]);
-  }
+  /* 顶部两个按钮本身就是 <a href>，这里不再绑点击：
+     多一层 JS 只会多一个可能失效的地方。 */
 
   /* 车控页在 18766（车机助手那个包）。点了就整页过去，不做页内滑入、不做手势。 */
   function carUrl() {
