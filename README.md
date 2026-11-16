@@ -21,18 +21,44 @@
 
 **新装的车机助手要先手动打开一次。** 安卓对「刚安装还没启动过」的应用处于 stopped 状态，开机广播不会投递，所以第一次装完必须点一下桌面助手图标（或重启车机），之后才由服务自己维持。
 
-## 两个包
+## 三个包
 
 | 包 | 装在哪 | 提供什么 | 版本 |
 |---|---|---|---|
 | `dist/车机助手_V18.62_bridge.apk` | 车机 | 18766：卡片数据 / 动作表 / 动作执行 / 车控页 | vC 14 · 18.62-mod |
 | `dist/汽水音乐_桥接包_v2.10.7.apk` | 车机 | 桥接包：官方网易云模式下的 18765 + 车控页入口 + 入口页改版 | vC 50 · 2.10.7 |
+| `dist/车机遥控_手机端_v2.1.0.apk` | 手机 | 手机端：找车机 + WebView 打开两个页面 | vC 20 · 2.1.0 |
 
-手机端 App 不用动（它只是加载车机那份网页的壳），装完刷新页面即可。
+车机上的网页改了不用重装手机端 —— 手机端只是个壳，刷新页面就行。
 
 ```bash
 bash install.sh      # 两个包一起推上去装
 ```
+
+## 手机端（安卓 / iOS）
+
+手机这一侧只有一个 App：找到车机的 IP:端口，用 WebView 打开车机上那份网页。
+不翻译协议、不重画界面 —— 车控页和音乐页有什么，手机上就有什么。
+
+**固定探两个端口**：18766（车控）和 18765（音乐）。扫本机 /24 网段时两个一起试，
+开哪个列哪个；手动只填 IP 时也会把两个端口各试一遍。
+
+地址列表：
+
+- 手动加的地址存本地（最多 12 条），下次打开直接点。安卓长按删除，iOS 左滑删除
+- 扫出来的结果不保存，换网络重新扫一次
+
+| 平台 | 拿什么 | 怎么出 |
+|---|---|---|
+| 安卓 | `dist/车机遥控_手机端_v2.1.0.apk` | `bash build_phone.sh` |
+| iOS | `work/phone/ios` 工程 | 需要 Mac，或用 `.github/workflows/ios-phone.yml` 云构建 |
+
+iOS 在这台 Windows 上编不了（Xcode 只跑在 macOS）。两条路：
+
+1. Mac 上 `cd work/phone/ios && xcodegen generate`，用 Xcode 打开 `CarRemote.xcodeproj` 直接装；
+2. 推到 GitHub 跑 `ios-phone.yml`，macOS runner 出**未签名 IPA**，再用 Sideloadly / AltStore 用本机 Apple ID 签名装进去。
+
+细节见 `work/phone/ios/README.md`。
 
 ## 界面怎么用
 
@@ -86,6 +112,8 @@ src/com/navitool/bridge/
 dex/classes.dex         编译产物，打包时作为 classes3.dex 塞进 APK
 work/apk_decoded/       从改版工程复制来的解包目录（改这里，不动原目录）
 work/cloudmusic-car/    从遥控工程复制来的车机端工程（改这里，不动原目录）
+work/phone/             手机端工程副本：安卓 cloudmusic-remote + ios（改这里，不动原目录）
+.github/workflows/      iOS 云构建：macOS runner 出未签名 IPA
 web/car.html            18766 独立车控页（构建时塞进 APK 的 assets）
 web/remote.html         云音乐包网页（保留源文件，暂不出包）
 web/remote_lunastub.html 桥接包网页（含车控页 + 设置面板入口）
@@ -94,6 +122,7 @@ dist/                   成品 APK
 compile.sh              Java -> dex
 build.py                dex -> APK（含清单改动、对齐、签名）
 build_remote.sh         网页 -> 汽水桥接包
+build_phone.sh          安卓手机端 -> dist/车机遥控_手机端_v<版本>.apk
 install.sh              推到车机安装
 ```
 
@@ -103,6 +132,7 @@ install.sh              推到车机安装
 bash compile.sh       # 改完 Java 跑这个
 python build.py       # 出车机助手包
 bash build_remote.sh  # 出汽水桥接包
+bash build_phone.sh   # 出安卓手机端
 ```
 
 `build.py` 构建时会把 `work/apk_decoded` 复制到 `D:\cbwork\bridge_build`（ASCII 路径，否则 apktool 编 res 会挂），
@@ -119,6 +149,7 @@ bash build_remote.sh  # 出汽水桥接包
 |---|---|---|---|
 | 车机助手 | `com.navi.tool` | 14 / 18.62-mod | `debug.keystore` |
 | 桥接包 | `com.luna.music.car` | 50 / 2.10.7 | `keystore/carremote.jks` |
+| 手机端 | `com.carremote.client` | 20 / 2.1.0 | `keystore/carremote.jks` |
 
 以后改内容也重出同一个版本号：版本号一动就是新 App，覆盖安装会断，车机上的桌面图标和授权都得重来。
 

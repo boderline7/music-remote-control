@@ -30,3 +30,10 @@ Thumbs.db
 # ---- 构建时从 web/ 拷进来的副本（单一真相在 web/）----
 work/cloudmusic-car/lunastub/src/main/assets/remote.html
 work/cloudmusic-car/app/src/main/assets/remote.html
+
+# ---- 手机端工程 ----
+work/phone/**/build/
+work/phone/**/.gradle/
+work/phone/**/.kotlin/
+work/phone/手机端/cloudmusic-remote/local.properties
+work/phone/ios/out/
