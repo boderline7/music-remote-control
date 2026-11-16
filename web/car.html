@@ -81,6 +81,16 @@
   .cap:active{background:rgba(250,45,72,.28);border-color:rgba(250,45,72,.5)}
   .cap .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
+  /* 风量：连续量，做成减/加两个键，比滑条在车机屏上点得准 */
+  .fanrow{display:flex;align-items:center;gap:10px;margin:8px 16px 0;padding:8px 12px;
+    border-radius:12px;background:var(--card);border:1px solid var(--line)}
+  .fanrow .fl{flex:none;width:2.6em;font-size:13px;color:var(--dim)}
+  .fanrow .fv{flex:1;text-align:center;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+  .fanrow .fb{flex:none;width:46px;height:38px;border-radius:10px;font-size:19px;line-height:1;
+    background:rgba(255,255,255,.07);border:1px solid var(--line);color:#fff}
+  .fanrow .fb:active{background:rgba(250,45,72,.3);border-color:rgba(250,45,72,.5)}
+  .fanrow .fb:disabled{opacity:.3}
+
   .empty{margin:8px 16px 0;padding:18px 16px;background:rgba(255,255,255,.04);
     border:1px dashed var(--line);border-radius:12px;font-size:13px;line-height:1.7;color:var(--dim)}
   .empty b{color:#fff;font-weight:600}
@@ -396,12 +406,101 @@
         grid.appendChild(b);
       });
       capsBox.appendChild(grid);
+      if (g.g === '空调') {
+        // 风量跟空调一组，就贴在 AUTO / 内外循环 下面
+        capsBox.appendChild(fanBox('f', '前排'));
+        capsBox.appendChild(fanBox('r', '后排'));
+        fanShow();
+      }
     });
     hintEl.textContent = total ? (total + ' 项') : '';
     if (!total) {
       capsBox.appendChild(node('div', 'empty',
         '助手未绑定：先在车机上打开一次「桌面助手」，再回来刷新'));
     }
+  }
+
+  // ---------- 风量 ----------
+  // 车机助手里风量是滑条不是按钮，动作表按方法名筛不出来，所以单独走 /fan
+
+  var fanF = -1;      // 前排档位，-1 = 还没读到
+  var fanR = -1;      // 后排档位，0 = 关
+  var fanBusy = false;
+
+  function fanBox(kind, label) {
+    var row = node('div', 'fanrow');
+    row.dataset.kind = kind;
+    row.appendChild(node('span', 'fl', label));
+    var minus = node('button', 'fb', '−');
+    var val = node('span', 'fv', '—');
+    var plus = node('button', 'fb', '＋');
+    minus.addEventListener('click', function () { fanStep(kind, -1); });
+    plus.addEventListener('click', function () { fanStep(kind, 1); });
+    row.appendChild(minus);
+    row.appendChild(val);
+    row.appendChild(plus);
+    return row;
+  }
+
+  function fanShow() {
+    var rows = capsBox.querySelectorAll('.fanrow');
+    for (var i = 0; i < rows.length; i++) {
+      var f = rows[i].dataset.kind === 'f';
+      var v = f ? fanF : fanR;
+      rows[i].querySelector('.fv').textContent =
+        v < 0 ? '—' : (!f && v === 0 ? '关' : v);
+      var bs = rows[i].querySelectorAll('.fb');
+      // 到头就灰掉，省得点了没反应还以为是坏的
+      bs[0].disabled = v < 0 || v <= (f ? 1 : 0);
+      bs[1].disabled = v < 0 || v >= (f ? 7 : 4);
+    }
+  }
+
+  function fanStep(kind, d) {
+    if (fanBusy) return;
+    var f = kind === 'f';
+    var cur = f ? fanF : fanR;
+    if (cur < 0) {
+      toast('还没读到当前档位，先点刷新');
+      return;
+    }
+    var next = f ? Math.max(1, Math.min(7, cur + d)) : Math.max(0, Math.min(4, cur + d));
+    if (next === cur) return;
+    fanBusy = true;
+    var body = {};
+    body[f ? 'v' : 'r'] = next;
+    req('/fan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      fanBusy = false;
+      if (r && r.ok === 1) {
+        // 先按点的值显示，总线回读有延迟，600ms 后再校准一次
+        if (f) fanF = next; else fanR = next;
+        fanShow();
+        setStatus('风量 ' + (f ? '前排 ' : '后排 ') + (next === 0 ? '关' : next), 'on');
+        delete segCache.log;
+        setTimeout(loadFan, 600);
+        setTimeout(loadCards, 600);
+      } else {
+        toast((r && r.err) ? r.err : '风量没设上');
+        setStatus((r && r.err) ? r.err : '风量设置失败', 'warn');
+      }
+    }).catch(function () {
+      fanBusy = false;
+      toast('连不上桥接服务');
+      setStatus('请求失败', 'off');
+    });
+  }
+
+  function loadFan() {
+    req('/fan').then(function (r) {
+      if (!r || r.ok !== 1) return;
+      if (r.front >= 0) fanF = r.front;
+      if (r.rear >= 0) fanR = r.rear;
+      fanShow();
+    }).catch(function () {});
   }
 
   function act(id, name, v) {
@@ -465,7 +564,7 @@
     }).catch(function () { paintActs(null); });
   }
 
-  function refreshAll() { loadCards(); loadActs(); }
+  function refreshAll() { loadCards(); loadActs(); loadFan(); }
 
   // ---------- 设置 / 导出 ----------
 

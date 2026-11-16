@@ -93,6 +93,8 @@ helper bound: com.navi.tool.ui.extra.DesktopAssistantCarControlHelper
 11-16 11:44:02.113 I/NavitoolBridge( 8412): http listening on 18766 (try 1)
 `;
 const ops = [];
+let fanFront = 3;
+let fanRear = 0;
 const pad2 = (n) => (n < 10 ? '0' : '') + n;
 const hhmmss = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 const ymdhms = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${hhmmss(d)}`;
@@ -209,6 +211,18 @@ http.createServer((req, res) => {
       ops.unshift({ at: new Date(), id, label, v, ok: true, ms: 18 + Math.floor(Math.random() * 40), err: '' });
       res.writeHead(200, h);
       res.end(JSON.stringify({ ok: 1, via: id }));
+      return;
+    }
+    if (u === '/fan') {
+      let q = {};
+      try { q = JSON.parse(body || '{}'); } catch (e) { q = {}; }
+      if (q.v != null) fanFront = Math.max(1, Math.min(7, q.v));
+      if (q.r != null) fanRear = Math.max(0, Math.min(4, q.r));
+      if (q.v != null || q.r != null) {
+        ops.unshift({ at: new Date(), id: 'fan', label: `风量 ${q.v != null ? '前' + q.v : ''}${q.v != null && q.r != null ? ' /' : ''}${q.r != null ? ' 后' + q.r : ''}`, v: q.r != null ? q.r : q.v, ok: true, ms: 12, err: '' });
+      }
+      res.writeHead(200, h);
+      res.end(JSON.stringify({ ok: 1, front: fanFront, rear: fanRear }));
       return;
     }
     res.writeHead(404, h); res.end('{}');

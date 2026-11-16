@@ -179,6 +179,25 @@ final class HttpServer implements Runnable {
                     OpLog.add(a, Acts.labelOf(a), v, ok, cost, ok ? "" : Json.pick(r, "err"));
                     out = r;
                 }
+            } else if ("/fan".equals(path)) {
+                int fv = intOf(Json.pick(body, "v"), -1);
+                int rv = intOf(Json.pick(body, "r"), -1);
+                long t0 = System.currentTimeMillis();
+                String r = Acts.fan(ctx, fv, rv);
+                long cost = System.currentTimeMillis() - t0;
+                boolean ok = r.startsWith("{\"ok\":1");
+                if (fv >= 0 || rv >= 0) {
+                    StringBuilder lb = new StringBuilder("风量");
+                    if (fv >= 0) {
+                        lb.append(" 前").append(fv);
+                    }
+                    if (rv >= 0) {
+                        lb.append(fv >= 0 ? " /" : "").append(" 后").append(rv);
+                    }
+                    OpLog.add("fan", lb.toString(), rv >= 0 ? rv : fv, ok, cost,
+                            ok ? "" : Json.pick(r, "err"));
+                }
+                out = r;
             } else if ("/cards".equals(path)) {
                 out = Cards.json(ctx);
             } else if ("/probe".equals(path)) {
@@ -265,6 +284,18 @@ final class HttpServer implements Runnable {
         os.write(h.toString().getBytes("UTF-8"));
         os.write(data);
         os.flush();
+    }
+
+    /** body 里的整数字段，取不到或不是数字就给默认值 */
+    private static int intOf(String s, int def) {
+        if (s == null) {
+            return def;
+        }
+        try {
+            return Integer.parseInt(s.trim());
+        } catch (Throwable ignored) {
+            return def;
+        }
     }
 
     private static String readLine(InputStream in) throws IOException {
