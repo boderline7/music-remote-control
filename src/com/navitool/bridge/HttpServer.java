@@ -198,6 +198,29 @@ final class HttpServer implements Runnable {
                             ok ? "" : Json.pick(r, "err"));
                 }
                 out = r;
+            } else if ("/temp".equals(path)) {
+                int tv = intOf(Json.pick(body, "v"), -1);
+                long t0 = System.currentTimeMillis();
+                String r = Acts.temp(ctx, tv);
+                boolean ok = r.startsWith("{\"ok\":1");
+                if (tv >= 0) {
+                    OpLog.add("temp", "温度 " + tv + "°C", tv, ok,
+                            System.currentTimeMillis() - t0, ok ? "" : Json.pick(r, "err"));
+                }
+                out = r;
+            } else if ("/seat".equals(path)) {
+                int sv = intOf(Json.pick(body, "v"), -1);
+                String sp = Json.pick(body, "p");
+                String sk = Json.pick(body, "k");
+                long t0 = System.currentTimeMillis();
+                String r = Acts.seat(ctx, sp, sk, sv);
+                boolean ok = r.startsWith("{\"ok\":1");
+                if (sp != null && sv >= 0) {
+                    boolean vent = "vent".equalsIgnoreCase(sk);
+                    OpLog.add("seat", "座椅 " + sp + (vent ? " 通风" : " 加热"), sv, ok,
+                            System.currentTimeMillis() - t0, ok ? "" : Json.pick(r, "err"));
+                }
+                out = r;
             } else if ("/cards".equals(path)) {
                 out = Cards.json(ctx);
             } else if ("/probe".equals(path)) {

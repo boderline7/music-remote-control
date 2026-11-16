@@ -165,8 +165,15 @@ final class Acts {
                         int v = clamp(rear, 0, 4);
                         if (v == 0) {
                             send.invoke(helper, Integer.valueOf(CMD_FAN_REAR_OFF), Integer.valueOf(1));
+                            send.invoke(helper, Integer.valueOf(CMD_FAN_REAR), Integer.valueOf(0));
+                        } else {
+                            // 后排被 0x43 关过之后，直接甩目标档位车机不接；
+                            // 先补一发 1 档把它开起来，再写目标档位。
+                            if (level(helper, "hvac_rear_fan") == 0) {
+                                send.invoke(helper, Integer.valueOf(CMD_FAN_REAR), Integer.valueOf(1));
+                            }
+                            send.invoke(helper, Integer.valueOf(CMD_FAN_REAR), Integer.valueOf(v));
                         }
-                        send.invoke(helper, Integer.valueOf(CMD_FAN_REAR), Integer.valueOf(v));
                     }
                     return null;
                 }
@@ -179,20 +186,207 @@ final class Acts {
                 + ",\"rear\":" + level(helper, "hvac_rear_fan") + "}";
     }
 
-    /** 读当前档位：借 getCarInfoValue("hvac_fan")。读不到或不是数字返回 -1。 */
+    /** 读当前档位：借 getCarInfoValue(...)。读不到返回 -1，「关闭 / 关」算 0。 */
     static int level(Object helper, String id) {
         try {
             Method m = helper.getClass().getMethod("getCarInfoValue", String.class);
             Object r = m.invoke(helper, id);
             if (r instanceof String) {
-                String s = ((String) r).replaceAll("[^0-9]", "");
-                if (s.length() > 0) {
-                    return Integer.parseInt(s);
+                String s = ((String) r).trim();
+                if (s.length() == 0) {
+                    return -1;
+                }
+                // 车机把「关」写成「关闭」「关」，档位写成「2 档」「2档」
+                if (s.indexOf('关') >= 0 || "off".equalsIgnoreCase(s)) {
+                    return 0;
+                }
+                String d = s.replaceAll("[^0-9]", "");
+                if (d.length() > 0) {
+                    return Integer.parseInt(d);
                 }
             }
         } catch (Throwable ignored) {
         }
         return -1;
+    }
+
+    // ---------- 温度 ----------
+
+    /**
+     * 温度：SceneModeManager 里 hvac_temp 走 0x0A，值 = 摄氏度 - 15（车机只认 15-30 整度）。
+     * 下发用助手的 actionSendCommand(Context, 0x50001, 0x0A, 值)，跟原生场景动作同一条路。
+     */
+    private static final int CMD_TEMP = 0x0A;
+    private static final int VD_CONTROL = 0x50001;
+    private static final int TEMP_MIN = 15;
+    private static final int TEMP_MAX = 30;
+
+    static String temp(Context ctx, final int v) {
+        final Object helper = Bridge.helper;
+        if (helper == null) {
+            return "{\"ok\":0,\"err\":\"helper 未绑定\"}";
+        }
+        if (v >= 0) {
+            final Method send = findN(helper.getClass(), "actionSendCommand", 4);
+            if (send == null) {
+                return "{\"ok\":0,\"err\":\"no such method\"}";
+            }
+            try {
+                final int deg = clamp(v, TEMP_MIN, TEMP_MAX);
+                Bridge.onMainSync(new Callable<Object>() {
+                    public Object call() throws Exception {
+                        send.setAccessible(true);
+                        send.invoke(null, ctx, Integer.valueOf(VD_CONTROL),
+                                Integer.valueOf(CMD_TEMP), Integer.valueOf(deg - TEMP_MIN));
+                        return null;
+                    }
+                });
+            } catch (Throwable t) {
+                Bridge.note("temp: " + Bridge.root(t));
+                return "{\"ok\":0,\"err\":" + Bridge.q(Bridge.root(t)) + "}";
+            }
+        }
+        return "{\"ok\":1,\"v\":" + tempOf(helper) + "}";
+    }
+
+    /**
+     * 温度回读。车机可能给「22.0」「22°C」「22 ℃」，也可能给 0-15 的原始档，
+     * 所以先把第一段数字（带小数点）抠出来，再看是不是原始档。
+     * 不能像风量那样把所有非数字都删掉 —— 「22.0」会变成 220。
+     */
+    private static int tempOf(Object helper) {
+        String s = raw(helper, "hvac_temp");
+        if (s == null || s.trim().length() == 0) {
+            // 有的车机把主驾温度挂在另一个 key 上
+            s = raw(helper, "hvac_temp_driver");
+        }
+        if (s == null || s.trim().length() == 0) {
+            s = raw(helper, "hvac_temp_fl");
+        }
+        if (s == null) {
+            return -1;
+        }
+        s = s.trim();
+        if (s.length() == 0) {
+            return -1;
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(-?\\d+(?:\\.\\d+)?)").matcher(s);
+        if (!m.find()) {
+            return -1;
+        }
+        int v;
+        try {
+            v = (int) Math.round(Double.parseDouble(m.group(1)));
+        } catch (Throwable t) {
+            return -1;
+        }
+        boolean celsius = s.indexOf('.') >= 0 || s.indexOf('°') >= 0
+                || s.indexOf('℃') >= 0 || s.indexOf('C') >= 0;
+        if (!celsius && v > 0 && v < TEMP_MIN) {
+            return v + TEMP_MIN;          // 原始档 0-15 → 15-30℃
+        }
+        return v;
+    }
+
+    // ---------- 座椅 ----------
+
+    private static final String[] SEAT_POS = {"FL", "FR", "RL", "RR"};
+
+    /**
+     * 座椅加热 / 通风。助手里点一次是一个「循环切换」（关 → 1 → 2 → 3 → 关），
+     * 这里直接调它自己的 handleSeatClick(座位, 是否通风)，不自己拼命令号，
+     * 免得跟它内部的兼容模式、状态回读对不上。
+     *
+     * v >= 0 表示按一次；v < 0 只读状态。
+     */
+    static String seat(Context ctx, final String pos, final String kind, int v) {
+        final Object helper = Bridge.helper;
+        if (helper == null) {
+            return "{\"ok\":0,\"err\":\"helper 未绑定\"}";
+        }
+        String p = pos == null ? "" : pos.trim().toUpperCase();
+        if (!("FL".equals(p) || "FR".equals(p) || "RL".equals(p) || "RR".equals(p))) {
+            return "{\"ok\":0,\"err\":\"bad pos\"}";
+        }
+        final String seat = p;
+        final boolean vent = "vent".equalsIgnoreCase(kind == null ? "" : kind.trim());
+        if (v >= 0) {
+            final Method m = find2b(helper.getClass(), "handleSeatClick", String.class, boolean.class);
+            if (m == null) {
+                return "{\"ok\":0,\"err\":\"no such method\"}";
+            }
+            try {
+                Bridge.onMainSync(new Callable<Object>() {
+                    public Object call() throws Exception {
+                        m.setAccessible(true);
+                        m.invoke(helper, seat, Boolean.valueOf(vent));
+                        return null;
+                    }
+                });
+            } catch (Throwable t) {
+                Bridge.note("seat: " + Bridge.root(t));
+                return "{\"ok\":0,\"err\":" + Bridge.q(Bridge.root(t)) + "}";
+            }
+        }
+        return seatJson(helper);
+    }
+
+    /** 四座加热 / 通风的当前状态，原样带出去（「关」「2 档」「--」都有可能）。 */
+    static String seatJson(Object helper) {
+        StringBuilder sb = new StringBuilder(320);
+        sb.append("{\"ok\":1,\"seats\":{");
+        boolean first = true;
+        for (String pos : SEAT_POS) {
+            for (String kind : new String[]{"heat", "vent"}) {
+                if (!first) {
+                    sb.append(',');
+                }
+                first = false;
+                sb.append('"').append(kind).append('_').append(pos.toLowerCase()).append("\":")
+                        .append(Bridge.q(raw(helper, "seat_" + kind + "_" + pos.toLowerCase())));
+            }
+        }
+        sb.append("}}");
+        return sb.toString();
+    }
+
+    private static String raw(Object helper, String id) {
+        try {
+            Method m = helper.getClass().getMethod("getCarInfoValue", String.class);
+            Object r = m.invoke(helper, id);
+            return r == null ? "" : String.valueOf(r);
+        } catch (Throwable ignored) {
+            return "";
+        }
+    }
+
+    private static Method findN(Class<?> type, String name, int args) {
+        Class<?> c = type;
+        while (c != null) {
+            for (Method m : c.getDeclaredMethods()) {
+                if (m.getName().equals(name) && m.getParameterTypes().length == args) {
+                    return m;
+                }
+            }
+            c = c.getSuperclass();
+        }
+        return null;
+    }
+
+    private static Method find2b(Class<?> type, String name, Class<?> a, Class<?> b) {
+        Class<?> c = type;
+        while (c != null) {
+            for (Method m : c.getDeclaredMethods()) {
+                Class<?>[] ps = m.getParameterTypes();
+                if (m.getName().equals(name) && ps.length == 2
+                        && ps[0] == a && ps[1] == b) {
+                    return m;
+                }
+            }
+            c = c.getSuperclass();
+        }
+        return null;
     }
 
     private static Method find2(Class<?> type, String name) {

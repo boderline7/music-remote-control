@@ -95,6 +95,11 @@ helper bound: com.navi.tool.ui.extra.DesktopAssistantCarControlHelper
 const ops = [];
 let fanFront = 3;
 let fanRear = 0;
+let tempV = 24;
+let seatState = {
+  heat_fl: '关', heat_fr: '关', heat_rl: '关', heat_rr: '关',
+  vent_fl: '关', vent_fr: '关', vent_rl: '', vent_rr: ''
+};
 const pad2 = (n) => (n < 10 ? '0' : '') + n;
 const hhmmss = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 const ymdhms = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${hhmmss(d)}`;
@@ -223,6 +228,30 @@ http.createServer((req, res) => {
       }
       res.writeHead(200, h);
       res.end(JSON.stringify({ ok: 1, front: fanFront, rear: fanRear }));
+      return;
+    }
+    if (u === '/temp') {
+      let q = {};
+      try { q = JSON.parse(body || '{}'); } catch (e) { q = {}; }
+      if (q.v != null) {
+        tempV = Math.max(15, Math.min(30, q.v));
+        ops.unshift({ at: new Date(), id: 'temp', label: `温度 ${tempV}°C`, v: tempV, ok: true, ms: 9, err: '' });
+      }
+      res.writeHead(200, h);
+      res.end(JSON.stringify({ ok: 1, v: tempV }));
+      return;
+    }
+    if (u === '/seat') {
+      let q = {};
+      try { q = JSON.parse(body || '{}'); } catch (e) { q = {}; }
+      if (q.p && q.v != null) {
+        const k = `${q.k}_${q.p}`;
+        const cur = seatState[k] && seatState[k] !== '关' ? parseInt(seatState[k], 10) || 0 : 0;
+        seatState[k] = cur >= 3 ? '关' : `${cur + 1} 档`;
+        ops.unshift({ at: new Date(), id: 'seat', label: `座椅 ${q.p} ${q.k === 'vent' ? '通风' : '加热'}`, v: q.v, ok: true, ms: 11, err: '' });
+      }
+      res.writeHead(200, h);
+      res.end(JSON.stringify({ ok: 1, seats: seatState }));
       return;
     }
     res.writeHead(404, h); res.end('{}');

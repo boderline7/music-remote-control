@@ -538,6 +538,55 @@
   }
   .fanrow .fb:active { background: rgba(250,45,72,.3); border-color: rgba(250,45,72,.5); }
   .fanrow .fb:disabled { opacity: .3; }
+  /* 温度：−/＋ 两个键 + 一条能拖的滑条（车机屏上滑条给粗一点才好抓） */
+  .temprow {
+    margin: 8px 16px 0; padding: 10px 12px 4px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line);
+  }
+  .temprow .tline { display: flex; align-items: center; gap: 10px; }
+  .temprow .fl { flex: none; width: 2.6em; font-size: 13px; color: var(--dim); }
+  .temprow .tv {
+    flex: 1; text-align: center; font-size: 20px; font-weight: 600;
+    font-variant-numeric: tabular-nums; color: #fff;
+  }
+  .temprow .fb {
+    flex: none; width: 46px; height: 38px; border-radius: 10px;
+    font-size: 19px; line-height: 1; color: #fff;
+    background: rgba(255,255,255,.07); border: 1px solid var(--line);
+  }
+  .temprow .fb:active { background: rgba(250,45,72,.3); border-color: rgba(250,45,72,.5); }
+  .temprow .fb:disabled { opacity: .3; }
+  .temprow input[type=range] {
+    -webkit-appearance: none; appearance: none; display: block;
+    width: 100%; height: 28px; margin: 2px 0 0; background: transparent;
+  }
+  .temprow input[type=range]::-webkit-slider-runnable-track {
+    height: 6px; border-radius: 3px; background: rgba(255,255,255,.14);
+  }
+  .temprow input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 22px; height: 22px; margin-top: -8px;
+    border-radius: 50%; background: #fa2d48; border: 0;
+  }
+  /* 座椅：四宫格，每格两行（加热 / 通风），点一下升一档 */
+  .seatgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 16px; }
+  .seatcell {
+    padding: 10px 12px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line);
+  }
+  .seatcell .sn { font-size: 12px; color: var(--faint); margin-bottom: 4px; }
+  .seatcell .sr {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 6px; margin: 0 -6px; border-radius: 8px;
+  }
+  .seatcell .sr + .sr { border-top: 1px solid rgba(255,255,255,.06); }
+  .seatcell .sr:active { background: rgba(250,45,72,.2); }
+  .seatcell .sk { flex: 1; font-size: 13px; color: #fff; }
+  .seatcell .sv {
+    font-size: 12px; color: var(--dim);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .seatcell .sv.on { color: #ff9f0a; }
+  .seatcell .sr.na { opacity: .35; }
   /* ---------- 车控页里的设置 / 诊断 ---------- */
   #csetMask{position:fixed;inset:0;background:rgba(0,0,0,.6);opacity:0;pointer-events:none;
     transition:opacity .2s;z-index:108}
@@ -802,10 +851,22 @@
       <div id="carCards"></div>
 
       <div class="car-sec">
+        <h2>温度</h2>
+        <span class="hint" id="tempHint">15 - 30 ℃ · 可拖</span>
+      </div>
+      <div id="carTemp"></div>
+
+      <div class="car-sec">
         <h2>控制</h2>
         <span class="hint" id="capHint"></span>
       </div>
       <div id="carCaps"></div>
+
+      <div class="car-sec">
+        <h2>座椅</h2>
+        <span class="hint">点一下升一档，到头再点回关</span>
+      </div>
+      <div id="carSeat" class="seatgrid"></div>
 
       <div id="carLog" class="carlog hidden"></div>
 
@@ -2327,8 +2388,10 @@
       rows[i].querySelector('.fv').textContent =
         v < 0 ? '—' : (!f && v === 0 ? '关' : v);
       var bs = rows[i].querySelectorAll('.fb');
-      bs[0].disabled = v < 0 || v <= (f ? 1 : 0);
-      bs[1].disabled = v < 0 || v >= (f ? 7 : 4);
+      // 读不到档位时别锁死加号：后排刚关掉、状态还没回来正好是这时候，
+      // 锁死就会出现「关了再也开不起来」。只有读到确定值才用边界判断。
+      bs[0].disabled = v >= 0 && v <= (f ? 1 : 0);
+      bs[1].disabled = v >= 0 && v >= (f ? 7 : 4);
     }
   }
 
@@ -2336,10 +2399,8 @@
     if (fanBusy) return;
     var f = kind === 'f';
     var cur = f ? fanF : fanR;
-    if (cur < 0) {
-      toast('还没读到当前档位，先点刷新');
-      return;
-    }
+    // 状态没读回来时按「关」起步，加号点了就一定往上开一档
+    if (cur < 0) cur = f ? 2 : 0;
     var next = f ? Math.max(1, Math.min(7, cur + d)) : Math.max(0, Math.min(4, cur + d));
     if (next === cur) return;
     fanBusy = true;
@@ -2374,6 +2435,189 @@
       if (r.front >= 0) fanF = r.front;
       if (r.rear >= 0) fanR = r.rear;
       fanShow();
+    }).catch(function () {});
+  }
+
+  // ---------- 温度 ----------
+  // 助手把温度做成场景动作（0x0A），没有现成按钮，这里给 −/＋ 和一条可拖的滑条。
+  // 车机只认 15-30 整度，滑条步进就是 1 度。
+
+  var tempV = -1;
+  var tempBusy = false;
+  var TEMP_MIN = 15;
+  var TEMP_MAX = 30;
+
+  function tempBuild() {
+    var box = document.getElementById('carTemp');
+    if (!box || box.dataset.built) return;
+    box.dataset.built = '1';
+    var row = line('div', 'temprow');
+    var top = line('div', 'tline');
+    top.appendChild(line('span', 'fl', '主驾'));
+    var minus = line('button', 'fb', '−');
+    var val = line('span', 'tv', '—');
+    var plus = line('button', 'fb', '＋');
+    top.appendChild(minus);
+    top.appendChild(val);
+    top.appendChild(plus);
+    var bar = document.createElement('input');
+    bar.type = 'range';
+    bar.min = String(TEMP_MIN);
+    bar.max = String(TEMP_MAX);
+    bar.step = '1';
+    bar.value = '24';
+    minus.addEventListener('click', function () { tempStep(-1); });
+    plus.addEventListener('click', function () { tempStep(1); });
+    // 拖的时候只改数字，松手（change）才下发，免得一路刷命令
+    bar.addEventListener('input', function () { val.textContent = bar.value + '°C'; });
+    bar.addEventListener('change', function () { tempSet(parseInt(bar.value, 10)); });
+    row.appendChild(top);
+    row.appendChild(bar);
+    box.appendChild(row);
+    box._el = { minus: minus, plus: plus, val: val, bar: bar };
+  }
+
+  function tempShow() {
+    var box = document.getElementById('carTemp');
+    if (!box || !box._el) return;
+    var v = tempV;
+    box._el.val.textContent = v < 0 ? '—' : v + '°C';
+    if (v >= 0) box._el.bar.value = String(v);
+    box._el.minus.disabled = v >= 0 && v <= TEMP_MIN;
+    box._el.plus.disabled = v >= 0 && v >= TEMP_MAX;
+  }
+
+  function tempStep(d) {
+    var cur = tempV < 0 ? 24 : tempV;
+    tempSet(Math.max(TEMP_MIN, Math.min(TEMP_MAX, cur + d)));
+  }
+
+  function tempSet(v) {
+    if (tempBusy) return;
+    var t = Math.max(TEMP_MIN, Math.min(TEMP_MAX, v));
+    tempBusy = true;
+    req('/temp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ v: t })
+    }).then(function (r) {
+      tempBusy = false;
+      if (r && r.ok === 1) {
+        tempV = r.v >= 0 ? r.v : t;
+        tempShow();
+        setStatus('温度 ' + tempV + '°C', 'on');
+        setTimeout(loadTemp, 800);
+      } else {
+        toast((r && r.err) ? r.err : '温度没设上');
+        setStatus((r && r.err) ? r.err : '温度设置失败', 'warn');
+        loadTemp();
+      }
+    }).catch(function () {
+      tempBusy = false;
+      toast('连不上车机助手');
+      setStatus('请求失败', 'off');
+    });
+  }
+
+  function loadTemp() {
+    req('/temp').then(function (r) {
+      if (!r || r.ok !== 1) return;
+      if (r.v >= 0) tempV = r.v;
+      tempShow();
+    }).catch(function () {});
+  }
+
+  /** 温度回读兜底：/temp 拿不到时，用卡片里「主驾温度」那一项把数字填上 */
+  function tempFromCards(d) {
+    if (tempV >= 0) return;
+    var cards = (d && d.cards) || [];
+    for (var i = 0; i < cards.length; i++) {
+      var items = cards[i].items || [];
+      for (var j = 0; j < items.length; j++) {
+        var k = items[j].k || '';
+        if (k.indexOf('温度') < 0 || k.indexOf('驾') < 0) continue;
+        var n = parseFloat(String(items[j].v).replace(/[^0-9.]/g, ''));
+        if (n >= 10 && n <= 40) {
+          tempV = Math.round(n);
+          tempShow();
+          return;
+        }
+      }
+    }
+  }
+
+  // ---------- 座椅 ----------
+  // 加热 / 通风在原界面是「点一下升一档」的循环按钮，这里照抄，
+  // 直接让助手自己执行 handleSeatClick，不自己拼命令号。
+
+  var seatState = {};
+  var seatBusy = false;
+  var SEAT_POS = [['fl', '左前'], ['fr', '右前'], ['rl', '左后'], ['rr', '右后']];
+
+  function seatBuild() {
+    var box = document.getElementById('carSeat');
+    if (!box || box.dataset.built) return;
+    box.dataset.built = '1';
+    SEAT_POS.forEach(function (p) {
+      var cell = line('div', 'seatcell');
+      cell.appendChild(line('div', 'sn', p[1]));
+      [['heat', '加热'], ['vent', '通风']].forEach(function (k) {
+        var r = line('div', 'sr');
+        r.dataset.pos = p[0];
+        r.dataset.kind = k[0];
+        r.appendChild(line('span', 'sk', k[1]));
+        r.appendChild(line('span', 'sv', '—'));
+        r.addEventListener('click', function () { seatTap(p[0], k[0]); });
+        cell.appendChild(r);
+      });
+      box.appendChild(cell);
+    });
+  }
+
+  function seatShow() {
+    var rows = document.querySelectorAll('#carSeat .sr');
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var raw = seatState[r.dataset.kind + '_' + r.dataset.pos];
+      var sv = r.querySelector('.sv');
+      var on = raw && raw !== '关' && raw !== '--';
+      sv.textContent = raw ? raw : '—';
+      sv.className = 'sv' + (on ? ' on' : '');
+      r.className = 'sr' + (raw === '' ? ' na' : '');
+    }
+  }
+
+  function seatTap(pos, kind) {
+    if (seatBusy) return;
+    seatBusy = true;
+    req('/seat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p: pos, k: kind, v: 1 })
+    }).then(function (r) {
+      seatBusy = false;
+      if (r && r.ok === 1) {
+        if (r.seats) {
+          seatState = r.seats;
+        }
+        seatShow();
+        setTimeout(loadSeat, 900);
+      } else {
+        toast((r && r.err) ? r.err : '座椅没响应');
+        setStatus((r && r.err) ? r.err : '座椅设置失败', 'warn');
+      }
+    }).catch(function () {
+      seatBusy = false;
+      toast('连不上车机助手');
+      setStatus('请求失败', 'off');
+    });
+  }
+
+  function loadSeat() {
+    req('/seat').then(function (r) {
+      if (!r || r.ok !== 1 || !r.seats) return;
+      seatState = r.seats;
+      seatShow();
     }).catch(function () {});
   }
 
@@ -2420,6 +2664,7 @@
     req('/cards').then(function (d) {
       inflight = false;
       paintCards(d);
+      tempFromCards(d);
       setStatus(d && d.ok === 1 ? '已连接 · 车机助手' : '车机助手未就绪', d && d.ok === 1 ? 'on' : 'warn');
       badeEl.className = 'bade' + (d && d.ok === 1 ? ' on' : '');
       if (d && d.log) showLog(d.log);
@@ -2443,9 +2688,13 @@
   }
 
   function refreshAll() {
+    tempBuild();
+    seatBuild();
     loadCards();
     loadActs(true);
     loadFan();
+    loadTemp();
+    loadSeat();
   }
 
   // ---------- 打开 / 关闭 ----------
@@ -2510,8 +2759,9 @@
     var dy = t.clientY - drag.y;
 
     if (drag.lock === null) {
-      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
-      if (Math.abs(dx) <= Math.abs(dy) * 1.2) { drag.lock = 'y'; return; }
+      // 起手阈值给足：车机屏上点一下手指也会晃几像素，判太早就会把点击吃掉
+      if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return;
+      if (Math.abs(dx) <= Math.abs(dy) * 1.5) { drag.lock = 'y'; return; }
       // 音乐页只往左拉、车控页只往右拉，反方向交还给页面自己
       if ((!isOpen && dx > 0) || (isOpen && dx < 0)) { drag.lock = 'no'; return; }
       drag.lock = 'x';
@@ -2557,11 +2807,32 @@
     if (!isOpen) carX(W);
   });
 
+  function svcGo(view) {
+    if (view === 'car') openCar();
+    else closeCar();
+  }
+
   for (var si = 0; si < svcBtns.length; si++) {
     (function (b) {
       b.addEventListener('click', function () {
-        if (b.getAttribute('data-view') === 'car') openCar();
-        else closeCar();
+        svcGo(b.getAttribute('data-view'));
+      });
+      // 车机 WebView 里，起手那点位移一旦被判成横滑，touchmove 的 preventDefault
+      // 会把后面的 click 一起吃掉 —— 按钮就像没接上。这里自己补一次 touchend：
+      // 手指没怎么挪动就当点击。openCar / closeCar 都是幂等的，不会执行两遍。
+      var t0 = null;
+      b.addEventListener('touchstart', function (e) {
+        t0 = e.touches.length === 1
+          ? { x: e.touches[0].clientX, y: e.touches[0].clientY }
+          : null;
+      }, { passive: true });
+      b.addEventListener('touchend', function (e) {
+        if (!t0) return;
+        var t = e.changedTouches[0];
+        var moved = Math.abs(t.clientX - t0.x) + Math.abs(t.clientY - t0.y);
+        t0 = null;
+        if (moved > 12) return;
+        svcGo(b.getAttribute('data-view'));
       });
     })(svcBtns[si]);
   }
@@ -2582,6 +2853,16 @@
       if (!isOpen || document.hidden) return;
       loadCards();
     }, POLL_MS);
+
+    // 兜底：万一滑入动画/层级在这台车的 WebView 里没生效，页面还停在屏幕外，
+    // 就直接整页切到 18766 去，别让人以为按钮没接上。
+    setTimeout(function () {
+      if (!isOpen) return;
+      var r = page.getBoundingClientRect();
+      if (r.left > 4) {
+        location.href = 'http://' + location.hostname + ':18766/';
+      }
+    }, 1500);
   }
 
   function closeCar() {

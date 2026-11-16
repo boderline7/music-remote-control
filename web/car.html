@@ -90,6 +90,31 @@
     background:rgba(255,255,255,.07);border:1px solid var(--line);color:#fff}
   .fanrow .fb:active{background:rgba(250,45,72,.3);border-color:rgba(250,45,72,.5)}
   .fanrow .fb:disabled{opacity:.3}
+  .temprow{margin:8px 16px 0;padding:10px 12px 4px;border-radius:12px;
+    background:var(--card);border:1px solid var(--line)}
+  .temprow .tline{display:flex;align-items:center;gap:10px}
+  .temprow .fl{flex:none;width:2.6em;font-size:13px;color:var(--dim)}
+  .temprow .tv{flex:1;text-align:center;font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;color:#fff}
+  .temprow .fb{flex:none;width:46px;height:38px;border-radius:10px;font-size:19px;line-height:1;
+    color:#fff;background:rgba(255,255,255,.07);border:1px solid var(--line)}
+  .temprow .fb:active{background:rgba(250,45,72,.3);border-color:rgba(250,45,72,.5)}
+  .temprow .fb:disabled{opacity:.3}
+  .temprow input[type=range]{-webkit-appearance:none;appearance:none;display:block;
+    width:100%;height:28px;margin:2px 0 0;background:transparent}
+  .temprow input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;
+    background:rgba(255,255,255,.14)}
+  .temprow input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;
+    margin-top:-8px;border-radius:50%;background:#fa2d48;border:0}
+  .seatgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px}
+  .seatcell{padding:10px 12px;border-radius:12px;background:var(--card);border:1px solid var(--line)}
+  .seatcell .sn{font-size:12px;color:var(--faint);margin-bottom:4px}
+  .seatcell .sr{display:flex;align-items:center;gap:8px;padding:8px 6px;margin:0 -6px;border-radius:8px}
+  .seatcell .sr+.sr{border-top:1px solid rgba(255,255,255,.06)}
+  .seatcell .sr:active{background:rgba(250,45,72,.2)}
+  .seatcell .sk{flex:1;font-size:13px;color:#fff}
+  .seatcell .sv{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .seatcell .sv.on{color:#ff9f0a}
+  .seatcell .sr.na{opacity:.35}
 
   .empty{margin:8px 16px 0;padding:18px 16px;background:rgba(255,255,255,.04);
     border:1px dashed var(--line);border-radius:12px;font-size:13px;line-height:1.7;color:var(--dim)}
@@ -206,8 +231,12 @@
 
 <div id="scroll">
   <div id="cards"></div>
+  <div class="sec"><h2>温度</h2><span class="hint" id="tempHint">15 - 30 ℃ · 可拖</span></div>
+  <div id="temp"></div>
   <div class="sec"><h2>控制</h2><span class="hint" id="capHint"></span></div>
   <div id="caps"></div>
+  <div class="sec"><h2>座椅</h2><span class="hint">点一下升一档，到头再点回关</span></div>
+  <div id="seat" class="seatgrid"></div>
   <div id="log" class="log hidden"></div>
   <footer>
     数据与控制都来自车机助手（reflection），这里不发任何车机总线命令<br>
@@ -450,9 +479,10 @@
       rows[i].querySelector('.fv').textContent =
         v < 0 ? '—' : (!f && v === 0 ? '关' : v);
       var bs = rows[i].querySelectorAll('.fb');
-      // 到头就灰掉，省得点了没反应还以为是坏的
-      bs[0].disabled = v < 0 || v <= (f ? 1 : 0);
-      bs[1].disabled = v < 0 || v >= (f ? 7 : 4);
+      // 读到确定档位才按边界灰化：后排刚关掉、状态还没回来时锁死加号，
+      // 会变成「关了再也开不起来」。
+      bs[0].disabled = v >= 0 && v <= (f ? 1 : 0);
+      bs[1].disabled = v >= 0 && v >= (f ? 7 : 4);
     }
   }
 
@@ -460,10 +490,7 @@
     if (fanBusy) return;
     var f = kind === 'f';
     var cur = f ? fanF : fanR;
-    if (cur < 0) {
-      toast('还没读到当前档位，先点刷新');
-      return;
-    }
+    if (cur < 0) cur = f ? 2 : 0;
     var next = f ? Math.max(1, Math.min(7, cur + d)) : Math.max(0, Math.min(4, cur + d));
     if (next === cur) return;
     fanBusy = true;
@@ -500,6 +527,182 @@
       if (r.front >= 0) fanF = r.front;
       if (r.rear >= 0) fanR = r.rear;
       fanShow();
+    }).catch(function () {});
+  }
+
+  // ---------- 温度 ----------
+  var tempV = -1;
+  var tempBusy = false;
+  var TEMP_MIN = 15;
+  var TEMP_MAX = 30;
+
+  function tempBuild() {
+    var box = document.getElementById('temp');
+    if (!box || box.dataset.built) return;
+    box.dataset.built = '1';
+    var row = node('div', 'temprow');
+    var top = node('div', 'tline');
+    top.appendChild(node('span', 'fl', '主驾'));
+    var minus = node('button', 'fb', '−');
+    var val = node('span', 'tv', '—');
+    var plus = node('button', 'fb', '＋');
+    top.appendChild(minus);
+    top.appendChild(val);
+    top.appendChild(plus);
+    var bar = document.createElement('input');
+    bar.type = 'range';
+    bar.min = String(TEMP_MIN);
+    bar.max = String(TEMP_MAX);
+    bar.step = '1';
+    bar.value = '24';
+    minus.addEventListener('click', function () { tempStep(-1); });
+    plus.addEventListener('click', function () { tempStep(1); });
+    bar.addEventListener('input', function () { val.textContent = bar.value + '°C'; });
+    bar.addEventListener('change', function () { tempSet(parseInt(bar.value, 10)); });
+    row.appendChild(top);
+    row.appendChild(bar);
+    box.appendChild(row);
+    box._el = { minus: minus, plus: plus, val: val, bar: bar };
+  }
+
+  function tempShow() {
+    var box = document.getElementById('temp');
+    if (!box || !box._el) return;
+    var v = tempV;
+    box._el.val.textContent = v < 0 ? '—' : v + '°C';
+    if (v >= 0) box._el.bar.value = String(v);
+    box._el.minus.disabled = v >= 0 && v <= TEMP_MIN;
+    box._el.plus.disabled = v >= 0 && v >= TEMP_MAX;
+  }
+
+  function tempStep(d) {
+    var cur = tempV < 0 ? 24 : tempV;
+    tempSet(Math.max(TEMP_MIN, Math.min(TEMP_MAX, cur + d)));
+  }
+
+  function tempSet(v) {
+    if (tempBusy) return;
+    var t = Math.max(TEMP_MIN, Math.min(TEMP_MAX, v));
+    tempBusy = true;
+    req('/temp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ v: t })
+    }).then(function (r) {
+      tempBusy = false;
+      if (r && r.ok === 1) {
+        tempV = r.v >= 0 ? r.v : t;
+        tempShow();
+        setStatus('温度 ' + tempV + '°C', 'on');
+        setTimeout(loadTemp, 800);
+      } else {
+        toast((r && r.err) ? r.err : '温度没设上');
+        setStatus((r && r.err) ? r.err : '温度设置失败', 'warn');
+        loadTemp();
+      }
+    }).catch(function () {
+      tempBusy = false;
+      toast('连不上桥接服务');
+      setStatus('请求失败', 'off');
+    });
+  }
+
+  function loadTemp() {
+    req('/temp').then(function (r) {
+      if (!r || r.ok !== 1) return;
+      if (r.v >= 0) tempV = r.v;
+      tempShow();
+    }).catch(function () {});
+  }
+
+  /** 温度回读兜底：/temp 拿不到时，用卡片里「主驾温度」那一项把数字填上 */
+  function tempFromCards(d) {
+    if (tempV >= 0) return;
+    var cards = (d && d.cards) || [];
+    for (var i = 0; i < cards.length; i++) {
+      var items = cards[i].items || [];
+      for (var j = 0; j < items.length; j++) {
+        var k = items[j].k || '';
+        if (k.indexOf('温度') < 0 || k.indexOf('驾') < 0) continue;
+        var n = parseFloat(String(items[j].v).replace(/[^0-9.]/g, ''));
+        if (n >= 10 && n <= 40) {
+          tempV = Math.round(n);
+          tempShow();
+          return;
+        }
+      }
+    }
+  }
+
+  // ---------- 座椅 ----------
+  var seatState = {};
+  var seatBusy = false;
+  var SEAT_POS = [['fl', '左前'], ['fr', '右前'], ['rl', '左后'], ['rr', '右后']];
+
+  function seatBuild() {
+    var box = document.getElementById('seat');
+    if (!box || box.dataset.built) return;
+    box.dataset.built = '1';
+    SEAT_POS.forEach(function (p) {
+      var cell = node('div', 'seatcell');
+      cell.appendChild(node('div', 'sn', p[1]));
+      [['heat', '加热'], ['vent', '通风']].forEach(function (k) {
+        var r = node('div', 'sr');
+        r.dataset.pos = p[0];
+        r.dataset.kind = k[0];
+        r.appendChild(node('span', 'sk', k[1]));
+        r.appendChild(node('span', 'sv', '—'));
+        r.addEventListener('click', function () { seatTap(p[0], k[0]); });
+        cell.appendChild(r);
+      });
+      box.appendChild(cell);
+    });
+  }
+
+  function seatShow() {
+    var rows = document.querySelectorAll('#seat .sr');
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var raw = seatState[r.dataset.kind + '_' + r.dataset.pos];
+      var sv = r.querySelector('.sv');
+      var on = raw && raw !== '关' && raw !== '--';
+      sv.textContent = raw ? raw : '—';
+      sv.className = 'sv' + (on ? ' on' : '');
+      r.className = 'sr' + (raw === '' ? ' na' : '');
+    }
+  }
+
+  function seatTap(pos, kind) {
+    if (seatBusy) return;
+    seatBusy = true;
+    req('/seat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p: pos, k: kind, v: 1 })
+    }).then(function (r) {
+      seatBusy = false;
+      if (r && r.ok === 1) {
+        if (r.seats) {
+          seatState = r.seats;
+        }
+        seatShow();
+        setTimeout(loadSeat, 900);
+      } else {
+        toast((r && r.err) ? r.err : '座椅没响应');
+        setStatus((r && r.err) ? r.err : '座椅设置失败', 'warn');
+      }
+    }).catch(function () {
+      seatBusy = false;
+      toast('连不上桥接服务');
+      setStatus('请求失败', 'off');
+    });
+  }
+
+  function loadSeat() {
+    req('/seat').then(function (r) {
+      if (!r || r.ok !== 1 || !r.seats) return;
+      seatState = r.seats;
+      seatShow();
     }).catch(function () {});
   }
 
@@ -549,6 +752,7 @@
     req('/cards').then(function (d) {
       inflight = false;
       paintCards(d);
+      tempFromCards(d);
       setStatus(d && d.ok === 1 ? '已连接 · 车机助手' : '车机助手未就绪', d && d.ok === 1 ? 'on' : 'warn');
       if (d && d.log) showLog(d.log);
     }).catch(function () {
@@ -564,7 +768,15 @@
     }).catch(function () { paintActs(null); });
   }
 
-  function refreshAll() { loadCards(); loadActs(); loadFan(); }
+  function refreshAll() {
+    tempBuild();
+    seatBuild();
+    loadCards();
+    loadActs();
+    loadFan();
+    loadTemp();
+    loadSeat();
+  }
 
   // ---------- 设置 / 导出 ----------
 
