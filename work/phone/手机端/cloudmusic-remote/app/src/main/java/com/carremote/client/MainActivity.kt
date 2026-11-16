@@ -152,6 +152,7 @@ class MainActivity : Activity() {
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     pageLoaded = true
+                    segFix(view)
                 }
 
                 override fun onReceivedError(
@@ -447,6 +448,15 @@ class MainActivity : Activity() {
 
     // ---------- 网页 <-> 原生 ----------
 
+    /**
+     * 车机上如果装的是旧版页面（顶部没有「车机控制 / 音乐控制」那条），
+     * 壳里补一条，保证两个模块永远切得动。页面自带且正常显示就完全不插手。
+     */
+    private fun segFix(view: WebView?) {
+        view ?: return
+        runCatching { view.evaluateJavascript(SEG_FIX_JS, null) }
+    }
+
     /** 网页 setStatus 时主动上报，原生据此决定是否吞掉硬件音量键、记住成功地址。 */
     private inner class NativeBridge {
         @JavascriptInterface
@@ -518,5 +528,42 @@ class MainActivity : Activity() {
         searchJob?.cancel()
         scope.cancel()
         webView.destroy()
+    }
+
+    private companion object {
+        /** 只在页面上「看不到」切换条时插一条，用于兼容车机里的旧版页面。 */
+        val SEG_FIX_JS = """
+(function(){
+  try{
+    if (document.getElementById('cmSegFix')) return;
+    var seg = document.querySelector('.svc-seg');
+    if (seg) {
+      var r = seg.getBoundingClientRect();
+      if (r.width > 120 && r.height > 18) return;
+    }
+    var p = location.port;
+    var other = p === '18765' ? '18766' : (p === '18766' ? '18765' : '');
+    if (!other) return;
+    var cur = p === '18765' ? '音乐控制' : '车机控制';
+    var tgt = p === '18765' ? '车机控制' : '音乐控制';
+    var url = location.protocol + '//' + location.hostname + ':' + other + '/';
+    var box = document.createElement('div');
+    box.id = 'cmSegFix';
+    box.style.cssText = 'position:fixed;left:12px;right:12px;bottom:14px;z-index:2147483646;display:flex;gap:6px;padding:5px;border-radius:13px;background:rgba(20,20,26,.95);border:1px solid rgba(255,255,255,.16);box-shadow:0 10px 28px rgba(0,0,0,.5);font:14px/1 -apple-system,sans-serif';
+    function mk(t, on, act){
+      var b = document.createElement('button');
+      b.textContent = t;
+      b.style.cssText = 'flex:1;padding:11px 0;border:0;border-radius:9px;background:' + (on ? 'rgba(255,255,255,.17)' : 'transparent') + ';color:' + (on ? '#fff' : '#8e8e93') + ';font:inherit';
+      if (act) b.addEventListener('click', act);
+      return b;
+    }
+    box.appendChild(mk(cur, true, null));
+    box.appendChild(mk(tgt, false, function(){ location.href = url; }));
+    var host = document.body || document.documentElement;
+    host.appendChild(box);
+    document.body.style.paddingBottom = '78px';
+  }catch(e){}
+})();
+        """.trimIndent()
     }
 }

@@ -399,9 +399,12 @@
      放在刷新按钮下面，不占最顶上那行；两处各一份（音乐视图 / 车控视图），
      状态由 syncSeg() 一起更新。 */
   .svc {
-    position: relative; z-index: 101;   /* 离线遮罩是 100，断线时也得能切走 */
+    /* 离线遮罩 100、设置面板 109、toast 130 —— 这一条要压在所有浮层之上，
+       断线、开着面板、弹着 toast 都得能切走 */
+    position: relative; z-index: 128;
     flex: none; width: 100%; max-width: 560px; margin: 0 auto 6px; padding: 0 16px;
   }
+  .ver { flex: none; font-style: normal; font-size: 10px; color: var(--faint); letter-spacing: .3px; }
   .svc-seg {
     position: relative; display: flex; padding: 3px;
     background: rgba(26,26,32,.9); border: 1px solid var(--line);
@@ -661,6 +664,7 @@
   <header>
     <span id="dot"></span>
     <span id="status">正在连接车机…</span>
+    <i class="ver">2.10.9</i>
     <button class="icon-btn" id="gear" aria-label="车机设置">
       <svg viewBox="0 0 24 24"><path d="M4 6h9M18 6h2M4 12h3M12 12h8M4 18h9M18 18h2"/><circle cx="15.5" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="15.5" cy="18" r="2"/></svg>
     </button>
@@ -2699,14 +2703,12 @@
 
   // ---------- 打开 / 关闭 ----------
 
-  /* 顶部那两条切换条 + 左右滑动。车控页本来就是从右边滑进来的，
-     这里把「点按钮」和「手滑」都接到同一对开关上，滑完的状态用 syncSeg 标亮。 */
+  /* 顶部那条切换条：两个按钮，点了直接换端口。不做左右滑动。 */
   var segs = document.querySelectorAll('.svc-seg');
   var svcBtns = document.querySelectorAll('.svc-btn');
   var mainHead = document.querySelector('body > header');
   var mainScroll = document.getElementById('scroll');
   var W = window.innerWidth;
-  var drag = null;
 
   function syncSeg(v) {
     for (var i = 0; i < segs.length; i++) {
@@ -2736,75 +2738,8 @@
     if (mainScroll) mainScroll.style.transition = v;
   }
 
-  /** 滑块 / 输入框 / 面板上起手不接横滑，免得跟进度条、音量条打架 */
-  function blocked(n) {
-    if (!n || !n.tagName) return false;
-    if (n.tagName === 'INPUT' || n.tagName === 'TEXTAREA') return true;
-    if (n.closest && (n.closest('#csetSheet') || n.closest('.svc-seg'))) return true;
-    return false;
-  }
-
-  document.addEventListener('touchstart', function (e) {
-    drag = null;                      // 上一次手势没收到 touchend 也得能重新开始
-    if (e.touches.length !== 1) return;
-    if (blocked(e.target)) return;
-    var t = e.touches[0];
-    drag = { x: t.clientX, y: t.clientY, dx: 0, lock: null, moved: false };
-  }, { passive: true });
-
-  document.addEventListener('touchmove', function (e) {
-    if (!drag || e.touches.length !== 1) return;
-    var t = e.touches[0];
-    var dx = t.clientX - drag.x;
-    var dy = t.clientY - drag.y;
-
-    if (drag.lock === null) {
-      // 起手阈值给足：车机屏上点一下手指也会晃几像素，判太早就会把点击吃掉
-      if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return;
-      if (Math.abs(dx) <= Math.abs(dy) * 1.5) { drag.lock = 'y'; return; }
-      // 音乐页只往左拉、车控页只往右拉，反方向交还给页面自己
-      if ((!isOpen && dx > 0) || (isOpen && dx < 0)) { drag.lock = 'no'; return; }
-      drag.lock = 'x';
-      anim(false);
-    }
-    if (drag.lock !== 'x') return;
-    if (e.cancelable) e.preventDefault();
-
-    drag.moved = true;
-    drag.dx = dx;
-    if (isOpen) {
-      carX(Math.max(0, dx));
-    } else {
-      var x = Math.min(0, dx);
-      mainX(x);
-      carX(Math.max(0, W + x));
-    }
-  }, { passive: false });
-
-  function endDrag() {
-    if (!drag) return;
-    var d = drag;
-    drag = null;
-    anim(true);
-    if (!d.moved) return;
-    var far = Math.abs(d.dx) > Math.min(160, W * 0.28);
-    if (isOpen) {
-      if (far && d.dx > 0) closeCar();
-      else carX(0);
-    } else if (far && d.dx < 0) {
-      openCar();
-    } else {
-      mainX(0);
-      carX(W);
-    }
-  }
-
-  document.addEventListener('touchend', endDrag);
-  document.addEventListener('touchcancel', endDrag);
-
   window.addEventListener('resize', function () {
     W = window.innerWidth;
-    if (!isOpen) carX(W);
   });
 
   function svcGo(view) {
@@ -2837,32 +2772,13 @@
     })(svcBtns[si]);
   }
 
-  function openCar() {
-    if (isOpen) return;
-    isOpen = true;
-    page.classList.add('open');
-    document.body.classList.add('car-open');
-    anim(true);
-    mainX(0);
-    carX(0);
-    syncSeg('car');
-    setStatus('正在连接车机助手…');
-    refreshAll();
-    if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(function () {
-      if (!isOpen || document.hidden) return;
-      loadCards();
-    }, POLL_MS);
+  /* 车控页在 18766（车机助手那个包）。点了就整页过去，不做页内滑入、不做手势。 */
+  function carUrl() {
+    return 'http://' + (location.hostname || '127.0.0.1') + ':18766/';
+  }
 
-    // 兜底：万一滑入动画/层级在这台车的 WebView 里没生效，页面还停在屏幕外，
-    // 就直接整页切到 18766 去，别让人以为按钮没接上。
-    setTimeout(function () {
-      if (!isOpen) return;
-      var r = page.getBoundingClientRect();
-      if (r.left > 4) {
-        location.href = 'http://' + location.hostname + ':18766/';
-      }
-    }, 1500);
+  function openCar() {
+    location.href = carUrl();
   }
 
   function closeCar() {

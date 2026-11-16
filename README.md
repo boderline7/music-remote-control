@@ -26,8 +26,8 @@
 | 包 | 装在哪 | 提供什么 | 版本 |
 |---|---|---|---|
 | `dist/车机助手_V18.62_bridge.apk` | 车机 | 18766：卡片数据 / 动作表 / 动作执行 / 车控页 | vC 14 · 18.62-mod |
-| `dist/汽水音乐_桥接包_v2.10.8.apk` | 车机 | 桥接包：官方网易云模式下的 18765 + 车控页入口 + 入口页改版 | vC 51 · 2.10.8 |
-| `dist/车机遥控_手机端_v2.1.0.apk` | 手机 | 手机端：找车机 + WebView 打开两个页面 | vC 20 · 2.1.0 |
+| `dist/汽水音乐_桥接包_v2.10.9.apk` | 车机 | 桥接包：官方网易云模式下的 18765 + 车控页入口 + 入口页改版 | vC 52 · 2.10.9 |
+| `dist/车机遥控_手机端_v2.1.1.apk` | 手机 | 手机端：找车机 + WebView 打开两个页面 | vC 21 · 2.1.1 |
 
 车机上的网页改了不用重装手机端 —— 手机端只是个壳，刷新页面就行。
 
@@ -50,7 +50,7 @@ bash install.sh      # 两个包一起推上去装
 
 | 平台 | 拿什么 | 怎么出 |
 |---|---|---|
-| 安卓 | `dist/车机遥控_手机端_v2.1.0.apk` | `bash build_phone.sh` |
+| 安卓 | `dist/车机遥控_手机端_v2.1.1.apk` | `bash build_phone.sh` |
 | iOS | 云构建的 `CarRemote-unsigned.ipa` | `bash build_ios.sh`（推 `phone-ios` 分支，自动出包） |
 
 iOS 在这台 Windows 上编不了（Xcode 只跑在 macOS）。两条路：
@@ -158,8 +158,8 @@ bash build_phone.sh   # 出安卓手机端
 | | 包名 | 版本 | 签名 |
 |---|---|---|---|
 | 车机助手 | `com.navi.tool` | 14 / 18.62-mod | `debug.keystore` |
-| 桥接包 | `com.luna.music.car` | 51 / 2.10.8 | `keystore/carremote.jks` |
-| 手机端 | `com.carremote.client` | 20 / 2.1.0 | `keystore/carremote.jks` |
+| 桥接包 | `com.luna.music.car` | 52 / 2.10.9 | `keystore/carremote.jks` |
+| 手机端 | `com.carremote.client` | 21 / 2.1.1 | `keystore/carremote.jks` |
 
 以后改内容也重出同一个版本号：版本号一动就是新 App，覆盖安装会断，车机上的桌面图标和授权都得重来。
 
@@ -183,7 +183,7 @@ node _preview/mock.js
 ```
 
 然后浏览器开 `http://127.0.0.1:18765/`：18766 那边是假数据（4 张卡 + 动作表 + 一段假诊断），
-用来调样式和手势，跟真车数据无关。
+用来调样式和按钮，跟真车数据无关。
 
 ## 接口
 
