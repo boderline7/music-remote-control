@@ -9,7 +9,7 @@ export PATH="C:/Users/Administrator/.workbuddy/tools/rev/platform-tools:$PATH"
 export MSYS_NO_PATHCONV=1
 
 NAVI="dist/车机助手_V18.62_bridge.apk"
-LUNA="dist/汽水音乐_桥接包_v2.10.6.apk"
+LUNA="dist/汽水音乐_桥接包_v2.10.7.apk"
 
 for f in "$NAVI" "$LUNA"; do
   [ -f "$f" ] || { echo "缺少 $f"; exit 1; }

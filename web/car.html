@@ -126,11 +126,25 @@
     border:1px solid var(--line);font-size:13.5px}
   .set-row button:active{background:rgba(255,255,255,.12)}
   .set-row button.primary{background:rgba(250,45,72,.16);border-color:rgba(250,45,72,.42)}
-  #diagBox{margin:0;padding:12px;border-radius:12px;background:rgba(0,0,0,.38);
+  #segBox{margin:0;padding:12px;border-radius:12px;background:rgba(0,0,0,.38);
     border:1px solid var(--line);font:11px/1.65 ui-monospace,Consolas,monospace;
     color:rgba(255,255,255,.74);white-space:pre-wrap;word-break:break-all;
-    min-height:130px;max-height:46vh;overflow:auto;user-select:text;-webkit-user-select:text}
+    min-height:120px;max-height:36vh;overflow:auto;user-select:text;-webkit-user-select:text}
   .set-tip{font-size:11.5px;line-height:1.75;color:var(--faint);margin:10px 2px 0}
+
+  /* 分段切换 */
+  .tabs{display:flex;gap:6px;margin:0 0 10px;overflow-x:auto}
+  .tab{flex:1 0 auto;min-height:34px;padding:0 12px;border-radius:9px;
+    background:rgba(255,255,255,.04);border:1px solid var(--line);
+    font-size:12.5px;color:var(--dim);white-space:nowrap}
+  .tab.on{background:rgba(250,45,72,.18);border-color:rgba(250,45,72,.45);color:#fff}
+  .tab .n{font-size:10.5px;color:var(--faint);margin-left:4px}
+  .tab.on .n{color:rgba(255,255,255,.6)}
+
+  /* 执行后数值变化闪一下 */
+  .citem .v{transition:background .5s,box-shadow .5s}
+  .citem.chg .v{background:rgba(52,199,89,.28);box-shadow:0 0 0 3px rgba(52,199,89,.28);
+    border-radius:5px}
 
   @media (min-width:1000px){
     header,#scroll{max-width:1180px}
@@ -173,15 +187,29 @@
   </div>
   <div class="set-body">
     <div class="set-kv" id="setKv">—</div>
-    <div class="set-row">
-      <button class="primary" id="diagLoad">生成诊断</button>
-      <button id="diagCopy">复制</button>
-      <button id="diagSave">下载</button>
+
+    <div class="tabs" id="segTabs">
+      <button class="tab on" data-seg="diag">诊断</button>
+      <button class="tab" data-seg="log">操作记录</button>
+      <button class="tab" data-seg="cards">车况</button>
+      <button class="tab" data-seg="acts">动作表</button>
     </div>
-    <pre id="diagBox">点上面的「生成诊断」，从车机助手里取当前状态和最近日志。</pre>
+
+    <div class="set-row">
+      <button class="primary" id="segLoad">生成</button>
+      <button id="segCopy">复制</button>
+      <button id="segSave">下载</button>
+    </div>
+    <pre id="segBox">点「生成」，取当前这一段的文本。</pre>
+    <div class="set-tip" id="segTip"></div>
+
+    <div class="set-row" style="margin-top:16px">
+      <button id="dumpSave">全部导出</button>
+      <button id="logClear">清空记录</button>
+    </div>
     <div class="set-tip">
-      诊断里有端口状态、引擎绑定、安装包版本、动作项数和最近日志。<br>
-      「复制」放进剪贴板直接发出去；「下载」存成 txt，手机的文件管理器里能找到。<br>
+      「全部导出」把诊断、车况、动作表、操作记录合成一个 txt，一次拿走。<br>
+      「清空记录」只清操作记录，不影响服务。<br>
       下载没反应时长按上面的文本全选——App 的下载由系统管，手机浏览器里最稳。
     </div>
   </div>
@@ -202,6 +230,9 @@
 
   var busy = false;
   var inflight = false;
+  var lastOp = '';          // 最近一次操作的摘要，设置面板里显示
+  var lastVals = {};        // 卡片项上次的值，用来标出执行后哪里变了
+  var lastChg = {};         // 变化时间戳：轮询重建 DOM 时靠它把高亮留住 4 秒
 
   hostEl.textContent = location.hostname;
 
@@ -269,6 +300,7 @@
   function paintCards(d) {
     cardsBox.textContent = '';
     if (!d || d.ok !== 1) {
+      lastVals = {};   // 断开后重连不闪一片绿
       var e = node('div', 'empty');
       e.appendChild(node('div', null, '车机助手还没就绪'));
       e.appendChild(node('div', null, (d && d.err) ? d.err : '拿不到卡片数据'));
@@ -291,8 +323,19 @@
       (c.items || []).forEach(function (it) {
         var cell = node('div', 'citem');
         cell.style.gridColumn = 'span ' + Math.max(1, Math.min(cols, it.s || 1));
+        var val = it.v == null || it.v === '' ? '—' : String(it.v);
+        var key = (c.title || c.t || '') + '|' + (it.k || '');
+        var now = Date.now();
+        // 上一次的值还在、这次变了：记下时间，4 秒内每次重建都标绿
+        if (lastVals[key] != null && lastVals[key] !== val) {
+          lastChg[key] = now;
+        }
+        if (lastChg[key] && now - lastChg[key] < 4000) {
+          cell.className += ' chg';
+        }
+        lastVals[key] = val;
         cell.appendChild(node('span', 'k', it.k || ''));
-        cell.appendChild(node('span', 'v', it.v == null || it.v === '' ? '—' : it.v));
+        cell.appendChild(node('span', 'v', val));
         grid.appendChild(cell);
       });
       card.appendChild(grid);
@@ -337,23 +380,29 @@
     if (busy) return;
     busy = true;
     setStatus('执行：' + name, 'warn');
+    var t0 = Date.now();
     req('/act', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ a: id, v: (v == null ? -1 : v) })
     }).then(function (r) {
       busy = false;
+      var ms = Date.now() - t0;
       if (r && r.ok === 1) {
+        lastOp = name + ' · 成功 · ' + ms + 'ms';
         toast(name + ' 已执行');
         setStatus('已执行：' + name, 'on');
       } else {
+        lastOp = name + ' · 失败' + (r && r.err ? '：' + r.err : '') + ' · ' + ms + 'ms';
         toast(name + ' 没执行成功');
         setStatus((r && r.err) ? r.err : '执行失败', 'warn');
         if (r && r.err) showLog([r.err]);
       }
+      delete segCache.log;      // 记录变了，下次进「操作记录」重新取
       setTimeout(loadCards, 600);
     }).catch(function () {
       busy = false;
+      lastOp = name + ' · 请求失败';
       toast('连不上桥接服务');
       setStatus('请求失败', 'off');
     });
@@ -390,19 +439,44 @@
 
   function refreshAll() { loadCards(); loadActs(); }
 
-  // ---------- 设置 / 诊断 ----------
+  // ---------- 设置 / 导出 ----------
 
   var mask = document.getElementById('setMask');
   var sheet = document.getElementById('setSheet');
   var kvEl = document.getElementById('setKv');
-  var diagBox = document.getElementById('diagBox');
-  var diagText = '';
-  var diagBusy = false;
+  var segBox = document.getElementById('segBox');
+  var segTip = document.getElementById('segTip');
+  var tabsEl = document.getElementById('segTabs');
+
+  // 四段文本用的是同一套「生成 → 复制 → 下载」，只是取的地址不同
+  var SEGS = {
+    diag: {
+      url: '/diag', file: '车机诊断', slow: 18000,
+      tip: '端口、引擎绑定、安装包版本、动作项数、进程日志和 logcat 摘要。'
+    },
+    log: {
+      url: '/acts.log', file: '操作记录', slow: 6000,
+      tip: '每次点按钮的结果和耗时，最新的在最上面。「点了没反应」先看这里。'
+    },
+    cards: {
+      url: '/cards.txt', file: '车况快照', slow: 6000,
+      tip: '每张卡、每一项的名字和值。某张卡少了什么，发这段比截图清楚。'
+    },
+    acts: {
+      url: '/acts.txt', file: '动作表', slow: 6000,
+      tip: '当前能执行的项和方法名。表里有、方法不存在的会标出来。'
+    }
+  };
+
+  var curSeg = 'diag';
+  var segCache = {};        // 分段 -> 文本，切来切去不重复请求
+  var segBusy = false;
 
   function openSet() {
     sheet.classList.add('show');
     mask.classList.add('show');
     loadPing();
+    pickSeg(curSeg);    // 里面对空缓存会自动取一次，省一次点击
   }
 
   function closeSet() {
@@ -420,66 +494,91 @@
       kvEl.textContent = '地址　' + location.origin + '\n'
         + '服务　端口 ' + d.port + (d.bound ? ' 已绑定' : ' 未绑定') + ' · 接口 v' + d.v + '\n'
         + '引擎　' + (d.helper ? '已绑定' : '未绑定 ← 车机上打开一次桌面助手')
-        + ' · 界面 ' + (d.activity ? '已出现' : '未出现')
+        + ' · 界面 ' + (d.activity ? '已出现' : '未出现') + '\n'
+        + '操作　' + (d.ops == null ? 0 : d.ops) + ' 次调用'
+        + (d.opsFail ? ' · 失败 ' + d.opsFail : '')
+        + (lastOp ? '\n最近　' + lastOp : '')
         + (d.err ? '\n错误　' + d.err : '');
     }).catch(function () {
       kvEl.textContent = '连不上 18766，诊断也取不到。先确认车机助手在跑。';
     });
   }
 
-  /** 诊断要等服务端跑 logcat，普通 req() 那 3.5 秒不够 */
-  function loadDiag() {
-    if (diagBusy) return;      // 服务端跑一次 logcat 要一两秒，连点会堆请求
-    diagBusy = true;
-    diagBox.textContent = '读取中…';
-    diagText = '';
+  function pickSeg(seg) {
+    if (!SEGS[seg]) return;
+    curSeg = seg;
+    Array.prototype.forEach.call(tabsEl.children, function (b) {
+      b.classList.toggle('on', b.getAttribute('data-seg') === seg);
+    });
+    segTip.textContent = SEGS[seg].tip;
+    segBox.textContent = segCache[seg] || ('点「生成」取' + SEGS[seg].file + '。');
+    segBox.scrollTop = 0;
+    if (!segCache[seg] && !segBusy) loadSeg();   // 切过去就取，不用再点一次
+  }
+
+  /** 诊断要等服务端跑 logcat，普通 req() 那 3.5 秒不够，所以每段自带超时 */
+  function loadSeg() {
+    if (segBusy) return;      // 连点会堆请求
+    var seg = curSeg;
+    var cfg = SEGS[seg];
+    segBusy = true;
+    segBox.textContent = '读取中…';
     var ctl = window.AbortController ? new AbortController() : null;
     var o = { cache: 'no-store' };
     var timer = null;
     if (ctl) {
       o.signal = ctl.signal;
-      timer = setTimeout(function () { ctl.abort(); }, 15000);
+      timer = setTimeout(function () { ctl.abort(); }, cfg.slow);
     }
-    fetch('/diag', o).then(function (r) {
+    fetch(cfg.url, o).then(function (r) {
       if (timer) clearTimeout(timer);
       return r.text();
     }).then(function (t) {
-      diagBusy = false;
-      diagText = t;
-      diagBox.textContent = t;
-      diagBox.scrollTop = 0;
+      segBusy = false;
+      segCache[seg] = t;
+      if (curSeg === seg) {
+        segBox.textContent = t;
+        segBox.scrollTop = 0;
+      }
     }).catch(function () {
       if (timer) clearTimeout(timer);
-      diagBusy = false;
-      diagBox.textContent = '取不到诊断：18766 没响应。\n'
-        + '可以在浏览器里直接打开 ' + location.origin + '/diag 看看。';
+      segBusy = false;
+      if (curSeg === seg) {
+        segBox.textContent = '取不到：18766 没响应。\n'
+          + '可以直接在浏览器里打开 ' + location.origin + cfg.url + ' 看看。';
+      }
     });
   }
 
-  function copyDiag() {
-    if (!diagText) {
-      toast('先点「生成诊断」');
+  function copySeg() {
+    var t = segCache[curSeg];
+    if (!t) {
+      toast('先点「生成」');
       return;
     }
+    copyText(t);
+  }
+
+  function copyText(text) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(diagText).then(function () {
+      navigator.clipboard.writeText(text).then(function () {
         toast('已复制');
-      }, fallbackCopy);
+      }, function () { fallbackCopy(text); });
     } else {
-      fallbackCopy();
+      fallbackCopy(text);
     }
   }
 
   /** http 局域网地址不是安全上下文，clipboard API 常常没有，退回 textarea */
-  function fallbackCopy() {
+  function fallbackCopy(text) {
     var ta = document.createElement('textarea');
-    ta.value = diagText;
+    ta.value = text;
     ta.setAttribute('readonly', '');
     ta.style.position = 'fixed';
     ta.style.left = '-9999px';
     document.body.appendChild(ta);
     ta.select();
-    ta.setSelectionRange(0, diagText.length);
+    ta.setSelectionRange(0, text.length);
     var ok = false;
     try {
       ok = document.execCommand('copy');
@@ -487,20 +586,19 @@
       ok = false;
     }
     document.body.removeChild(ta);
-    toast(ok ? '已复制' : '复制被拦，长按下面的文本全选');
+    toast(ok ? '已复制' : '复制被拦，长按上面的文本全选');
   }
 
-  function saveDiag() {
-    if (!diagText) {
-      toast('先点「生成诊断」');
-      return;
-    }
+  function stamp() {
     var d = new Date();
     var p = function (n) { return (n < 10 ? '0' : '') + n; };
-    var name = '车机诊断_' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate())
-      + '-' + p(d.getHours()) + p(d.getMinutes()) + '.txt';
+    return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate())
+      + '-' + p(d.getHours()) + p(d.getMinutes());
+  }
+
+  function saveText(text, name) {
     try {
-      var blob = new Blob([diagText], { type: 'text/plain;charset=utf-8' });
+      var blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');
       a.href = url;
@@ -514,16 +612,66 @@
       }, 1500);
       toast('已保存 ' + name);
     } catch (e) {
-      toast('下载不支持，长按文本手动复制');
+      toast('下载不支持，长按上面的文本手动复制');
     }
+  }
+
+  function saveSeg() {
+    var t = segCache[curSeg];
+    if (!t) {
+      toast('先点「生成」');
+      return;
+    }
+    var cfg = SEGS[curSeg];
+    saveText(t, cfg.file + '_' + stamp() + '.txt');
+  }
+
+  /** 全部导出：服务端拼好一整份，这里只负责存下来 */
+  function saveDump() {
+    toast('正在打包…');
+    var ctl = window.AbortController ? new AbortController() : null;
+    var o = { cache: 'no-store' };
+    var timer = null;
+    if (ctl) {
+      o.signal = ctl.signal;
+      timer = setTimeout(function () { ctl.abort(); }, 25000);
+    }
+    fetch('/dump', o).then(function (r) {
+      if (timer) clearTimeout(timer);
+      return r.text();
+    }).then(function (t) {
+      saveText(t, '车机全量_' + stamp() + '.txt');
+    }).catch(function () {
+      if (timer) clearTimeout(timer);
+      toast('打包失败，先试试单个「下载」');
+    });
+  }
+
+  function clearLog() {
+    req('/log/clear').then(function (r) {
+      if (r && r.ok === 1) {
+        delete segCache.log;
+        if (curSeg === 'log') segBox.textContent = '点「生成」取操作记录。';
+        toast('操作记录已清空');
+      } else {
+        toast('清空失败');
+      }
+    }).catch(function () { toast('连不上桥接服务'); });
   }
 
   document.getElementById('openSet').addEventListener('click', openSet);
   document.getElementById('setClose').addEventListener('click', closeSet);
   mask.addEventListener('click', closeSet);
-  document.getElementById('diagLoad').addEventListener('click', loadDiag);
-  document.getElementById('diagCopy').addEventListener('click', copyDiag);
-  document.getElementById('diagSave').addEventListener('click', saveDiag);
+  tabsEl.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('.tab') : null;
+    if (b) pickSeg(b.getAttribute('data-seg'));
+  });
+  document.getElementById('segLoad').addEventListener('click', loadSeg);
+  document.getElementById('segCopy').addEventListener('click', copySeg);
+  document.getElementById('segSave').addEventListener('click', saveSeg);
+  document.getElementById('dumpSave').addEventListener('click', saveDump);
+  document.getElementById('logClear').addEventListener('click', clearLog);
+  segTip.textContent = SEGS.diag.tip;
 
   document.getElementById('refresh').addEventListener('click', function () {
     refreshAll();

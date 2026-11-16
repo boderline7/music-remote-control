@@ -2,6 +2,7 @@
 out/
 dex/*.dex
 *.apk
+*.idsig
 
 # ---- 第三方副本 / 解包目录 ----
 # 从 D:/车机/车机助手_改版工程 复制而来，体积 76M，需要时重新复制即可
@@ -17,10 +18,15 @@ build/
 .idea/
 *.iml
 
-# ---- 预览截图（调试用，随时重生成）----
-_preview/*.png
+# ---- 预览：只留假数据服务，调试脚本与截图随时重生成 ----
+_preview/*
+!_preview/mock.js
 
 # ---- 系统 ----
 .DS_Store
 Thumbs.db
 *.log
+
+# ---- 构建时从 web/ 拷进来的副本（单一真相在 web/）----
+work/cloudmusic-car/lunastub/src/main/assets/remote.html
+work/cloudmusic-car/app/src/main/assets/remote.html

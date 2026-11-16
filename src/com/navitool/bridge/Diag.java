@@ -75,6 +75,8 @@ final class Diag {
             sb.append("未绑定 ← 卡片和动作都用不了，先让桌面助手出现\n");
         }
         sb.append("动作   ").append(Acts.count()).append(" 项可执行\n");
+        sb.append("操作   ").append(OpLog.total()).append(" 次调用 · 失败 ")
+                .append(OpLog.failed()).append('\n');
         sb.append("最近错误 ").append(Bridge.lastError.length() == 0 ? "无\n"
                 : Bridge.lastError + "\n");
 
@@ -95,6 +97,20 @@ final class Diag {
                 + " | tail -60", 60, 2500L);
         sb.append(sys.length() == 0 ? "(没有相关日志)\n" : sys);
 
+        return sb.toString();
+    }
+
+    /**
+     * 一份全量打包：诊断 + 车况 + 动作表 + 操作记录。
+     * 排障时只要这一个文件，不用来回切换分段。
+     */
+    static String dump(Context ctx) {
+        StringBuilder sb = new StringBuilder(16384);
+        sb.append(text(ctx)).append('\n');
+        sb.append(Cards.text(ctx)).append('\n');
+        sb.append(Acts.text()).append('\n');
+        sb.append(OpLog.text());
+        sb.append("\n==== 结束 ====\n");
         return sb.toString();
     }
 

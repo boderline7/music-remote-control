@@ -96,6 +96,62 @@ helper bound: com.navi.tool.ui.extra.DesktopAssistantCarControlHelper
 -- 系统日志（本应用相关，最近 60 行）--
 11-16 11:44:02.113 I/NavitoolBridge( 8412): http listening on 18766 (try 1)
 `;
+const ops = [];
+const pad2 = (n) => (n < 10 ? '0' : '') + n;
+const hhmmss = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+const ymdhms = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${hhmmss(d)}`;
+
+function opsText() {
+  const okN = ops.filter((o) => o.ok).length;
+  let s = '==== 操作记录 ====\n';
+  s += `进程启动  ${ymdhms(new Date(Date.now() - 3600e3))}\n`;
+  s += `调用统计  ${ops.length} 次 · 成功 ${okN} · 失败 ${ops.length - okN}\n`;
+  s += `保留      ${ops.length}/150 条，最新的在上面\n`;
+  if (!ops.length) return s + '\n(还没有操作记录)\n';
+  s += '\n时间      结果  耗时    动作\n' + '-'.repeat(56) + '\n';
+  for (const o of ops) {
+    s += `${hhmmss(o.at)}  ${o.ok ? '成功' : '失败'}  ${(o.ms + 'ms').padEnd(6)} ${o.label}  (${o.id}`
+      + (o.v >= 0 ? ` v=${o.v}` : '') + ')' + (o.err ? `  ← ${o.err}` : '') + '\n';
+  }
+  return s;
+}
+
+function cardsText() {
+  let s = '==== 车况快照 ====\n';
+  s += `时间   ${ymdhms(new Date())}\n`;
+  s += '样式   透明度 90% · 字号 20px · 属性色 #B3FFFFFF · 数值色 #FFFFFFFF\n';
+  let n = 0;
+  for (const c of cards.cards) {
+    s += `\n[${c.title}]  ${c.t} · ${c.cols} 列\n`;
+    for (const it of c.items) {
+      n++;
+      const kw = [...it.k].reduce((a, ch) => a + (ch.charCodeAt(0) > 0x2e80 ? 2 : 1), 0);
+      s += `  ${it.k}${' '.repeat(Math.max(1, 16 - kw))} ${it.v || '(空)'}\n`;
+    }
+  }
+  return s + `\n合计   ${cards.cards.length} 张卡 · ${n} 项\n`;
+}
+
+function actsText() {
+  let s = '==== 动作表 ====\n';
+  const live = acts.groups.reduce((a, g) => a + g.items.length, 0);
+  s += `可执行  ${live} 项 / 表内 ${live} 条\n`;
+  s += '说明    只列车机助手里真实存在的方法，运行时不存在的整条不出现\n';
+  for (const g of acts.groups) {
+    s += `\n[${g.g}]\n`;
+    for (const it of g.items) {
+      const kw = [...it.t].reduce((a, ch) => a + (ch.charCodeAt(0) > 0x2e80 ? 2 : 1), 0);
+      s += `  ${it.t}${' '.repeat(Math.max(1, 14 - kw))} ${it.id}` + (it.v >= 0 ? `  v=${it.v}` : '') + '\n';
+    }
+  }
+  return s;
+}
+
+const txt = (res, body) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+  res.end(body);
+};
+
 http.createServer((req, res) => {
   const u = req.url.split('?')[0];
   const h = {
@@ -116,12 +172,44 @@ http.createServer((req, res) => {
     if (u === '/cards') { res.writeHead(200, h); res.end(JSON.stringify(cards)); return; }
     if (u === '/acts') { res.writeHead(200, h); res.end(JSON.stringify(acts)); return; }
     if (u === '/probe') { res.writeHead(200, h); res.end(JSON.stringify(probe)); return; }
-    if (u === '/ping') { res.writeHead(200, h); res.end(JSON.stringify({ ok: 1, v: '1.1', port: 18766, bound: 1, helper: 1, activity: 1, err: '' })); return; }
-    if (u === '/diag') {
-      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
-      res.end(diag); return;
+    if (u === '/ping') {
+      const okN = ops.filter((o) => o.ok).length;
+      res.writeHead(200, h);
+      res.end(JSON.stringify({
+        ok: 1, v: '1.2', port: 18766, bound: 1, helper: 1, activity: 1,
+        ops: ops.length, opsFail: ops.length - okN, err: ''
+      }));
+      return;
     }
-    if (u === '/act') { res.writeHead(200, h); res.end(JSON.stringify({ ok: 1, act: (JSON.parse(body || '{}').a), via: 'mock' })); return; }
+    if (u === '/diag') { txt(res, `${diag}\n-- 操作 --\n操作   ${ops.length} 次调用\n`); return; }
+    if (u === '/acts.log' || u === '/acts.log.txt') { txt(res, opsText()); return; }
+    if (u === '/cards.txt') { txt(res, cardsText()); return; }
+    if (u === '/acts.txt') { txt(res, actsText()); return; }
+    if (u === '/dump' || u === '/dump.txt') {
+      txt(res, `${diag}\n${cardsText()}\n${actsText()}\n${opsText()}\n==== 结束 ====\n`); return;
+    }
+    if (u === '/log/clear') { ops.length = 0; res.writeHead(200, h); res.end('{"ok":1}'); return; }
+    if (u === '/act') {
+      let q = {};
+      try { q = JSON.parse(body || '{}'); } catch (e) { q = {}; }
+      const id = q.a || '';
+      const v = q.v == null ? -1 : q.v;
+      let label = id;
+      for (const g of acts.groups) for (const it of g.items) if (it.id === id) label = it.t;
+      // 模拟几种动作的效果，用来验证「执行后数值闪一下」
+      const flip = { 'handleHvacAutoClick': ['空调信息', 'AUTO'], 'handleHvacCirculationClick': ['空调信息', '循环'],
+        'handleTrunkClick': ['门窗信息', '后备箱'] };
+      const f = flip[id];
+      if (f) {
+        const c = cards.cards.find((x) => x.title === f[0]);
+        const it = c && c.items.find((x) => x.k === f[1]);
+        if (it) it.v = it.v === '开' ? '关' : it.v === '关' ? '开' : (it.v === '内循环' ? '外循环' : '内循环');
+      }
+      ops.unshift({ at: new Date(), id, label, v, ok: true, ms: 18 + Math.floor(Math.random() * 40), err: '' });
+      res.writeHead(200, h);
+      res.end(JSON.stringify({ ok: 1, via: id }));
+      return;
+    }
     res.writeHead(404, h); res.end('{}');
   });
 }).listen(18766, '127.0.0.1');

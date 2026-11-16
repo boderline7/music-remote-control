@@ -168,9 +168,16 @@ final class HttpServer implements Runnable {
                         } catch (Throwable ignored) {
                         }
                     }
+                    long t0 = System.currentTimeMillis();
                     String r = Acts.run(ctx, a, v);
                     // 新动作表里没有的，退回旧的命名匹配（老链接仍能用）
-                    out = r.indexOf("no such method") >= 0 ? Actions.json(ctx, body) : r;
+                    if (r.indexOf("no such method") >= 0) {
+                        r = Actions.json(ctx, body);
+                    }
+                    long cost = System.currentTimeMillis() - t0;
+                    boolean ok = r.startsWith("{\"ok\":1");
+                    OpLog.add(a, Acts.labelOf(a), v, ok, cost, ok ? "" : Json.pick(r, "err"));
+                    out = r;
                 }
             } else if ("/cards".equals(path)) {
                 out = Cards.json(ctx);
@@ -183,6 +190,30 @@ final class HttpServer implements Runnable {
                     // 直接点链接就能存成文件，不依赖页面里的 Blob
                     extra = "Content-Disposition: attachment; filename=\"car-diag.txt\"";
                 }
+            } else if ("/acts.log".equals(path) || "/acts.log.txt".equals(path)) {
+                out = OpLog.text();
+                ct = "text/plain; charset=utf-8";
+                if (path.endsWith(".txt")) {
+                    extra = "Content-Disposition: attachment; filename=\"act-log.txt\"";
+                }
+            } else if ("/cards.txt".equals(path)) {
+                out = Cards.text(ctx);
+                ct = "text/plain; charset=utf-8";
+                extra = "Content-Disposition: attachment; filename=\"car-cards.txt\"";
+            } else if ("/acts.txt".equals(path)) {
+                out = Acts.text();
+                ct = "text/plain; charset=utf-8";
+                extra = "Content-Disposition: attachment; filename=\"act-table.txt\"";
+            } else if ("/dump".equals(path) || "/dump.txt".equals(path)) {
+                // 一份打包：诊断 + 车况 + 动作表 + 操作记录
+                out = Diag.dump(ctx);
+                ct = "text/plain; charset=utf-8";
+                if ("/dump.txt".equals(path)) {
+                    extra = "Content-Disposition: attachment; filename=\"car-dump.txt\"";
+                }
+            } else if ("/log/clear".equals(path)) {
+                OpLog.clear();
+                out = "{\"ok\":1}";
             } else if ("/".equals(path) || "/index.html".equals(path) || "/ui".equals(path)) {
                 out = Page.html(ctx);
                 ct = "text/html; charset=utf-8";
@@ -254,6 +285,8 @@ final class HttpServer implements Runnable {
                 + ",\"bound\":" + (Bridge.bound ? 1 : 0)
                 + ",\"helper\":" + (Bridge.helper != null ? 1 : 0)
                 + ",\"activity\":" + (Bridge.activity != null ? 1 : 0)
+                + ",\"ops\":" + OpLog.total()
+                + ",\"opsFail\":" + OpLog.failed()
                 + ",\"at\":" + System.currentTimeMillis()
                 + ",\"err\":" + Bridge.q(Bridge.lastError)
                 + "}";

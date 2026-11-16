@@ -276,7 +276,7 @@
     position: fixed; left: 50%; bottom: calc(28px + env(safe-area-inset-bottom));
     transform: translate(-50%, 12px); opacity: 0; pointer-events: none;
     background: rgba(30,30,36,.96); color: #fff; font-size: 13px;
-    padding: 10px 18px; border-radius: 999px; transition: opacity .18s, transform .18s; z-index: 60;
+    padding: 10px 18px; border-radius: 999px; transition: opacity .18s, transform .18s; z-index: 130;
     max-width: 80vw; text-align: center;
   }
   #toast.show { opacity: 1; transform: translate(-50%, 0); }
@@ -492,9 +492,9 @@
   .cap.dead .tag { color: #ff9f0a; background: rgba(255,159,10,.14); }
   /* ---------- 车控页里的设置 / 诊断 ---------- */
   #csetMask{position:fixed;inset:0;background:rgba(0,0,0,.6);opacity:0;pointer-events:none;
-    transition:opacity .2s;z-index:44}
+    transition:opacity .2s;z-index:108}
   #csetMask.show{opacity:1;pointer-events:auto}
-  #csetSheet{position:fixed;left:0;right:0;bottom:0;z-index:45;max-height:88vh;
+  #csetSheet{position:fixed;left:0;right:0;bottom:0;z-index:109;max-height:88vh;
     transform:translateY(103%);transition:transform .26s cubic-bezier(.3,.8,.3,1);
     background:#141417;border-top:1px solid rgba(255,255,255,.12);border-radius:18px 18px 0 0;
     display:flex;flex-direction:column;box-shadow:0 -12px 40px rgba(0,0,0,.5)}
@@ -514,10 +514,15 @@
     border:1px solid rgba(255,255,255,.12);font-size:13.5px;color:#fff}
   #csetSheet .cs-row button:active{background:rgba(255,255,255,.12)}
   #csetSheet .cs-row button.primary{background:rgba(250,45,72,.16);border-color:rgba(250,45,72,.42)}
+  #csetSheet .cs-tabs{display:flex;gap:6px;margin:0 0 10px;overflow-x:auto}
+  #csetSheet .cs-tab{flex:1 0 auto;min-height:34px;padding:0 12px;border-radius:9px;
+    background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);
+    font-size:12.5px;color:rgba(255,255,255,.55);white-space:nowrap}
+  #csetSheet .cs-tab.on{background:rgba(250,45,72,.18);border-color:rgba(250,45,72,.45);color:#fff}
   #csetDiag{margin:0;padding:12px;border-radius:12px;background:rgba(0,0,0,.38);
     border:1px solid rgba(255,255,255,.12);font:11px/1.65 ui-monospace,Consolas,monospace;
     color:rgba(255,255,255,.74);white-space:pre-wrap;word-break:break-all;
-    min-height:130px;max-height:46vh;overflow:auto;user-select:text;-webkit-user-select:text}
+    min-height:120px;max-height:36vh;overflow:auto;user-select:text;-webkit-user-select:text}
   #csetSheet .cs-tip{font-size:11.5px;line-height:1.75;color:rgba(255,255,255,.32);margin:10px 2px 0}
 
   .carlog {
@@ -754,16 +759,30 @@
     </div>
     <div class="cs-body">
       <div class="cs-kv" id="csetKv">—</div>
+
+      <div class="cs-tabs" id="csTabs">
+        <button class="cs-tab on" data-seg="diag">诊断</button>
+        <button class="cs-tab" data-seg="log">操作记录</button>
+        <button class="cs-tab" data-seg="cards">车况</button>
+        <button class="cs-tab" data-seg="acts">动作表</button>
+      </div>
+
       <div class="cs-row">
-        <button class="primary" id="csetLoad">生成诊断</button>
+        <button class="primary" id="csetLoad">生成</button>
         <button id="csetCopy">复制</button>
         <button id="csetSave">下载</button>
       </div>
-      <pre id="csetDiag">点上面的「生成诊断」，从车机助手里取当前状态和最近日志。</pre>
+      <pre id="csetDiag">点「生成」，取当前这一段的文本。</pre>
+      <div class="cs-tip" id="csTip"></div>
+
+      <div class="cs-row" style="margin-top:16px">
+        <button id="csDump">全部导出</button>
+        <button id="csClear">清空记录</button>
+      </div>
       <div class="cs-tip">
-        诊断里有端口状态、引擎绑定、安装包版本、动作项数和最近日志。<br>
-        「复制」放进剪贴板直接发出去；「下载」存成 txt，手机的文件管理器里能找到。<br>
-        下载没反应时长按上面的文本全选——App 的下载由系统管，手机浏览器里最稳。
+        「全部导出」把诊断、车况、动作表、操作记录合成一个 txt，一次拿走。<br>
+        「清空记录」只清操作记录，不影响服务。<br>
+        下载没反应时长按上面的文本全选。
       </div>
     </div>
   </div>
@@ -1844,7 +1863,31 @@
   var csSheet = document.getElementById('csetSheet');
   var csKv = document.getElementById('csetKv');
   var csBox = document.getElementById('csetDiag');
-  var csText = '';
+  var csTip = document.getElementById('csTip');
+  var csTabs = document.getElementById('csTabs');
+
+  // 四段文本同一套「生成 → 复制 → 下载」，只是取的地址不同
+  var CS_SEGS = {
+    diag: {
+      url: '/diag', file: '车机诊断', slow: 18000,
+      tip: '端口、引擎绑定、安装包版本、动作项数、进程日志和 logcat 摘要。'
+    },
+    log: {
+      url: '/acts.log', file: '操作记录', slow: 6000,
+      tip: '每次点按钮的结果和耗时，最新的在最上面。「点了没反应」先看这里。'
+    },
+    cards: {
+      url: '/cards.txt', file: '车况快照', slow: 6000,
+      tip: '每张卡、每一项的名字和值。某张卡少了什么，发这段比截图清楚。'
+    },
+    acts: {
+      url: '/acts.txt', file: '动作表', slow: 6000,
+      tip: '当前能执行的项和方法名。表里有、方法不存在的会标出来。'
+    }
+  };
+
+  var csSeg = 'diag';
+  var csCache = {};      // 分段 -> 文本，切来切去不重复请求
   var csBusy = false;
 
   function csetOpen() {
@@ -1859,11 +1902,14 @@
       csKv.textContent = '地址　' + BASE + '\n'
         + '服务　端口 ' + d.port + (d.bound ? ' 已绑定' : ' 未绑定') + ' · 接口 v' + d.v + '\n'
         + '引擎　' + (d.helper ? '已绑定' : '未绑定 ← 打开一次桌面助手')
-        + ' · 界面 ' + (d.activity ? '已出现' : '未出现')
+        + ' · 界面 ' + (d.activity ? '已出现' : '未出现') + '\n'
+        + '操作　' + (d.ops == null ? 0 : d.ops) + ' 次调用'
+        + (d.opsFail ? ' · 失败 ' + d.opsFail : '')
         + (d.err ? '\n错误　' + d.err : '');
     }).catch(function () {
       csKv.textContent = '连不上 18766。先确认车机助手在跑。';
     });
+    csPick(csSeg);
   }
 
   function csetClose() {
@@ -1871,57 +1917,75 @@
     csMask.classList.remove('show');
   }
 
-  /** 诊断要等服务端跑 logcat，普通 req() 那 3.5 秒不够 */
-  function csetLoad() {
-    if (csBusy) return;        // 服务端跑一次 logcat 要一两秒，连点会堆请求
+  function csPick(seg) {
+    if (!CS_SEGS[seg]) return;
+    csSeg = seg;
+    Array.prototype.forEach.call(csTabs.children, function (b) {
+      b.classList.toggle('on', b.getAttribute('data-seg') === seg);
+    });
+    csTip.textContent = CS_SEGS[seg].tip;
+    csBox.textContent = csCache[seg] || ('点「生成」取' + CS_SEGS[seg].file + '。');
+    csBox.scrollTop = 0;
+    if (!csCache[seg] && !csBusy) csLoad();   // 切过去就取，不用再点一次
+  }
+
+  /** 诊断要等服务端跑 logcat，普通 req() 那 3.5 秒不够，所以每段自带超时 */
+  function csLoad() {
+    if (csBusy) return;      // 连点会堆请求
+    var seg = csSeg;
+    var cfg = CS_SEGS[seg];
     csBusy = true;
     csBox.textContent = '读取中…';
-    csText = '';
     var ctl = window.AbortController ? new AbortController() : null;
     var o = { cache: 'no-store' };
     var timer = null;
     if (ctl) {
       o.signal = ctl.signal;
-      timer = setTimeout(function () { ctl.abort(); }, 15000);
+      timer = setTimeout(function () { ctl.abort(); }, cfg.slow);
     }
-    fetch(BASE + '/diag', o).then(function (r) {
+    fetch(BASE + cfg.url, o).then(function (r) {
       if (timer) clearTimeout(timer);
       return r.text();
     }).then(function (t) {
       csBusy = false;
-      csText = t;
-      csBox.textContent = t;
-      csBox.scrollTop = 0;
+      csCache[seg] = t;
+      if (csSeg === seg) {
+        csBox.textContent = t;
+        csBox.scrollTop = 0;
+      }
     }).catch(function () {
       if (timer) clearTimeout(timer);
       csBusy = false;
-      csBox.textContent = '取不到诊断：18766 没响应。';
+      if (csSeg === seg) {
+        csBox.textContent = '取不到：18766 没响应。\n可以在浏览器里直接打开 ' + BASE + cfg.url + ' 看看。';
+      }
     });
   }
 
-  function csetCopy() {
-    if (!csText) {
-      toast('先点「生成诊断」');
+  function csCopy() {
+    var t = csCache[csSeg];
+    if (!t) {
+      toast('先点「生成」');
       return;
     }
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(csText).then(function () {
+      navigator.clipboard.writeText(t).then(function () {
         toast('已复制');
-      }, csetFallbackCopy);
+      }, function () { csFallback(t); });
     } else {
-      csetFallbackCopy();
+      csFallback(t);
     }
   }
 
-  function csetFallbackCopy() {
+  function csFallback(text) {
     var ta = document.createElement('textarea');
-    ta.value = csText;
+    ta.value = text;
     ta.setAttribute('readonly', '');
     ta.style.position = 'fixed';
     ta.style.left = '-9999px';
     document.body.appendChild(ta);
     ta.select();
-    ta.setSelectionRange(0, csText.length);
+    ta.setSelectionRange(0, text.length);
     var ok = false;
     try {
       ok = document.execCommand('copy');
@@ -1932,17 +1996,16 @@
     toast(ok ? '已复制' : '复制被拦，长按文本全选');
   }
 
-  function csetSave() {
-    if (!csText) {
-      toast('先点「生成诊断」');
-      return;
-    }
+  function csStamp() {
     var d = new Date();
     var p = function (n) { return (n < 10 ? '0' : '') + n; };
-    var name = '车机诊断_' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate())
-      + '-' + p(d.getHours()) + p(d.getMinutes()) + '.txt';
+    return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate())
+      + '-' + p(d.getHours()) + p(d.getMinutes());
+  }
+
+  function csSaveText(text, name) {
     try {
-      var blob = new Blob([csText], { type: 'text/plain;charset=utf-8' });
+      var blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');
       a.href = url;
@@ -1960,12 +2023,61 @@
     }
   }
 
+  function csSave() {
+    var t = csCache[csSeg];
+    if (!t) {
+      toast('先点「生成」');
+      return;
+    }
+    csSaveText(t, CS_SEGS[csSeg].file + '_' + csStamp() + '.txt');
+  }
+
+  /** 全部导出：服务端拼好一整份，这里只负责存下来 */
+  function csDump() {
+    toast('正在打包…');
+    var ctl = window.AbortController ? new AbortController() : null;
+    var o = { cache: 'no-store' };
+    var timer = null;
+    if (ctl) {
+      o.signal = ctl.signal;
+      timer = setTimeout(function () { ctl.abort(); }, 25000);
+    }
+    fetch(BASE + '/dump', o).then(function (r) {
+      if (timer) clearTimeout(timer);
+      return r.text();
+    }).then(function (t) {
+      csSaveText(t, '车机全量_' + csStamp() + '.txt');
+    }).catch(function () {
+      if (timer) clearTimeout(timer);
+      toast('打包失败，先试试单个「下载」');
+    });
+  }
+
+  function csClear() {
+    req('/log/clear').then(function (r) {
+      if (r && r.ok === 1) {
+        delete csCache.log;
+        if (csSeg === 'log') csBox.textContent = '点「生成」取操作记录。';
+        toast('操作记录已清空');
+      } else {
+        toast('清空失败');
+      }
+    }).catch(function () { toast('连不上桥接服务'); });
+  }
+
   document.getElementById('carSet').addEventListener('click', csetOpen);
   document.getElementById('csetClose').addEventListener('click', csetClose);
   csMask.addEventListener('click', csetClose);
-  document.getElementById('csetLoad').addEventListener('click', csetLoad);
-  document.getElementById('csetCopy').addEventListener('click', csetCopy);
-  document.getElementById('csetSave').addEventListener('click', csetSave);
+  csTabs.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('.cs-tab') : null;
+    if (b) csPick(b.getAttribute('data-seg'));
+  });
+  document.getElementById('csetLoad').addEventListener('click', csLoad);
+  document.getElementById('csetCopy').addEventListener('click', csCopy);
+  document.getElementById('csetSave').addEventListener('click', csSave);
+  document.getElementById('csDump').addEventListener('click', csDump);
+  document.getElementById('csClear').addEventListener('click', csClear);
+  csTip.textContent = CS_SEGS.diag.tip;
 
 
   var isOpen = false;

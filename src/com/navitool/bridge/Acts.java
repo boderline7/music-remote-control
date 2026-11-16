@@ -94,6 +94,43 @@ final class Acts {
         return n;
     }
 
+    /** 按钮文字（操作记录里写人话，记的是「后备箱」不是 handleTrunkClick） */
+    static String labelOf(String name) {
+        if (name == null) {
+            return "";
+        }
+        for (String[] e : TABLE) {
+            if (e[1].equals(name)) {
+                return e[2];
+            }
+        }
+        return name;
+    }
+
+    /** 动作表清单文本：页面「动作表」分段和 /dump.txt 都从这里取 */
+    static String text() {
+        StringBuilder sb = new StringBuilder(2048);
+        int live = count();
+        sb.append("==== 动作表 ====\n");
+        sb.append("可执行  ").append(live).append(" 项 / 表内 ").append(TABLE.length).append(" 条\n");
+        sb.append("说明    只列真实存在的方法，不存在的整条不出现\n");
+
+        String last = null;
+        for (String[] e : TABLE) {
+            String miss = find(e[1]) == null ? "  ← 方法不存在，已隐藏" : "";
+            if (!e[0].equals(last)) {
+                sb.append("\n[").append(e[0]).append("]\n");
+                last = e[0];
+            }
+            sb.append("  ").append(Txt.pad(e[2], 18)).append(' ').append(e[1]);
+            if (!"-1".equals(e[3])) {
+                sb.append("  v=").append(e[3]);
+            }
+            sb.append(miss).append('\n');
+        }
+        return sb.toString();
+    }
+
     /** 按方法名执行。所有会碰界面的动作都回主线程跑。 */
     static String run(Context ctx, final String name, final int v) {
         final Method m = find(name);
