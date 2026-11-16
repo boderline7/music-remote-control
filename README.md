@@ -51,12 +51,14 @@ bash install.sh      # 两个包一起推上去装
 | 平台 | 拿什么 | 怎么出 |
 |---|---|---|
 | 安卓 | `dist/车机遥控_手机端_v2.1.0.apk` | `bash build_phone.sh` |
-| iOS | `work/phone/ios` 工程 | 需要 Mac，或用 `.github/workflows/ios-phone.yml` 云构建 |
+| iOS | 云构建的 `CarRemote-unsigned.ipa` | `bash build_ios.sh`（推 `phone-ios` 分支，自动出包） |
 
 iOS 在这台 Windows 上编不了（Xcode 只跑在 macOS）。两条路：
 
 1. Mac 上 `cd work/phone/ios && xcodegen generate`，用 Xcode 打开 `CarRemote.xcodeproj` 直接装；
-2. 推到 GitHub 跑 `ios-phone.yml`，macOS runner 出**未签名 IPA**，再用 Sideloadly / AltStore 用本机 Apple ID 签名装进去。
+2. `bash build_ios.sh` 把 `work/phone/ios` 单独推到 `boderline7/music-remote-control` 的 `phone-ios` 分支，
+   `ios-phone.yml` 在 macOS runner 上出**未签名 IPA**，在 Actions 里下载 `CarRemote-unsigned-ipa`，
+   再用 Sideloadly / AltStore 用本机 Apple ID 签名装进去。主分支不受影响。
 
 细节见 `work/phone/ios/README.md`。
 
