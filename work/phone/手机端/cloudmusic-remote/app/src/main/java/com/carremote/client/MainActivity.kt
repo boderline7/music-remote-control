@@ -247,17 +247,21 @@ class MainActivity : Activity() {
                 renderCandidates()
                 loadHost(h, p)
             } else {
-                // 只填了 IP：探音乐端口，连上就进；车控页从页面顶部按钮切
+                // 只填了 IP：先探 18766（车控页自带两个 tab），不通再退回 18765
                 scope.launch {
-                    setStatus("正在试 $h:${Protocol.PORT} …")
-                    if (!reachable(h, Protocol.PORT)) {
-                        setStatus("$h:${Protocol.PORT} 不通 · 确认车机上的桥接包在跑")
+                    var hit = 0
+                    for (p in Protocol.PORTS) {
+                        setStatus("正在试 $h:$p …")
+                        if (reachable(h, p)) { hit = p; break }
+                    }
+                    if (hit == 0) {
+                        setStatus("$h 的 18766 / 18765 都不通 · 确认车机上车机助手在跑")
                         return@launch
                     }
-                    Prefs.addManual("$h:${Protocol.PORT}")
-                    found["$h:${Protocol.PORT}"] = Endpoint(Protocol.role(Protocol.PORT), h, Protocol.PORT)
+                    Prefs.addManual("$h:$hit")
+                    found["$h:$hit"] = Endpoint(Protocol.role(hit), h, hit)
                     renderCandidates()
-                    loadHost(h, Protocol.PORT)
+                    loadHost(h, hit)
                 }
             }
         }
@@ -267,7 +271,7 @@ class MainActivity : Activity() {
         ).apply { topMargin = dp(10) })
 
         box.addView(TextView(this).apply {
-            text = "自动探测 18765（音乐控制），车控页从页面顶部按钮切。手动加的地址会一直留着，长按候选可删除。"
+            text = "自动探测 18766（车控 + 音乐，页面顶部切换），不通再退回 18765。手动加的地址会一直留着，长按候选可删除。"
             textSize = 12f
             setTextColor(Color.parseColor("#6E6E76"))
             setPadding(0, dp(20), 0, 0)
@@ -315,8 +319,8 @@ class MainActivity : Activity() {
                 combine(Discovery.found, Scanner.results) { nsd, hits -> nsd to hits }
                     .collect { (nsd, hits) ->
                         nsd.forEach {
-                            // 只认音乐端口；车控是页面里点按钮切过去的另一件事
-                            val ep = Endpoint(it.name.ifEmpty { "车机" }, it.host, Protocol.PORT)
+                            // 统一进车控页，音乐那边由页面上的 tab 切过去
+                            val ep = Endpoint(it.name.ifEmpty { "车机" }, it.host, Protocol.PORT_CAR)
                             found[ep.key] = ep
                         }
                         hits.forEach { hp ->

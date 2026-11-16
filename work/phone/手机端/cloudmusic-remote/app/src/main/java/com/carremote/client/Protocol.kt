@@ -16,8 +16,12 @@ object Protocol {
 
     const val SERVICE_TYPE = "_cloudmusic-car._tcp"
 
-    /** 只探音乐端口。车控页从页面顶部的按钮切过去，扫出两个只会让人多选一次。 */
-    val PORTS = listOf(PORT)
+    /**
+     * 统一入口先探 18766：车控页自带「车机控制 / 音乐控制」两个 tab，18765 由它 iframe 贴进来。
+     * 18765 可能根本不是我们的页面（第三方网易云自己提供的），直接进它就再也回不来。
+     * 18766 不通时才退回 18765，保证老环境照样能用。
+     */
+    val PORTS = listOf(PORT_CAR, PORT)
 
     fun role(port: Int): String = when (port) {
         PORT_CAR -> "车控"
