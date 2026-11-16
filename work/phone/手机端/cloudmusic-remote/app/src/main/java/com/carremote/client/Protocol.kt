@@ -16,8 +16,8 @@ object Protocol {
 
     const val SERVICE_TYPE = "_cloudmusic-car._tcp"
 
-    /** 两个都探。车机上开了哪个就列哪个，用户不用先知道一共有几个服务。 */
-    val PORTS = listOf(PORT_CAR, PORT)
+    /** 只探音乐端口。车控页从页面顶部的按钮切过去，扫出两个只会让人多选一次。 */
+    val PORTS = listOf(PORT)
 
     fun role(port: Int): String = when (port) {
         PORT_CAR -> "车控"

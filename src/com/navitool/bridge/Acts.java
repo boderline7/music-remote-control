@@ -294,33 +294,67 @@ final class Acts {
     private static final String[] SEAT_POS = {"FL", "FR", "RL", "RR"};
 
     /**
-     * 座椅加热 / 通风。助手里点一次是一个「循环切换」（关 → 1 → 2 → 3 → 关），
-     * 这里直接调它自己的 handleSeatClick(座位, 是否通风)，不自己拼命令号，
-     * 免得跟它内部的兼容模式、状态回读对不上。
-     *
-     * v >= 0 表示按一次；v < 0 只读状态。
+     * 座椅命令号（车机总线 CMD_ID），照抄助手 handleSeatClick 里那张表：
+     *   加热  FL 0x5F / FR 0x60 / RL 0x8B / RR 0x8D
+     *   通风  FL 0x5D / FR 0x5E —— 只有前排
+     * 后排通风在这台车的助手里既没有命令号也没有状态位（getCarInfoValue 只认
+     * seat_vent_fl / seat_vent_fr），所以这里返回 -1，前端干脆不画那一行。
      */
-    static String seat(Context ctx, final String pos, final String kind, int v) {
+    private static int seatCmd(String pos, boolean vent) {
+        if (vent) {
+            return "FL".equals(pos) ? 0x5D : ("FR".equals(pos) ? 0x5E : -1);
+        }
+        if ("FL".equals(pos)) {
+            return 0x5F;
+        }
+        if ("FR".equals(pos)) {
+            return 0x60;
+        }
+        if ("RL".equals(pos)) {
+            return 0x8B;
+        }
+        return "RR".equals(pos) ? 0x8D : -1;
+    }
+
+    /** 这个座位支不支持这一路（后排通风不支持）。 */
+    static boolean seatSupported(String pos, boolean vent) {
+        return seatCmd(pos == null ? "" : pos.trim().toUpperCase(), vent) > 0;
+    }
+
+    /**
+     * 直接下发「设成几档」：level 0 = 关，1-3 = 档位。
+     *
+     * 不再调 handleSeatClick 的循环：它要先从内部 Map 里读出当前档位再 +1，
+     * 读不到（或者读到「3 档」这种带后缀的字符串）就会算出别的值往下发，
+     * 后排之前就出现过「点左后加热把前排带起来」。这里直接给定档位，一步到位。
+     *
+     * level >= 0 表示要设成这个档；level < 0 只读状态。
+     */
+    static String seat(Context ctx, final String pos, final String kind, final int level) {
         final Object helper = Bridge.helper;
         if (helper == null) {
             return "{\"ok\":0,\"err\":\"helper 未绑定\"}";
         }
         String p = pos == null ? "" : pos.trim().toUpperCase();
-        if (!("FL".equals(p) || "FR".equals(p) || "RL".equals(p) || "RR".equals(p))) {
-            return "{\"ok\":0,\"err\":\"bad pos\"}";
-        }
-        final String seat = p;
         final boolean vent = "vent".equalsIgnoreCase(kind == null ? "" : kind.trim());
-        if (v >= 0) {
-            final Method m = find2b(helper.getClass(), "handleSeatClick", String.class, boolean.class);
+        final int cmd = seatCmd(p, vent);
+        if (cmd < 0) {
+            return "{\"ok\":0,\"err\":\"这台车不支持\"}";
+        }
+        if (level >= 0) {
+            final int lv = clamp(level, 0, 3);
+            final boolean left = "FL".equals(p) || "RL".equals(p);
+            final boolean heat = !vent;
+            final Method m = findN(helper.getClass(), "sendSeatCommand", 4);
             if (m == null) {
-                return "{\"ok\":0,\"err\":\"no such method\"}";
+                return "{\"ok\":0,\"err\":\"no sendSeatCommand\"}";
             }
             try {
                 Bridge.onMainSync(new Callable<Object>() {
                     public Object call() throws Exception {
                         m.setAccessible(true);
-                        m.invoke(helper, seat, Boolean.valueOf(vent));
+                        m.invoke(helper, Integer.valueOf(cmd), Integer.valueOf(lv),
+                                Boolean.valueOf(left), Boolean.valueOf(heat));
                         return null;
                     }
                 });

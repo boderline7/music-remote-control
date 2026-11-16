@@ -152,7 +152,6 @@ class MainActivity : Activity() {
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     pageLoaded = true
-                    segFix(view)
                 }
 
                 override fun onReceivedError(
@@ -248,24 +247,17 @@ class MainActivity : Activity() {
                 renderCandidates()
                 loadHost(h, p)
             } else {
-                // 只填了 IP：两个端口都试一遍，开哪个进哪个
+                // 只填了 IP：探音乐端口，连上就进；车控页从页面顶部按钮切
                 scope.launch {
-                    setStatus("正在试 $h 的 ${Protocol.PORTS.joinToString(" / ")} …")
-                    val hits = Protocol.PORTS.filter { reachable(h, it) }
-                    if (hits.isEmpty()) {
-                        setStatus("$h 两个端口都不通 · 确认车机上的服务在跑")
+                    setStatus("正在试 $h:${Protocol.PORT} …")
+                    if (!reachable(h, Protocol.PORT)) {
+                        setStatus("$h:${Protocol.PORT} 不通 · 确认车机上的桥接包在跑")
                         return@launch
                     }
-                    hits.forEach { port ->
-                        Prefs.addManual("$h:$port")
-                        found["$h:$port"] = Endpoint(Protocol.role(port), h, port)
-                    }
+                    Prefs.addManual("$h:${Protocol.PORT}")
+                    found["$h:${Protocol.PORT}"] = Endpoint(Protocol.role(Protocol.PORT), h, Protocol.PORT)
                     renderCandidates()
-                    if (hits.size == 1) {
-                        loadHost(h, hits[0])
-                    } else {
-                        setStatus("$h 两个都在，点一个进：18766 车控 / 18765 音乐")
-                    }
+                    loadHost(h, Protocol.PORT)
                 }
             }
         }
@@ -275,7 +267,7 @@ class MainActivity : Activity() {
         ).apply { topMargin = dp(10) })
 
         box.addView(TextView(this).apply {
-            text = "自动探测 18766（车控）与 18765（音乐）。手动加的地址会一直留着，长按候选可删除。"
+            text = "自动探测 18765（音乐控制），车控页从页面顶部按钮切。手动加的地址会一直留着，长按候选可删除。"
             textSize = 12f
             setTextColor(Color.parseColor("#6E6E76"))
             setPadding(0, dp(20), 0, 0)
@@ -323,8 +315,8 @@ class MainActivity : Activity() {
                 combine(Discovery.found, Scanner.results) { nsd, hits -> nsd to hits }
                     .collect { (nsd, hits) ->
                         nsd.forEach {
-                            val p = it.port.takeIf { port -> port > 0 } ?: Protocol.PORT
-                            val ep = Endpoint(it.name.ifEmpty { "车机" }, it.host, p)
+                            // 只认音乐端口；车控是页面里点按钮切过去的另一件事
+                            val ep = Endpoint(it.name.ifEmpty { "车机" }, it.host, Protocol.PORT)
                             found[ep.key] = ep
                         }
                         hits.forEach { hp ->
@@ -448,14 +440,6 @@ class MainActivity : Activity() {
 
     // ---------- 网页 <-> 原生 ----------
 
-    /**
-     * 车机上如果装的是旧版页面（顶部没有「车机控制 / 音乐控制」那条），
-     * 壳里补一条，保证两个模块永远切得动。页面自带且正常显示就完全不插手。
-     */
-    private fun segFix(view: WebView?) {
-        view ?: return
-        runCatching { view.evaluateJavascript(SEG_FIX_JS, null) }
-    }
 
     /** 网页 setStatus 时主动上报，原生据此决定是否吞掉硬件音量键、记住成功地址。 */
     private inner class NativeBridge {
@@ -528,42 +512,5 @@ class MainActivity : Activity() {
         searchJob?.cancel()
         scope.cancel()
         webView.destroy()
-    }
-
-    private companion object {
-        /** 只在页面上「看不到」切换条时插一条，用于兼容车机里的旧版页面。 */
-        val SEG_FIX_JS = """
-(function(){
-  try{
-    if (document.getElementById('cmSegFix')) return;
-    var seg = document.querySelector('.svc-seg');
-    if (seg) {
-      var r = seg.getBoundingClientRect();
-      if (r.width > 120 && r.height > 18) return;
-    }
-    var p = location.port;
-    var other = p === '18765' ? '18766' : (p === '18766' ? '18765' : '');
-    if (!other) return;
-    var cur = p === '18765' ? '音乐控制' : '车机控制';
-    var tgt = p === '18765' ? '车机控制' : '音乐控制';
-    var url = location.protocol + '//' + location.hostname + ':' + other + '/';
-    var box = document.createElement('div');
-    box.id = 'cmSegFix';
-    box.style.cssText = 'position:fixed;left:12px;right:12px;bottom:14px;z-index:2147483646;display:flex;gap:6px;padding:5px;border-radius:13px;background:rgba(20,20,26,.95);border:1px solid rgba(255,255,255,.16);box-shadow:0 10px 28px rgba(0,0,0,.5);font:14px/1 -apple-system,sans-serif';
-    function mk(t, on, act){
-      var b = document.createElement('button');
-      b.textContent = t;
-      b.style.cssText = 'flex:1;padding:11px 0;border:0;border-radius:9px;background:' + (on ? 'rgba(255,255,255,.17)' : 'transparent') + ';color:' + (on ? '#fff' : '#8e8e93') + ';font:inherit';
-      if (act) b.addEventListener('click', act);
-      return b;
-    }
-    box.appendChild(mk(cur, true, null));
-    box.appendChild(mk(tgt, false, function(){ location.href = url; }));
-    var host = document.body || document.documentElement;
-    host.appendChild(box);
-    document.body.style.paddingBottom = '78px';
-  }catch(e){}
-})();
-        """.trimIndent()
     }
 }

@@ -244,11 +244,11 @@ http.createServer((req, res) => {
     if (u === '/seat') {
       let q = {};
       try { q = JSON.parse(body || '{}'); } catch (e) { q = {}; }
-      if (q.p && q.v != null) {
+      const lv = q.lv != null ? q.lv : q.v;
+      if (q.p && lv != null) {
         const k = `${q.k}_${q.p}`;
-        const cur = seatState[k] && seatState[k] !== '关' ? parseInt(seatState[k], 10) || 0 : 0;
-        seatState[k] = cur >= 3 ? '关' : `${cur + 1} 档`;
-        ops.unshift({ at: new Date(), id: 'seat', label: `座椅 ${q.p} ${q.k === 'vent' ? '通风' : '加热'}`, v: q.v, ok: true, ms: 11, err: '' });
+        seatState[k] = lv <= 0 ? '关' : `${lv} 档`;
+        ops.unshift({ at: new Date(), id: 'seat', label: `座椅 ${q.p} ${q.k === 'vent' ? '通风' : '加热'}`, v: lv, ok: true, ms: 11, err: '' });
       }
       res.writeHead(200, h);
       res.end(JSON.stringify({ ok: 1, seats: seatState }));

@@ -209,7 +209,11 @@ final class HttpServer implements Runnable {
                 }
                 out = r;
             } else if ("/seat".equals(path)) {
-                int sv = intOf(Json.pick(body, "v"), -1);
+                // lv = 目标档位（0 关 / 1-3 档）；不带就是只读。v 作为旧写法兼容。
+                int sv = intOf(Json.pick(body, "lv"), -1);
+                if (sv < 0) {
+                    sv = intOf(Json.pick(body, "v"), -1);
+                }
                 String sp = Json.pick(body, "p");
                 String sk = Json.pick(body, "k");
                 long t0 = System.currentTimeMillis();

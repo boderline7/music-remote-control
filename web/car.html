@@ -240,7 +240,7 @@
   <div id="temp"></div>
   <div class="sec"><h2>控制</h2><span class="hint" id="capHint"></span></div>
   <div id="caps"></div>
-  <div class="sec"><h2>座椅</h2><span class="hint">点一下升一档，到头再点回关</span></div>
+  <div class="sec"><h2>座椅</h2><span class="hint">前排点一下升一档；后排按一下三档，再按关</span></div>
   <div id="seat" class="seatgrid"></div>
   <div id="log" class="log hidden"></div>
   <footer>
@@ -640,9 +640,12 @@
   }
 
   // ---------- 座椅 ----------
+  // 后排只有加热（车机助手里没有后排通风的命令，也没有状态位），
+  // 所以后排一格只画「加热」：按一下 3 档，再按一下关。
+  // 前排加热 / 通风是 关 → 1 → 2 → 3 → 关。
   var seatState = {};
   var seatBusy = false;
-  var SEAT_POS = [['fl', '左前'], ['fr', '右前'], ['rl', '左后'], ['rr', '右后']];
+  var SEAT_POS = [['fl', '左前', 1], ['fr', '右前', 1], ['rl', '左后', 0], ['rr', '右后', 0]];
 
   function seatBuild() {
     var box = document.getElementById('seat');
@@ -651,50 +654,71 @@
     SEAT_POS.forEach(function (p) {
       var cell = node('div', 'seatcell');
       cell.appendChild(node('div', 'sn', p[1]));
-      [['heat', '加热'], ['vent', '通风']].forEach(function (k) {
+      var kinds = [['heat', '加热']];
+      if (p[2]) kinds.push(['vent', '通风']);
+      kinds.forEach(function (k) {
         var r = node('div', 'sr');
         r.dataset.pos = p[0];
         r.dataset.kind = k[0];
         r.appendChild(node('span', 'sk', k[1]));
         r.appendChild(node('span', 'sv', '—'));
-        r.addEventListener('click', function () { seatTap(p[0], k[0]); });
+        r.addEventListener('click', function () { seatTap(p[0], k[0], p[2]); });
         cell.appendChild(r);
       });
       box.appendChild(cell);
     });
   }
 
+  function seatLevel(pos, kind) {
+    var raw = seatState[kind + '_' + pos];
+    if (!raw) return -1;
+    if (String(raw).indexOf('关') >= 0) return 0;
+    var m = String(raw).match(/(\d+)/);
+    return m ? parseInt(m[1], 10) : -1;
+  }
+
+  function seatText(lv) {
+    return lv <= 0 ? '关' : (lv + ' 档');
+  }
+
   function seatShow() {
     var rows = document.querySelectorAll('#seat .sr');
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
-      var raw = seatState[r.dataset.kind + '_' + r.dataset.pos];
+      var lv = seatLevel(r.dataset.pos, r.dataset.kind);
       var sv = r.querySelector('.sv');
-      var on = raw && raw !== '关' && raw !== '--';
-      sv.textContent = raw ? raw : '—';
-      sv.className = 'sv' + (on ? ' on' : '');
-      r.className = 'sr' + (raw === '' ? ' na' : '');
+      sv.textContent = lv < 0 ? '—' : seatText(lv);
+      sv.className = 'sv' + (lv > 0 ? ' on' : '');
+      r.className = 'sr' + (lv < 0 ? ' na' : '');
     }
   }
 
-  function seatTap(pos, kind) {
+  function seatTap(pos, kind, ventOk) {
     if (seatBusy) return;
+    var cur = seatLevel(pos, kind);
+    var next;
+    if (kind === 'heat' && !ventOk) {
+      next = cur > 0 ? 0 : 3;                 // 后排：开就三档
+    } else {
+      next = cur < 0 ? 1 : (cur >= 3 ? 0 : cur + 1);
+    }
     seatBusy = true;
     req('/seat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ p: pos, k: kind, v: 1 })
+      body: JSON.stringify({ p: pos, k: kind, lv: next })
     }).then(function (r) {
       seatBusy = false;
       if (r && r.ok === 1) {
-        if (r.seats) {
-          seatState = r.seats;
-        }
+        // 先按预期画上，车机回读有延迟，1.2s / 2.6s 再各对一次
+        seatState[kind + '_' + pos] = seatText(next);
         seatShow();
-        setTimeout(loadSeat, 900);
+        setTimeout(loadSeat, 1200);
+        setTimeout(loadSeat, 2600);
       } else {
         toast((r && r.err) ? r.err : '座椅没响应');
         setStatus((r && r.err) ? r.err : '座椅设置失败', 'warn');
+        loadSeat();
       }
     }).catch(function () {
       seatBusy = false;
