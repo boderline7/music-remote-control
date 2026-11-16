@@ -86,7 +86,7 @@
   .cap .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
   /* 风量：连续量，做成减/加两个键，比滑条在车机屏上点得准 */
-  .fanrow{display:flex;align-items:center;gap:10px;margin:8px 16px 0;padding:8px 12px;
+  .fanrow{display:flex;align-items:center;gap:10px;margin:8px auto 0;max-width:420px;padding:8px 12px;
     border-radius:12px;background:var(--card);border:1px solid var(--line)}
   .fanrow .fl{flex:none;width:2.6em;font-size:13px;color:var(--dim)}
   .fanrow .fv{flex:1;text-align:center;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
@@ -94,7 +94,7 @@
     background:rgba(255,255,255,.07);border:1px solid var(--line);color:#fff}
   .fanrow .fb:active{background:rgba(250,45,72,.3);border-color:rgba(250,45,72,.5)}
   .fanrow .fb:disabled{opacity:.3}
-  .temprow{margin:8px 16px 0;padding:10px 12px 4px;border-radius:12px;
+  .temprow{margin:8px auto 0;max-width:420px;padding:10px 12px 4px;border-radius:12px;
     background:var(--card);border:1px solid var(--line)}
   .temprow .tline{display:flex;align-items:center;gap:10px}
   .temprow .fl{flex:none;width:2.6em;font-size:13px;color:var(--dim)}
@@ -109,7 +109,7 @@
     background:rgba(255,255,255,.14)}
   .temprow input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;
     margin-top:-8px;border-radius:50%;background:#fa2d48;border:0}
-  .seatgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px}
+  .seatgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px;max-width:640px;margin:0 auto}
   .seatcell{padding:10px 12px;border-radius:12px;background:var(--card);border:1px solid var(--line)}
   .seatcell .sn{font-size:12px;color:var(--faint);margin-bottom:4px}
   .seatcell .sr{display:flex;align-items:center;gap:8px;padding:8px 6px;margin:0 -6px;border-radius:8px}
