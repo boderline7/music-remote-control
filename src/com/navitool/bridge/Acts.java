@@ -304,8 +304,8 @@ final class Acts {
      * 座椅命令号（车机总线 CMD_ID），照抄助手 handleSeatClick 里那张表：
      *   加热  FL 0x5F / FR 0x60 / RL 0x8B / RR 0x8D
      *   通风  FL 0x5D / FR 0x5E —— 只有前排
-     * 后排通风在这台车的助手里既没有命令号也没有状态位（getCarInfoValue 只认
-     * seat_vent_fl / seat_vent_fr），所以这里返回 -1，前端干脆不画那一行。
+     * 后排通风这台车的助手里既没有命令号也没有状态位（getCarInfoValue 只认
+     * seat_vent_fl / seat_vent_fr），所以这里返回 -1，前端也不画那一行。
      */
     private static int seatCmd(String pos, boolean vent) {
         if (vent) {
@@ -328,14 +328,70 @@ final class Acts {
         return seatCmd(pos == null ? "" : pos.trim().toUpperCase(), vent) > 0;
     }
 
+    /** 读某个座位当前档位：-1 读不到 / 0 关 / 1..3 档位。 */
+    private static int readLevel(Object helper, String key) {
+        String s = raw(helper, "seat_" + key);
+        if (s == null) {
+            return -1;
+        }
+        s = s.trim();
+        if (s.length() == 0 || s.indexOf("--") >= 0) {
+            return -1;
+        }
+        if (s.indexOf("关") >= 0) {
+            return 0;
+        }
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c >= '0' && c <= '9') {
+                int n = 0;
+                while (i < s.length() && s.charAt(i) >= '0' && s.charAt(i) <= '9') {
+                    n = n * 10 + (s.charAt(i) - '0');
+                    i++;
+                }
+                return n;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean seatApply(final Object helper, final int cmd, final int data,
+                                     final boolean left, final boolean heat) {
+        final Method m = findN(helper.getClass(), "sendSeatCommand", 4);
+        if (m == null) {
+            return false;
+        }
+        try {
+            Bridge.onMainSync(new Callable<Object>() {
+                public Object call() throws Exception {
+                    m.setAccessible(true);
+                    m.invoke(helper, Integer.valueOf(cmd), Integer.valueOf(data),
+                            Boolean.valueOf(left), Boolean.valueOf(heat));
+                    return null;
+                }
+            });
+            return true;
+        } catch (Throwable t) {
+            Bridge.note("seat: " + Bridge.root(t));
+            return false;
+        }
+    }
+
+    private static void nap(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     /**
-     * 直接下发「设成几档」：level 0 = 关，1-3 = 档位。
+     * 下发档位。data = 目标档位 + 1 —— 原厂助手 handleSeatClick 里的
+     * sendSeatCommand 就是这么发的（关 -> 1，1 档 -> 2，2 档 -> 3，3 档 -> 4）。
+     * 旧代码发 data=lv，所以「点 3 落到 2、点关不动」。
+     * 下发后回读一次，只用于 match 提示和前端按真实状态点亮，不改下发值。
      *
-     * 不再调 handleSeatClick 的循环：它要先从内部 Map 里读出当前档位再 +1，
-     * 读不到（或者读到「3 档」这种带后缀的字符串）就会算出别的值往下发，
-     * 后排之前就出现过「点左后加热把前排带起来」。这里直接给定档位，一步到位。
-     *
-     * level >= 0 表示要设成这个档；level < 0 只读状态。
+     * level < 0 只读状态。
      */
     static String seat(Context ctx, final String pos, final String kind, final int level) {
         final Object helper = Bridge.helper;
@@ -344,36 +400,38 @@ final class Acts {
         }
         String p = pos == null ? "" : pos.trim().toUpperCase();
         final boolean vent = "vent".equalsIgnoreCase(kind == null ? "" : kind.trim());
+
         final int cmd = seatCmd(p, vent);
         if (cmd < 0) {
             return "{\"ok\":0,\"err\":\"这台车不支持\"}";
         }
-        if (level >= 0) {
-            final int lv = clamp(level, 0, 3);
-            final boolean left = "FL".equals(p) || "RL".equals(p);
-            final boolean heat = !vent;
-            final Method m = findN(helper.getClass(), "sendSeatCommand", 4);
-            if (m == null) {
-                return "{\"ok\":0,\"err\":\"no sendSeatCommand\"}";
-            }
-            try {
-                Bridge.onMainSync(new Callable<Object>() {
-                    public Object call() throws Exception {
-                        m.setAccessible(true);
-                        m.invoke(helper, Integer.valueOf(cmd), Integer.valueOf(lv),
-                                Boolean.valueOf(left), Boolean.valueOf(heat));
-                        return null;
-                    }
-                });
-            } catch (Throwable t) {
-                Bridge.note("seat: " + Bridge.root(t));
-                return "{\"ok\":0,\"err\":" + Bridge.q(Bridge.root(t)) + "}";
-            }
+        if (level < 0) {
+            return seatJson(helper);
         }
-        return seatJson(helper);
+
+        final int lv = clamp(level, 0, 3);
+        final boolean left = "FL".equals(p) || "RL".equals(p);
+        final boolean heat = !vent;
+        final String key = (vent ? "vent_" : "heat_") + p.toLowerCase();
+
+        // 原厂助手 handleSeatClick 里 sendSeatCommand 的 data = 目标档位 + 1：
+        //   关 -> 1，1 档 -> 2，2 档 -> 3，3 档 -> 4。
+        // 旧代码直接发 data=lv，才出现「点 3 落到 2 档、点关(data=0)不动」。
+        // 这是原厂点击时真正下发的值，一次到位，不再连发试探。
+        final int data = lv + 1;
+        if (!seatApply(helper, cmd, data, left, heat)) {
+            return "{\"ok\":0,\"err\":\"no sendSeatCommand\"}";
+        }
+        nap(450);
+        int got = readLevel(helper, key);
+        boolean okMatch = (got == lv);
+        Bridge.note("seat " + key + " 目标 " + lv + " 档，发 data=" + data + "，回读 " + got);
+
+        // ok 仍为 1（命令确实发出去了）；match 告诉前端回读有没有到目标档位
+        return seatJson(helper).replace("{\"ok\":1,",
+                "{\"ok\":1,\"match\":" + (okMatch ? 1 : 0) + ",");
     }
 
-    /** 四座加热 / 通风的当前状态，原样带出去（「关」「2 档」「--」都有可能）。 */
     static String seatJson(Object helper) {
         StringBuilder sb = new StringBuilder(320);
         sb.append("{\"ok\":1,\"seats\":{");

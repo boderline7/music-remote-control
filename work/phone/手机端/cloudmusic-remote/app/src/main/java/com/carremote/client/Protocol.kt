@@ -22,11 +22,11 @@ object Protocol {
     const val SERVICE_TYPE = "_cloudmusic-car._tcp"
 
     /**
-     * App 两个原生 tab，三个端口都要探：
-     * 车控固定 18766，音乐先 18764（自己的桥接）再 18765（第三方）。
-     * 18765 不属于我们也不影响 —— 切换由原生 tab 负责。
+     * App 依次探三个端口：先 18766（车机助手常驻，页面里再去探音乐），
+     * 不通再退 18765（第三方）和 18764（桥接包）。
+     * 顺序和页面里的探活一致，从哪个端口进看到的都是同一套顶栏。
      */
-    val PORTS = listOf(PORT_CAR, PORT_BRIDGE, PORT_THIRD)
+    val PORTS = listOf(PORT_CAR, PORT_THIRD, PORT_BRIDGE)
 
     fun role(port: Int): String = when (port) {
         PORT_CAR -> "车控"

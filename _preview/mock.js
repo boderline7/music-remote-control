@@ -11,7 +11,25 @@ function withHost(html, req) {
 
 const PAGE = process.argv[2] || 'D:/车机/车机桥接空调/web/remote_lunastub.html';
 
-http.createServer((req, res) => {
+/* 预览用的最小 WebSocket：只回一条 state，够让页面从「断开」变成「已连接」 */
+const crypto = require('crypto');
+
+function wsFrame(obj) {
+  const data = Buffer.from(JSON.stringify(obj));
+  const len = data.length;
+  let head;
+  if (len < 126) {
+    head = Buffer.from([0x81, len]);
+  } else if (len < 65536) {
+    head = Buffer.from([0x81, 126, (len >> 8) & 0xff, len & 0xff]);
+  } else {
+    head = Buffer.from([0x81, 127, 0, 0, 0, 0,
+      (len >>> 24) & 0xff, (len >> 16) & 0xff, (len >> 8) & 0xff, len & 0xff]);
+  }
+  return Buffer.concat([head, data]);
+}
+
+const srv65 = http.createServer((req, res) => {
   const u = req.url.split('?')[0];
   if (u === '/' || u === '/index.html') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -22,7 +40,35 @@ http.createServer((req, res) => {
   } else {
     res.writeHead(404); res.end();
   }
-}).listen(18765, '0.0.0.0');
+});
+
+srv65.on('upgrade', (req, socket) => {
+  const key = req.headers['sec-websocket-key'] || '';
+  const accept = crypto.createHash('sha1')
+    .update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
+  socket.write('HTTP/1.1 101 Switching Protocols\r\n'
+    + 'Upgrade: websocket\r\nConnection: Upgrade\r\n'
+    + 'Sec-WebSocket-Accept: ' + accept + '\r\n\r\n');
+
+  let seq = 0;
+  const push = () => {
+    seq++;
+    try {
+      socket.write(wsFrame({ type: 'state', data: {
+        seq, title: '预览歌曲', artist: '预览歌手', album: '',
+        playing: false, durationMs: 218000, positionMs: 12000,
+        volume: 12, volumeMax: 30, liked: false, mode: 'order'
+      } }));
+    } catch (e) {}
+  };
+  push();
+  const t = setInterval(push, 2000);
+  socket.on('data', push);
+  socket.on('close', () => clearInterval(t));
+  socket.on('error', () => clearInterval(t));
+});
+
+srv65.listen(18765, '0.0.0.0');
 
 const cards = {
   ok: 1, at: Date.now(),

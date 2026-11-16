@@ -1,0 +1,119 @@
+  /* ==================================================================
+     统一外壳：状态行 + 「车机控制 / 音乐控制」 + 内容区
+     三个端口（18766 / 18765 / 18764）下发的是同一份，改这里三个一起变。
+     ================================================================== */
+  /* 安卓 WebView 会按列宽自动放大文字（font boosting），
+     一到窄屏就变成「大字 + 挤在一起」。这里钉死，字号只按 CSS 走。 */
+  html{-webkit-text-size-adjust:100%;-moz-text-size-adjust:100%;text-size-adjust:100%}
+
+  #shellRoot{
+    flex:none;width:100%;max-width:var(--shell-w,560px);margin:0 auto;
+    padding:calc(9px + env(safe-area-inset-top)) 16px 0;
+  }
+  /* 状态行放最下面：车机上这块是常驻信息，不跟切换按钮抢顶部 */
+  .sbar{position:fixed;left:0;right:0;bottom:0;z-index:121;
+    background:rgba(11,11,13,.96);border-top:1px solid rgba(255,255,255,.1);
+    padding:7px 0 calc(7px + env(safe-area-inset-bottom))}
+  .sbar-in{display:flex;align-items:center;gap:8px;min-height:34px;
+    width:100%;max-width:var(--shell-w,560px);margin:0 auto;padding:0 16px;
+    font-size:13px;color:rgba(255,255,255,.55)}
+  .sdot{flex:none;width:8px;height:8px;border-radius:50%;background:#8e8e93;
+    transition:background .2s}
+  .sdot.on{background:#34c759}
+  .sdot.warn{background:#ff9f0a}
+  .sdot.off{background:#ff453a}
+  .stxt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:8px}
+  .sver{flex:none;font-style:normal;font-size:10px;letter-spacing:.3px;
+    color:rgba(255,255,255,.3)}
+  .sbtn{flex:none;width:34px;height:34px;border-radius:50%;padding:0;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
+    display:flex;align-items:center;justify-content:center}
+  .sbtn svg{width:17px;height:17px;fill:none;stroke:#fff;stroke-width:2;
+    stroke-linecap:round;stroke-linejoin:round}
+  .sbtn:active{background:rgba(255,255,255,.14)}
+
+  /* 中文切换：就放在最外面，不进设置 */
+  .stabs{display:flex;gap:8px;margin:9px 0 11px}
+  .stab{flex:1;min-width:0;height:43px;border-radius:12px;padding:0 10px;
+    font-size:14.5px;letter-spacing:.02em;color:rgba(255,255,255,.58);
+    background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);
+    display:flex;align-items:center;justify-content:center;gap:6px}
+  .stab.on{color:#fff;font-weight:600;background:rgba(250,45,72,.2);
+    border-color:rgba(250,45,72,.55)}
+  .stab:active{background:rgba(250,45,72,.3)}
+  .sn{width:5px;height:5px;border-radius:50%;background:#8e8e93;
+    transition:background .2s;flex:none}
+  .sn.on{background:#34c759}
+  .sn.off{background:#ff453a}
+  .stab.on .sn{background:rgba(255,255,255,.75)}
+  .stab.on .sn.on{background:#34c759}
+  .stab.on .sn.off{background:#ff453a}
+
+  /* 内容区：外包负责的那一页贴在下面，不跳转、不闪 */
+  .spane{position:fixed;left:0;right:0;bottom:var(--sbar-h,56px);z-index:120;
+    display:none;background:#0b0b0d}
+  .spane.on{display:block}
+  .spane iframe{display:block;width:100%;height:100%;border:0;background:#0b0b0d}
+  .sfail{position:absolute;inset:0;display:none;flex-direction:column;
+    align-items:center;justify-content:center;gap:14px;padding:28px;
+    text-align:center;font-size:13.5px;line-height:1.8;
+    color:rgba(255,255,255,.55);background:#0b0b0d}
+  .sfail.on{display:flex}
+  .sfail b{color:#fff;font-weight:600;font-size:15px}
+  .sfail button{min-width:150px;height:42px;border-radius:11px;font-size:14px;
+    color:#fff;background:rgba(250,45,72,.2);border:1px solid rgba(250,45,72,.5)}
+
+  /* ---- 模式：内容页（被 iframe 进来）把外壳全部收掉 ---- */
+  html.pane #shellRoot,
+  html.pane .spane,
+  html.pane .smask,
+  html.pane .ssheet{display:none !important}
+
+  /* ---- 模式：外壳。没 ready 之前先别把内容闪出来 ---- */
+  html.shell:not(.ready) body > *:not(#shellRoot):not(.spane):not(.smask):not(.ssheet),
+  html.shell.foreign body > *:not(#shellRoot):not(.spane):not(.smask):not(.ssheet){
+    display:none !important;
+  }
+
+  /* ---- 设置 / 诊断（三个端口共用一套，数据取 18766） ---- */
+  .smask{position:fixed;inset:0;background:rgba(0,0,0,.6);opacity:0;
+    pointer-events:none;transition:opacity .2s;z-index:129}
+  .smask.show{opacity:1;pointer-events:auto}
+  .ssheet{position:fixed;left:0;right:0;bottom:0;z-index:130;max-height:88vh;
+    transform:translateY(103%);transition:transform .26s cubic-bezier(.3,.8,.3,1);
+    background:#141417;border-top:1px solid rgba(255,255,255,.12);
+    border-radius:18px 18px 0 0;display:flex;flex-direction:column;
+    box-shadow:0 -12px 40px rgba(0,0,0,.5)}
+  .ssheet.show{transform:translateY(0)}
+  .sshead{flex:none;display:flex;align-items:center;gap:10px;
+    padding:15px 18px 12px;border-bottom:1px solid rgba(255,255,255,.12)}
+  .sshead h3{margin:0;font-size:16px;font-weight:600;flex:1;color:#fff}
+  .ssx{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.12);display:flex;align-items:center;
+    justify-content:center;font-size:15px;color:rgba(255,255,255,.55)}
+  .ssbody{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    padding:14px 16px calc(20px + env(safe-area-inset-bottom))}
+  .sskv{font-size:12px;line-height:1.95;color:rgba(255,255,255,.55);
+    margin:0 2px 12px;white-space:pre-wrap;word-break:break-all}
+  .ssrow{display:flex;gap:8px;margin-bottom:12px}
+  .ssrow button{flex:1;min-height:42px;border-radius:11px;color:#fff;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
+    font-size:13.5px}
+  .ssrow button:active{background:rgba(255,255,255,.12)}
+  .ssrow button.primary{background:rgba(250,45,72,.18);
+    border-color:rgba(250,45,72,.45)}
+  .sstabs{display:flex;gap:6px;margin:0 0 10px;overflow-x:auto}
+  .sstab{flex:1 0 auto;min-height:34px;padding:0 12px;border-radius:9px;
+    background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);
+    font-size:12.5px;color:rgba(255,255,255,.55);white-space:nowrap}
+  .sstab.on{background:rgba(250,45,72,.2);border-color:rgba(250,45,72,.5);
+    color:#fff}
+  .sstxt{margin:0;padding:12px;border-radius:12px;
+    background:rgba(0,0,0,.38);border:1px solid rgba(255,255,255,.12);
+    font:11px/1.65 ui-monospace,Consolas,monospace;
+    color:rgba(255,255,255,.74);white-space:pre-wrap;word-break:break-all;
+    min-height:120px;max-height:36vh;overflow:auto;
+    user-select:text;-webkit-user-select:text}
+  .sstip{font-size:11.5px;line-height:1.75;color:rgba(255,255,255,.32);
+    margin:10px 2px 0}
+

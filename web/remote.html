@@ -102,17 +102,13 @@
   input[type=range]:disabled { opacity: .35; }
   .times { display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
 
-  /* 左列放播放模式，中列始终居中是三键，右列留白配平 —— 模式钮不挤进播控中间 */
+  /* 三键在整页正中：绝对居中，不受标题和随机钮的宽度影响 */
   .controls {
-    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+    display: flex; align-items: center; justify-content: center;
     margin: 20px 0 4px;
   }
   .ctl-core { display: flex; align-items: center; gap: 44px; }
-  .mode-btn {
-    justify-self: start; width: 38px; height: 38px; border-radius: 50%;
-    background: var(--card); border: 1px solid var(--line);
-    display: flex; align-items: center; justify-content: center;
-  }
+  .mode-btn { flex: none; }
   .mode-btn svg { width: 19px; height: 19px; fill: none; stroke: var(--dim); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
   .mode-btn.on svg { stroke: var(--red); }
   .mode-btn:active { background: rgba(250,45,72,.2); border-color: rgba(250,45,72,.5); }
@@ -158,42 +154,6 @@
   .tile .tilePlay svg { width: 16px; height: 16px; fill: currentColor; }
   .tile .tilePlay:active { background: var(--red); color: #fff; }
 
-  /* 页面最顶部的歌词方框：固定显示 3 行，每行等高，当前行高亮。
-     行高固定后 JS 可以用「行号 × 行高」精确定位，不会因为高亮字号变化而抖动；
-     内部不允许手动滑（overflow hidden），手势交给外层 main 滚整页。 */
-  .lyric-card {
-    margin: 2px 0 18px; border-radius: 18px;
-    background: rgba(255,255,255,.045); border: 1px solid var(--line);
-    padding: 12px 10px 10px;
-  }
-  .lyric-card .cap {
-    display: flex; align-items: baseline; gap: 8px;
-    font-size: 12px; color: var(--dim); margin: 0 6px 6px;
-  }
-  .lyric-card .cap b { color: #fff; font-weight: 600; font-size: 13px; }
-  #lyricBox {
-    --lyric-row: 34px;
-    height: calc(var(--lyric-row) * 3);
-    overflow: hidden; position: relative;
-    scrollbar-width: none; scroll-behavior: smooth;
-    /* 禁止手动滑动，但手势仍能冒泡给 main 滚整页 */
-    touch-action: pan-y;
-    /* 只有 3 行，不再用渐隐遮罩，避免吞掉首尾两行 */
-  }
-  #lyricBox::-webkit-scrollbar { display: none; }
-  #lyricBox .empty {
-    height: calc(var(--lyric-row) * 3); padding: 0;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .lyric-line {
-    height: var(--lyric-row); line-height: var(--lyric-row);
-    padding: 0 10px; font-size: 13px; text-align: center;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    color: rgba(255,255,255,.44); transition: color .2s, background .2s;
-  }
-  /* 译文并排在同一行，不额外占高度，保证「固定 3 行」 */
-  .lyric-line .tr { display: inline; margin-left: 8px; font-size: 11px; color: rgba(255,255,255,.3); }
-  .lyric-line.on { color: #fff; font-size: 15px; font-weight: 700; }
   .lyric-line.on .tr { color: rgba(255,255,255,.62); }
 
   /* 添加到歌单选择面板 */
@@ -337,177 +297,207 @@
   #offline .tip { margin: 14px 0 0; font-size: 12px; color: var(--faint); }
 
 
-  /* ==================================================================
-     车机控制页：从右侧滑入，盖在音乐页之上。
-     内容和样式全部来自车机助手（/cards + /probe），这里没有写死任何一项。
-     ================================================================== */
-  #carPage {
-    position: fixed; inset: 0; z-index: 18;
-    display: flex; flex-direction: column;
-    background: radial-gradient(120% 60% at 50% 0%, #1b1b22 0%, #0b0b0d 62%) fixed;
-    transform: translateX(102%);
-    transition: transform .26s cubic-bezier(.32,.72,0,1);
-    will-change: transform;
-    pointer-events: none;
-  }
-  /* 车控页打开时，音乐侧的断线遮罩让位：两边是各自独立的通道 */
-  body.car-open #offline { display: none !important; }
-  #carPage.open { transform: translateX(0); pointer-events: auto; }
-  #carPage .car-head {
-    flex: none; display: flex; align-items: center; gap: 8px;
-    width: 100%; max-width: 560px; margin: 0 auto;
-    padding: calc(10px + env(safe-area-inset-top)) 16px 8px;
-    font-size: 13px; color: var(--dim);
-  }
-  #carPage .cddot {
-    width: 8px; height: 8px; border-radius: 50%; background: #8e8e93; flex: none;
-    transition: background .2s;
-  }
-  #carPage .cddot.on { background: #34c759; }
-  #carPage .cddot.warn { background: #ff9f0a; }
-  #carPage .cddot.off { background: #ff453a; }
-  #carPage #carStatus {
-    flex: 1; min-width: 0; overflow: hidden;
-    text-overflow: ellipsis; white-space: nowrap;
-  }
-  #carScroll {
-    flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
-    width: 100%; max-width: 560px; margin: 0 auto;
-    padding: 4px 0 calc(24px + env(safe-area-inset-bottom));
-  }
-  /* 卡片区：背景/圆角/透明度/字号由 /cards 的 style 决定 */
-  #carCards { padding-top: 2px; }
-  .ccard {
-    background: var(--ccard-bg, rgba(12,12,14,.55));
-    border: 1px solid rgba(255,255,255,.055);
-    border-radius: var(--cradius, 12px);
-    margin: 0 var(--cmargin, 8px) var(--cmargin, 8px);
-    padding: 13px 15px 15px;
-    opacity: var(--calpha, .9);
-    color: var(--cvalue, #fff);
-  }
-  .ccard-t {
-    font-size: 13px; font-weight: 600; letter-spacing: .02em;
-    color: rgba(255,255,255,.78); margin-bottom: 10px;
-  }
-  .cgrid { display: grid; gap: 10px 8px; }
-  .citem { min-width: 0; }
-  .citem .k {
-    display: block; font-size: 11px; line-height: 1.3;
-    color: var(--cprop, rgba(255,255,255,.55));
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .citem .v {
-    display: block; margin-top: 3px;
-    font-size: var(--cfs, 20px); line-height: 1.2; font-weight: 600;
-    color: var(--cvalue, #fff);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  /* 能力区 */
-  .car-sec {
-    display: flex; align-items: baseline; gap: 8px;
-    padding: 14px 18px 8px;
-  }
-  .car-sec h2 { margin: 0; font-size: 15px; font-weight: 600; }
-  .car-sec .hint { font-size: 12px; color: var(--faint); }
-    .capgrp {
-    margin: 12px 16px 6px; font-size: 12px; letter-spacing: .06em; color: rgba(255,255,255,.42);
-  }
-  .caps {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-    padding: 0 16px;
-  }
-  .cap {
-    display: flex; align-items: center; gap: 8px;
-    padding: 12px 12px; border-radius: 12px;
-    background: var(--card); border: 1px solid var(--line);
-    font-size: 14px; text-align: left; line-height: 1.2;
-    min-height: 46px;
-  }
-  .cap:active { background: rgba(250,45,72,.28); border-color: rgba(250,45,72,.5); }
-  .cap.dead { opacity: .42; }
-  .cap .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .cap .tag {
-    flex: none; font-size: 10px; padding: 2px 5px; border-radius: 5px;
-    color: rgba(255,255,255,.6); background: rgba(255,255,255,.08);
-  }
-  .cap.dead .tag { color: #ff9f0a; background: rgba(255,159,10,.14); }
-  /* ---------- 车控页里的设置 / 诊断 ---------- */
-  #csetMask{position:fixed;inset:0;background:rgba(0,0,0,.6);opacity:0;pointer-events:none;
-    transition:opacity .2s;z-index:44}
-  #csetMask.show{opacity:1;pointer-events:auto}
-  #csetSheet{position:fixed;left:0;right:0;bottom:0;z-index:45;max-height:88vh;
-    transform:translateY(103%);transition:transform .26s cubic-bezier(.3,.8,.3,1);
-    background:#141417;border-top:1px solid rgba(255,255,255,.12);border-radius:18px 18px 0 0;
-    display:flex;flex-direction:column;box-shadow:0 -12px 40px rgba(0,0,0,.5)}
-  #csetSheet.show{transform:translateY(0)}
-  #csetSheet .cs-head{flex:none;display:flex;align-items:center;gap:10px;
-    padding:15px 18px 12px;border-bottom:1px solid rgba(255,255,255,.1)}
-  #csetSheet .cs-head h3{margin:0;font-size:16px;font-weight:600;flex:1;color:#fff}
-  #csetSheet .cs-x{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.06);
-    border:1px solid rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;
-    font-size:15px;color:rgba(255,255,255,.55)}
-  #csetSheet .cs-body{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
-    padding:14px 16px calc(20px + env(safe-area-inset-bottom))}
-  #csetSheet .cs-kv{font-size:12px;line-height:1.95;color:rgba(255,255,255,.55);
-    margin:0 2px 12px;white-space:pre-wrap;word-break:break-all}
-  #csetSheet .cs-row{display:flex;gap:8px;margin-bottom:12px}
-  #csetSheet .cs-row button{flex:1;min-height:42px;border-radius:11px;background:rgba(255,255,255,.06);
-    border:1px solid rgba(255,255,255,.12);font-size:13.5px;color:#fff}
-  #csetSheet .cs-row button:active{background:rgba(255,255,255,.12)}
-  #csetSheet .cs-row button.primary{background:rgba(250,45,72,.16);border-color:rgba(250,45,72,.42)}
-  #csetDiag{margin:0;padding:12px;border-radius:12px;background:rgba(0,0,0,.38);
-    border:1px solid rgba(255,255,255,.12);font:11px/1.65 ui-monospace,Consolas,monospace;
-    color:rgba(255,255,255,.74);white-space:pre-wrap;word-break:break-all;
-    min-height:130px;max-height:46vh;overflow:auto;user-select:text;-webkit-user-select:text}
-  #csetSheet .cs-tip{font-size:11.5px;line-height:1.75;color:rgba(255,255,255,.32);margin:10px 2px 0}
-
-  .carlog {
-    margin: 12px 16px 0; padding: 12px;
-    background: rgba(255,255,255,.04); border: 1px solid var(--line);
-    border-radius: 12px; font-size: 11px; line-height: 1.6;
-    color: rgba(255,255,255,.6);
-    white-space: pre-wrap; word-break: break-all;
-  }
-  .carempty {
-    margin: 8px 16px 0; padding: 18px 16px;
-    background: rgba(255,255,255,.04); border: 1px dashed var(--line);
-    border-radius: 12px; font-size: 13px; line-height: 1.6; color: var(--dim);
-  }
-  #carFoot {
-    text-align: center; font-size: 11px; color: var(--faint);
-    padding: 18px 0 6px;
-  }
-  #carFoot a { color: var(--faint); text-decoration: underline; }
-  /* 顶部切换按钮上的小圆点：18766 通不通一眼可见 */
-  #openCar { position: relative; }
-  #openCar .bade {
-    position: absolute; right: 3px; top: 3px;
-    width: 7px; height: 7px; border-radius: 50%;
-    background: #ff453a; border: 1.5px solid #0b0b0d;
-  }
   #openCar .bade.on { background: #34c759; }
 </style>
+<!--@shell:head-->
+<style>
+  /* ==================================================================
+     统一外壳：状态行 + 「车机控制 / 音乐控制」 + 内容区
+     三个端口（18766 / 18765 / 18764）下发的是同一份，改这里三个一起变。
+     ================================================================== */
+  /* 安卓 WebView 会按列宽自动放大文字（font boosting），
+     一到窄屏就变成「大字 + 挤在一起」。这里钉死，字号只按 CSS 走。 */
+  html{-webkit-text-size-adjust:100%;-moz-text-size-adjust:100%;text-size-adjust:100%}
+
+  #shellRoot{
+    flex:none;width:100%;max-width:var(--shell-w,560px);margin:0 auto;
+    padding:calc(9px + env(safe-area-inset-top)) 16px 0;
+  }
+  /* 状态行放最下面：车机上这块是常驻信息，不跟切换按钮抢顶部 */
+  .sbar{position:fixed;left:0;right:0;bottom:0;z-index:121;
+    background:rgba(11,11,13,.96);border-top:1px solid rgba(255,255,255,.1);
+    padding:7px 0 calc(7px + env(safe-area-inset-bottom))}
+  .sbar-in{display:flex;align-items:center;gap:8px;min-height:34px;
+    width:100%;max-width:var(--shell-w,560px);margin:0 auto;padding:0 16px;
+    font-size:13px;color:rgba(255,255,255,.55)}
+  .sdot{flex:none;width:8px;height:8px;border-radius:50%;background:#8e8e93;
+    transition:background .2s}
+  .sdot.on{background:#34c759}
+  .sdot.warn{background:#ff9f0a}
+  .sdot.off{background:#ff453a}
+  .stxt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:8px}
+  .sver{flex:none;font-style:normal;font-size:10px;letter-spacing:.3px;
+    color:rgba(255,255,255,.3)}
+  .sbtn{flex:none;width:34px;height:34px;border-radius:50%;padding:0;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
+    display:flex;align-items:center;justify-content:center}
+  .sbtn svg{width:17px;height:17px;fill:none;stroke:#fff;stroke-width:2;
+    stroke-linecap:round;stroke-linejoin:round}
+  .sbtn:active{background:rgba(255,255,255,.14)}
+
+  /* 中文切换：就放在最外面，不进设置 */
+  .stabs{display:flex;gap:8px;margin:9px 0 11px}
+  .stab{flex:1;min-width:0;height:43px;border-radius:12px;padding:0 10px;
+    font-size:14.5px;letter-spacing:.02em;color:rgba(255,255,255,.58);
+    background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);
+    display:flex;align-items:center;justify-content:center;gap:6px}
+  .stab.on{color:#fff;font-weight:600;background:rgba(250,45,72,.2);
+    border-color:rgba(250,45,72,.55)}
+  .stab:active{background:rgba(250,45,72,.3)}
+  .sn{width:5px;height:5px;border-radius:50%;background:#8e8e93;
+    transition:background .2s;flex:none}
+  .sn.on{background:#34c759}
+  .sn.off{background:#ff453a}
+  .stab.on .sn{background:rgba(255,255,255,.75)}
+  .stab.on .sn.on{background:#34c759}
+  .stab.on .sn.off{background:#ff453a}
+
+  /* 内容区：外包负责的那一页贴在下面，不跳转、不闪 */
+  .spane{position:fixed;left:0;right:0;bottom:var(--sbar-h,56px);z-index:120;
+    display:none;background:#0b0b0d}
+  .spane.on{display:block}
+  .spane iframe{display:block;width:100%;height:100%;border:0;background:#0b0b0d}
+  .sfail{position:absolute;inset:0;display:none;flex-direction:column;
+    align-items:center;justify-content:center;gap:14px;padding:28px;
+    text-align:center;font-size:13.5px;line-height:1.8;
+    color:rgba(255,255,255,.55);background:#0b0b0d}
+  .sfail.on{display:flex}
+  .sfail b{color:#fff;font-weight:600;font-size:15px}
+  .sfail button{min-width:150px;height:42px;border-radius:11px;font-size:14px;
+    color:#fff;background:rgba(250,45,72,.2);border:1px solid rgba(250,45,72,.5)}
+
+  /* ---- 模式：内容页（被 iframe 进来）把外壳全部收掉 ---- */
+  html.pane #shellRoot,
+  html.pane .spane,
+  html.pane .smask,
+  html.pane .ssheet{display:none !important}
+
+  /* ---- 模式：外壳。没 ready 之前先别把内容闪出来 ---- */
+  html.shell:not(.ready) body > *:not(#shellRoot):not(.spane):not(.smask):not(.ssheet),
+  html.shell.foreign body > *:not(#shellRoot):not(.spane):not(.smask):not(.ssheet){
+    display:none !important;
+  }
+
+  /* ---- 设置 / 诊断（三个端口共用一套，数据取 18766） ---- */
+  .smask{position:fixed;inset:0;background:rgba(0,0,0,.6);opacity:0;
+    pointer-events:none;transition:opacity .2s;z-index:129}
+  .smask.show{opacity:1;pointer-events:auto}
+  .ssheet{position:fixed;left:0;right:0;bottom:0;z-index:130;max-height:88vh;
+    transform:translateY(103%);transition:transform .26s cubic-bezier(.3,.8,.3,1);
+    background:#141417;border-top:1px solid rgba(255,255,255,.12);
+    border-radius:18px 18px 0 0;display:flex;flex-direction:column;
+    box-shadow:0 -12px 40px rgba(0,0,0,.5)}
+  .ssheet.show{transform:translateY(0)}
+  .sshead{flex:none;display:flex;align-items:center;gap:10px;
+    padding:15px 18px 12px;border-bottom:1px solid rgba(255,255,255,.12)}
+  .sshead h3{margin:0;font-size:16px;font-weight:600;flex:1;color:#fff}
+  .ssx{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.12);display:flex;align-items:center;
+    justify-content:center;font-size:15px;color:rgba(255,255,255,.55)}
+  .ssbody{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    padding:14px 16px calc(20px + env(safe-area-inset-bottom))}
+  .sskv{font-size:12px;line-height:1.95;color:rgba(255,255,255,.55);
+    margin:0 2px 12px;white-space:pre-wrap;word-break:break-all}
+  .ssrow{display:flex;gap:8px;margin-bottom:12px}
+  .ssrow button{flex:1;min-height:42px;border-radius:11px;color:#fff;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
+    font-size:13.5px}
+  .ssrow button:active{background:rgba(255,255,255,.12)}
+  .ssrow button.primary{background:rgba(250,45,72,.18);
+    border-color:rgba(250,45,72,.45)}
+  .sstabs{display:flex;gap:6px;margin:0 0 10px;overflow-x:auto}
+  .sstab{flex:1 0 auto;min-height:34px;padding:0 12px;border-radius:9px;
+    background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);
+    font-size:12.5px;color:rgba(255,255,255,.55);white-space:nowrap}
+  .sstab.on{background:rgba(250,45,72,.2);border-color:rgba(250,45,72,.5);
+    color:#fff}
+  .sstxt{margin:0;padding:12px;border-radius:12px;
+    background:rgba(0,0,0,.38);border:1px solid rgba(255,255,255,.12);
+    font:11px/1.65 ui-monospace,Consolas,monospace;
+    color:rgba(255,255,255,.74);white-space:pre-wrap;word-break:break-all;
+    min-height:120px;max-height:36vh;overflow:auto;
+    user-select:text;-webkit-user-select:text}
+  .sstip{font-size:11.5px;line-height:1.75;color:rgba(255,255,255,.32);
+    margin:10px 2px 0}
+
+</style>
+<script>
+  /* 外壳启动：在 <head> 里就定好这一页是「壳」还是「内容页」，
+     免得内容先闪一下再被外壳盖住。?pane=car / ?pane=music 都是内容页。 */
+  (function () {
+    var d = document.documentElement;
+    d.className = (d.className ? d.className + ' ' : '')
+      + (location.search.indexOf('pane=') >= 0 ? 'pane' : 'shell');
+  })();
+
+</script>
+<!--@/shell:head-->
 </head>
 <body>
-  <header>
-    <span id="dot"></span>
-    <span id="status">正在连接车机…</span>
-    <button class="icon-btn" id="openCar" aria-label="车机控制">
-      <svg viewBox="0 0 24 24"><path d="M4 13l1.6-4.2A2 2 0 0 1 7.5 7.5h9a2 2 0 0 1 1.9 1.3L20 13"/><path d="M3.5 13h17v4.5a1 1 0 0 1-1 1h-1.5a1 1 0 0 1-1-1V17H7v.5a1 1 0 0 1-1 1H4.5a1 1 0 0 1-1-1z"/></svg>
-      <span class="bade" id="carBade"></span>
+<!--@shell:body-->
+<div id="shellRoot" data-ver="2.5.2">
+  <div class="sbar" id="sBar">
+   <div class="sbar-in">
+    <span class="sdot" id="sDot"></span>
+    <span class="stxt" id="sTxt">正在连接…</span>
+    <i class="sver">2.5.2</i>
+    <button class="sbtn" id="sSet" aria-label="设置与诊断" title="设置与诊断">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9.1 19a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 4.8 15a1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.8 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 9.1 4.8 1.6 1.6 0 0 0 10 3.3V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
     </button>
-    <button class="icon-btn" id="refresh" aria-label="刷新">
+    <button class="sbtn" id="sReload" aria-label="刷新" title="刷新">
       <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
     </button>
-  </header>
+   </div>
+  </div>
+  <div class="stabs">
+    <button class="stab" id="sTabCar" data-tab="car">车机控制<i class="sn" id="sDotCar"></i></button>
+    <button class="stab" id="sTabMusic" data-tab="music">音乐控制<i class="sn" id="sDotMusic"></i></button>
+  </div>
+</div>
 
-  <main id="scroll">
-    <div class="lyric-card">
-      <div class="cap"><b>歌词</b></div>
-      <div id="lyricBox"></div>
+<div class="spane" id="sPane">
+  <iframe id="sFrame" title="内容"></iframe>
+  <div class="sfail" id="sFail">
+    <b id="sFailT">这一路没起来</b>
+    <div id="sFailS">—</div>
+    <button id="sFailGo">切到车机控制</button>
+  </div>
+</div>
+
+<div class="smask" id="sMask"></div>
+<div class="ssheet" id="sSheet">
+  <div class="sshead">
+    <h3>设置 · 诊断</h3>
+    <button class="ssx" id="sClose" aria-label="关闭">✕</button>
+  </div>
+  <div class="ssbody">
+    <div class="sskv" id="sKv">—</div>
+    <div class="sstabs" id="sSegs">
+      <button class="sstab on" data-seg="diag">诊断</button>
+      <button class="sstab" data-seg="log">操作记录</button>
+      <button class="sstab" data-seg="cards">车况</button>
+      <button class="sstab" data-seg="acts">动作表</button>
     </div>
-
+    <div class="ssrow">
+      <button class="primary" id="sGen">生成</button>
+      <button id="sCopy">复制</button>
+      <button id="sSave">下载</button>
+    </div>
+    <pre class="sstxt" id="sTxt2">点「生成」，取当前这一段的文本。</pre>
+    <div class="sstip" id="sTip"></div>
+    <div class="ssrow" style="margin-top:16px">
+      <button id="sDump">全部导出</button>
+      <button id="sClear">清空记录</button>
+    </div>
+    <div class="sstip">
+      诊断里是端口、引擎绑定、安装包版本、动作项数和最近日志。<br>
+      「全部导出」把四段文本合成一个 txt，一次拿走。<br>
+      下载没反应时长按上面的文本全选。
+    </div>
+  </div>
+</div>
+<!--@/shell:body-->
+  <main id="scroll">
     <div class="head-row">
       <div class="head-text">
         <h1 id="title">未在播放</h1>
@@ -516,6 +506,9 @@
       <div class="side-actions">
         <button class="side-btn" id="like" aria-label="喜欢">
           <svg viewBox="0 0 24 24"><path d="M12 20.5s-7.6-4.7-9.2-9C1.6 7.9 3.6 4.8 6.8 4.8c2 0 3.4 1.1 4.2 2.3.3.4.9.4 1.2 0 .8-1.2 2.2-2.3 4.2-2.3 3.2 0 5.2 3.1 4 6.7-1.6 4.3-9.2 9-9.2 9z"/></svg>
+        </button>
+        <button class="side-btn mode-btn hidden" id="mode" aria-label="播放模式">
+          <svg id="modeIcon" viewBox="0 0 24 24"></svg>
         </button>
         <button class="side-btn" id="addToPlaylist" aria-label="添加到歌单" disabled>
           <svg viewBox="0 0 24 24"><path d="M4 6h9M4 11h9M4 16h5"/><path d="M16 13v7M12.5 16.5h7"/></svg>
@@ -529,9 +522,6 @@
     </div>
 
     <div class="controls">
-      <button class="mode-btn hidden" id="mode" aria-label="播放模式">
-        <svg id="modeIcon" viewBox="0 0 24 24"></svg>
-      </button>
       <div class="ctl-core">
         <button class="skip" id="prev" aria-label="上一首">
           <svg viewBox="0 0 24 24"><path d="M6 6h2.4v12H6zm3.6 6L18 6v12z"/></svg>
@@ -543,7 +533,6 @@
           <svg viewBox="0 0 24 24"><path d="M15.6 6H18v12h-2.4zM6 6l8.4 6L6 18z"/></svg>
         </button>
       </div>
-      <span></span>
     </div>
 
     <div class="volume hidden" id="volumeRow">
@@ -630,64 +619,7 @@
     <div class="sheet-body" id="sheetBody"></div>
   </div>
 
-  <!-- ===================== 车机控制页 ===================== -->
-  <div id="carPage">
-    <div class="car-head">
-      <span class="cddot" id="carDot"></span>
-      <span id="carStatus">正在连接车机助手…</span>
-      <button class="icon-btn" id="carSet" aria-label="设置与诊断">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9.1 19a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 4.8 15a1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.8 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 9.1 4.8 1.6 1.6 0 0 0 10 3.3V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
-      </button>
-      <button class="icon-btn" id="carRefresh" aria-label="刷新车控">
-        <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
-      </button>
-      <button class="icon-btn" id="closeCar" aria-label="返回音乐">
-        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
-      </button>
-    </div>
-
-    <div id="carScroll">
-      <div id="carCards"></div>
-
-      <div class="car-sec">
-        <h2>控制</h2>
-        <span class="hint" id="capHint"></span>
-      </div>
-      <div id="carCaps"></div>
-
-      <div id="carLog" class="carlog hidden"></div>
-
-      <footer id="carFoot">车机助手 · 18766 · <a id="carDiag" href="#">独立打开</a></footer>
-    </div>
-  </div>
-
   <div id="toast"></div>
-  <!-- 设置 / 诊断：车机上复制不了，全部走网页这里 -->
-  <div id="csetMask"></div>
-  <div id="csetSheet">
-    <div class="cs-head">
-      <h3>设置 · 诊断</h3>
-      <button class="cs-x" id="csetClose" aria-label="关闭">✕</button>
-    </div>
-    <div class="cs-body">
-      <div class="cs-kv" id="csetKv">—</div>
-      <div class="cs-row">
-        <button class="primary" id="csetLoad">生成诊断</button>
-        <button id="csetCopy">复制</button>
-        <button id="csetSave">下载</button>
-      </div>
-      <pre id="csetDiag">点上面的「生成诊断」，从车机助手里取当前状态和最近日志。</pre>
-      <div class="cs-tip">
-        诊断里有端口状态、引擎绑定、安装包版本、动作项数和最近日志。<br>
-        「复制」放进剪贴板直接发出去；「下载」存成 txt，手机的文件管理器里能找到。<br>
-        下载没反应时长按上面的文本全选——App 的下载由系统管，手机浏览器里最稳。
-      </div>
-    </div>
-  </div>
-
-
-
-
   <!-- 断线时盖住整页；hidden 由 setOffline() 切换 -->
   <div id="offline" class="hidden">
     <div class="box">
@@ -749,15 +681,8 @@
    'offline', 'offlineSync', 'offlineRetry', 'offlineBar', 'offlineNow'
   ].forEach(function (id) { el[id] = document.getElementById(id); });
 
-  // 嵌入式（车控页 iframe）/ App 原生 tab 承载时，把这一层多余的壳收掉
-  if (EMBED) {
-    var embedHead = document.querySelector('body > header');
-    if (embedHead) embedHead.style.display = 'none';
-  }
-  if (IN_APP) {
-    var appCarBtn = document.getElementById('openCar');
-    if (appCarBtn) appCarBtn.style.display = 'none';
-  }
+  // 顶上的状态行和「车机控制 / 音乐控制」由外壳负责（web/_shell.*），
+  // 这一页只画音乐本身，不再自己留一份入口
 
   var ws = null;
   var seq = 0;
@@ -810,8 +735,11 @@
   }
 
   function setStatus(text, kind) {
-    el.status.textContent = text;
-    el.dot.className = kind || '';
+    // 顶栏交给外壳（web/_shell.*）之后，这一页里已经没有 #status / #dot 了。
+    // 这里不加保护的话，connect() 第一行就抛 TypeError，WebSocket 根本建不起来，
+    // 表现为一打开就停在「与车机断开连接」。下面每处 el.xxx 同理。
+    if (el.status) el.status.textContent = text;
+    if (el.dot) el.dot.className = kind || '';
     // 主动把连接状态告诉原生壳：安卓据此决定是否拦截硬件音量键、记住成功的地址。
     // iOS 壳没有注入这个对象，可选调用直接跳过；浏览器打开也安全。
     try {
@@ -852,8 +780,6 @@
       for (var i = 0; i < nodes.length; i++) {
         var n = nodes[i];
         if (n.disabled || n.id === 'offlineNow') continue;
-        // 车控页和它的入口走 18766，跟音乐这条 WebSocket 不是一条线，不该被一起冻住
-        if (n.id === 'openCar' || (n.closest && (n.closest('#carPage') || n.closest('#csetSheet')))) continue;
         n.disabled = true;
         n.setAttribute('data-offline-off', '1');
         offlineControls.push(n);
@@ -1301,7 +1227,7 @@
           closeAddPanel(); toast('已添加到歌单');
           command('library');   // 车机已清 library 缓存，重拉一次让歌单数立刻更新
         } else if (data.action === 'refresh') {
-          el.refresh.classList.remove('spin');
+          if (el.refresh) el.refresh.classList.remove('spin');
           toast('已刷新');
         }
         break;
@@ -1336,9 +1262,9 @@
       return;
     }
     if (!silent) toast('正在刷新…');
-    el.refresh.classList.add('spin');
+    if (el.refresh) el.refresh.classList.add('spin');
     if (refreshTimer) clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(function () { el.refresh.classList.remove('spin'); }, 8000);
+    refreshTimer = setTimeout(function () { if (el.refresh) el.refresh.classList.remove('spin'); }, 8000);
     library = null;
     catalog = null;
     lyricLines = [];
@@ -1418,83 +1344,11 @@
 
   // ---------- 歌单 / 歌词 双页 ----------
 
-  function renderLyrics() {
-    var box = el.lyricBox;
-    box.textContent = '';
-    lyricActive = -1;
-    if (!lyricLines.length) {
-      var empty = document.createElement('div');
-      empty.className = 'empty';
-      empty.textContent = '暂无歌词';
-      box.appendChild(empty);
-      box.scrollTop = 0;
-      return;
-    }
-    var frag = document.createDocumentFragment();
-    lyricLines.forEach(function (line) {
-      var d = document.createElement('div');
-      d.className = 'lyric-line';
-      d.appendChild(document.createTextNode(line.text || ''));
-      if (line.trans) {
-        var tr = document.createElement('span');
-        tr.className = 'tr';
-        tr.textContent = line.trans;
-        d.appendChild(tr);
-      }
-      frag.appendChild(d);
-    });
-    box.appendChild(frag);
-    // 重建 DOM 后立刻把滚动位置钉回顶部（不走 CSS smooth，避免开场动画乱跑）
-    setLyricScroll(0, true);
-  }
-
-  /** 清掉高亮并把方框拉回第一行；instant=true 时跳过平滑动画。 */
-  function lockFirstLyric() {
-    var box = el.lyricBox;
-    Array.prototype.forEach.call(box.children, function (n) { n.classList.remove('on'); });
-    lyricActive = -1;
-    setLyricScroll(0, true);
-  }
-
-  function setLyricScroll(top, instant) {
-    var box = el.lyricBox;
-    if (instant) {
-      var old = box.style.scrollBehavior;
-      box.style.scrollBehavior = 'auto';
-      box.scrollTop = top;
-      box.style.scrollBehavior = old;
-    } else {
-      // CSS 里的 scroll-behavior: smooth 负责逐行跟随
-      box.scrollTop = top;
-    }
-  }
-
-  function highlightLyric() {
-    if (!lyricLines.length) return;
-    var pos = (state.positionMs || 0) + (state.playing ? Math.min(1500, Date.now() - stateAt) : 0);
-    var idx = -1;
-    for (var i = 0; i < lyricLines.length; i++) {
-      if ((lyricLines[i].t || 0) <= pos) idx = i; else break;
-    }
-    // 前奏 / 还没到第一句：也钉在第一句，不显示「没有高亮行」的空框
-    if (idx < 0) idx = 0;
-    // 新歌开头 2.5 秒内、或歌词刚换好：固定第一句，等真正的 state 位置到了再跟随
-    var pinFirst = lyricFresh || pos < 2500;
-    lyricFresh = false;
-    if (pinFirst) idx = 0;
-    var nodes = el.lyricBox.children;
-    if (idx === lyricActive && !pinFirst) return;
-    if (lyricActive >= 0 && nodes[lyricActive]) nodes[lyricActive].classList.remove('on');
-    if (nodes[idx]) nodes[idx].classList.add('on');
-    lyricActive = idx;
-
-    // 固定 3 行：当前行落在中间那行（第 0 行时自然是顶部三行）。
-    // 行高从真实 DOM 量出来，CSS 改 --lyric-row 也不用同步改这里。
-    var base = nodes[0] ? nodes[0].offsetTop : 0;
-    var rowH = nodes[1] ? nodes[1].offsetTop - base : el.lyricBox.clientHeight / 3;
-    var top = pinFirst ? 0 : Math.max(0, (nodes[idx] ? nodes[idx].offsetTop : base) - base - rowH);
-    setLyricScroll(top, pinFirst);
-  }
+  // 歌词栏已去掉：顶部那块让给「车机控制 / 音乐控制」。
+  // 车机还在推歌词（lyricLines 照旧收着），这里不再画，留两个空函数给旧调用点。
+  function renderLyrics() { }
+  function lockFirstLyric() { }
+  function highlightLyric() { }
 
   // 下拉刷新：只在页面已经滚到顶、且不是拖输入框/滑杆时接管。三端共用这一份手势。
   (function bindPullRefresh() {
@@ -1560,8 +1414,18 @@
   el.play.addEventListener('click', function () {
     command(state.playing ? 'pause' : 'play');
   });
-  el.prev.addEventListener('click', function () { command('prev'); });
-  el.next.addEventListener('click', function () { command('next'); });
+  /* 车机在暂停状态下切歌不会自己开播，页面就一直停在暂停。
+     所以切歌前先记住是不是暂停，是的话补一条 play。 */
+  function skipTo(action) {
+    var wasPaused = !state.playing;
+    command(action);
+    if (wasPaused) {
+      setTimeout(function () { command('play'); }, 150);
+    }
+  }
+
+  el.prev.addEventListener('click', function () { skipTo('prev'); });
+  el.next.addEventListener('click', function () { skipTo('next'); });
 
   // 一键在「顺序 ↔ 随机」之间切；车机若停在单曲循环，点一下先回顺序
   el.mode.addEventListener('click', function () {
@@ -1633,7 +1497,7 @@
   el.addPanel.addEventListener('click', function (e) { if (e.target === el.addPanel) closeAddPanel(); });
   el.likedPlay.addEventListener('click', function (e) { e.stopPropagation(); playList('liked', '我喜欢的音乐'); });
   el.cloudPlay.addEventListener('click', function (e) { e.stopPropagation(); playList('cloud', '音乐云盘'); });
-  el.refresh.addEventListener('click', function () { refreshAll(false); });
+  if (el.refresh) el.refresh.addEventListener('click', function () { refreshAll(false); });
 
   // 断线遮罩上唯一的出口：跳过退避立刻再试一次
   el.offlineNow.addEventListener('click', function () {
@@ -1653,151 +1517,334 @@
 })();
 </script>
 
+<!--@shell:script-->
 <script>
 /* ==========================================================================
-   车机控制页
-   只跟「车机助手」的 18766 端口说话：GET /cards 拿卡面数据和样式，
-   GET /probe 拿能力清单，POST /act 让助手自己执行动作。
-   这里不发任何车机总线命令，也不认识任何功能码。
+   统一外壳（18766 / 18765 / 18764 共用同一份）
+   - 顶上只有一条状态行 + 一行中文切换「车机控制 / 音乐控制」
+   - 车机控制在 18766，音乐控制是 18765（第三方）或 18764（桥接包）
+   - 自己这一端就能提供的直接显示；对端用 iframe 贴进来，不跳转、不闪
    ========================================================================== */
 (function () {
   'use strict';
 
-  var PORT = 18766;
-  var BASE = 'http://' + location.hostname + ':' + PORT;
-  var POLL_MS = 2500;
+  var D = document.documentElement;
+  if (D.className.indexOf('pane') >= 0) return;   // 内容页：外壳不参与
 
-  var page = document.getElementById('carPage');
-  var cardsBox = document.getElementById('carCards');
-  var capsBox = document.getElementById('carCaps');
-  var statusEl = document.getElementById('carStatus');
-  var dotEl = document.getElementById('carDot');
-  var logEl = document.getElementById('carLog');
-  var hintEl = document.getElementById('capHint');
-  var badeEl = document.getElementById('carBade');
-  var foot = document.getElementById('carDiag');
+  var HOST = location.hostname || '127.0.0.1';
+  var CAR_PORT = 18766;
+  var MUSIC_PORTS = [18765, 18764];
+  var K_TAB = 'jb.tab';
+  var K_MUS = 'jb.musPort';
 
-  foot.href = BASE + '/';
+  var CAR_BASE = 'http://' + HOST + ':' + CAR_PORT;
+  // 哪个端口发下来的页，就自带哪一路，不用 iframe 套自己
+  var NATIVE = String(location.port) === String(CAR_PORT) ? 'car' : 'music';
 
-  // 从 127.0.0.1 / localhost 打开时 hostname 是回环，车控那边要的是真实网卡地址。
-  // 18766 只认得到本机，问一下 18765 自己是谁，再把 BASE 换过去。
-  if (!location.hostname || location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
-    fetch('/api/where', { cache: 'no-store' }).then(function (r) {
-      return r.json();
-    }).then(function (d) {
-      if (d && d.ip) {
-        BASE = 'http://' + d.ip + ':' + PORT;
-        foot.href = BASE + '/';
-        loadCards();
-      }
-    }).catch(function () {});
+  var el = {};
+  ['shellRoot', 'sBar', 'sDot', 'sTxt', 'sSet', 'sReload', 'sTabCar', 'sTabMusic',
+   'sDotCar', 'sDotMusic', 'sPane', 'sFrame', 'sFail', 'sFailT', 'sFailS', 'sFailGo',
+   'sMask', 'sSheet', 'sClose', 'sKv', 'sSegs', 'sGen', 'sCopy', 'sSave', 'sTxt2',
+   'sTip', 'sDump', 'sClear'
+  ].forEach(function (id) { el[id] = document.getElementById(id); });
+
+  var stored = localStorage.getItem(K_TAB);
+  var tab = stored === 'car' || stored === 'music' ? stored : 'music';
+  var musPort = parseInt(localStorage.getItem(K_MUS) || '0', 10) || 0;
+  var carOk = null;      // null 还没探到 / true / false
+  var musOk = null;
+
+  // ---------- 状态行 ----------
+
+  function setStatus(text, kind) {
+    el.sTxt.textContent = text;
+    el.sDot.className = 'sdot' + (kind ? ' ' + kind : '');
   }
 
-  // ---------- 设置 / 诊断（车机屏幕没法复制，这里取文本到手机上） ----------
-
-  var csMask = document.getElementById('csetMask');
-  var csSheet = document.getElementById('csetSheet');
-  var csKv = document.getElementById('csetKv');
-  var csBox = document.getElementById('csetDiag');
-  var csText = '';
-  var csBusy = false;
-
-  function csetOpen() {
-    csSheet.classList.add('show');
-    csMask.classList.add('show');
-    csKv.textContent = '读取中…';
-    req('/ping').then(function (d) {
-      if (!d || d.ok !== 1) {
-        csKv.textContent = '18766 没响应';
-        return;
-      }
-      csKv.textContent = '地址　' + BASE + '\n'
-        + '服务　端口 ' + d.port + (d.bound ? ' 已绑定' : ' 未绑定') + ' · 接口 v' + d.v + '\n'
-        + '引擎　' + (d.helper ? '已绑定' : '未绑定 ← 打开一次桌面助手')
-        + ' · 界面 ' + (d.activity ? '已出现' : '未出现')
-        + (d.err ? '\n错误　' + d.err : '');
-    }).catch(function () {
-      csKv.textContent = '连不上 18766。先确认车机助手在跑。';
-    });
+  function paintDots() {
+    el.sDotCar.className = 'sn' + (carOk === true ? ' on' : (carOk === false ? ' off' : ''));
+    el.sDotMusic.className = 'sn' + (musOk === true ? ' on' : (musOk === false ? ' off' : ''));
   }
 
-  function csetClose() {
-    csSheet.classList.remove('show');
-    csMask.classList.remove('show');
+  function paintStatus() {
+    if (tab === 'car') {
+      if (carOk === null) setStatus('正在连接车机助手…');
+      else if (carOk) setStatus('已连接 · 车机助手', 'on');
+      else setStatus('车机助手未就绪 · 到车机上打开一次桌面助手', 'warn');
+    } else {
+      if (musOk === null) setStatus('正在找音乐端…');
+      else if (musOk) setStatus('音乐端在跑 · ' + musPort, 'on');
+      else setStatus('音乐端没响应 · 打开汽水音乐或桥接包', 'warn');
+    }
   }
 
-  /** 诊断要等服务端跑 logcat，普通 req() 那 3.5 秒不够 */
-  function csetLoad() {
-    if (csBusy) return;        // 服务端跑一次 logcat 要一两秒，连点会堆请求
-    csBusy = true;
-    csBox.textContent = '读取中…';
-    csText = '';
+  // ---------- 探活 ----------
+
+  function withTimeout(ms) {
     var ctl = window.AbortController ? new AbortController() : null;
     var o = { cache: 'no-store' };
-    var timer = null;
-    if (ctl) {
-      o.signal = ctl.signal;
-      timer = setTimeout(function () { ctl.abort(); }, 15000);
-    }
-    fetch(BASE + '/diag', o).then(function (r) {
-      if (timer) clearTimeout(timer);
-      return r.text();
-    }).then(function (t) {
-      csBusy = false;
-      csText = t;
-      csBox.textContent = t;
-      csBox.scrollTop = 0;
-    }).catch(function () {
-      if (timer) clearTimeout(timer);
-      csBusy = false;
-      csBox.textContent = '取不到诊断：18766 没响应。';
-    });
+    if (ctl) { o.signal = ctl.signal; setTimeout(function () { ctl.abort(); }, ms); }
+    return o;
   }
 
-  function csetCopy() {
-    if (!csText) {
-      toast('先点「生成诊断」');
+  function probeCar(cb) {
+    var done = false;
+    var t = setTimeout(function () { if (!done) { done = true; carOk = false; cb(false); } }, 2500);
+    fetch(CAR_BASE + '/ping?_=' + Date.now(), withTimeout(2500))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (done) return; done = true; clearTimeout(t);
+        carOk = !!(d && d.ok === 1); cb(carOk);
+      })
+      .catch(function () {
+        if (done) return; done = true; clearTimeout(t);
+        carOk = false; cb(false);
+      });
+  }
+
+  /* no-cors 只关心「连不连得上」：音乐端可能是别人的页，没有 /ping 也无所谓 */
+  function probeOne(port, cb) {
+    var done = false;
+    var t = setTimeout(function () { if (!done) { done = true; cb(false); } }, 1400);
+    fetch('http://' + HOST + ':' + port + '/?_=' + Date.now(),
+          { mode: 'no-cors', cache: 'no-store' })
+      .then(function () { if (done) return; done = true; clearTimeout(t); cb(true); })
+      .catch(function () { if (done) return; done = true; clearTimeout(t); cb(false); });
+  }
+
+  function probeMusic(cb) {
+    var order = [];
+    // 自己就是音乐服务端时，先认自己 —— 18764 的页不该报成 18765
+    if (NATIVE === 'music' && location.port) order.push(location.port);
+    if (musPort) order.push(musPort);
+    MUSIC_PORTS.forEach(function (p) { if (order.indexOf(p) < 0) order.push(p); });
+    var i = 0;
+    (function step() {
+      if (i >= order.length) {
+        musOk = false; musPort = 0;
+        localStorage.removeItem(K_MUS);
+        cb(false);
+        return;
+      }
+      var p = order[i++];
+      probeOne(p, function (ok) {
+        if (!ok) { step(); return; }
+        musOk = true; musPort = p;
+        localStorage.setItem(K_MUS, String(p));
+        cb(true);
+      });
+    })();
+  }
+
+  // ---------- 切换 ----------
+
+  function paneTop() {
+    if (!el.sPane) return;
+    var r = el.shellRoot ? el.shellRoot.getBoundingClientRect() : null;
+    el.sPane.style.top = Math.max(0, Math.round(r ? r.bottom + 1 : 0)) + 'px';
+    // 状态行固定在底部，内容区要按它的实际高度让位（含安全区）
+    if (el.sBar) D.style.setProperty('--sbar-h', el.sBar.offsetHeight + 'px');
+  }
+
+  function paneUrl(t) {
+    if (t === 'car') return 'http://' + HOST + ':' + CAR_PORT + '/?pane=car';
+    return musPort ? 'http://' + HOST + ':' + musPort + '/?pane=music' : '';
+  }
+
+  function showFail(t) {
+    el.sFailT.textContent = t === 'car' ? '车机助手没响应' : '音乐端没响应';
+    el.sFailS.innerHTML = t === 'car'
+      ? '到车机上确认「车机助手」在跑（18766），<br>再点右上角的刷新。'
+      : '车上跑的是第三方播放器就打开它（18765），<br>跑的是官方网易云就开桥接包（18764）。';
+    el.sFail.className = 'sfail on';
+  }
+
+  function hideFail() { el.sFail.className = 'sfail'; }
+
+  /* 两条路的宽度不一样（车控宽屏是两列、音乐是单列），
+     外壳跟着当前这一路走，顶栏才跟下面的内容对得齐。 */
+  function fitWidth(t) {
+    var cs = getComputedStyle(D);
+    var v = cs.getPropertyValue(t === 'car' ? '--w-car' : '--w-music').trim();
+    D.style.setProperty('--shell-w', v || '560px');
+  }
+
+  function apply(t, silent) {
+    tab = t;
+    localStorage.setItem(K_TAB, t);
+    fitWidth(t);
+    el.sTabCar.className = 'stab' + (t === 'car' ? ' on' : '');
+    el.sTabMusic.className = 'stab' + (t === 'music' ? ' on' : '');
+
+    if (t === NATIVE) {
+      D.classList.remove('foreign');
+      el.sPane.className = 'spane';
+      el.sPane.style.top = '';
+      hideFail();
+    } else {
+      D.classList.add('foreign');
+      var url = paneUrl(t);
+      if (!url) {
+        el.sPane.className = 'spane on';
+        paneTop();
+        showFail(t);
+      } else {
+        if (el.sFrame.getAttribute('src') !== url) el.sFrame.setAttribute('src', url);
+        el.sPane.className = 'spane on';
+        hideFail();
+        paneTop();
+      }
+    }
+    paintStatus();
+    if (!silent) closeSheet();
+  }
+
+  el.sTabCar.addEventListener('click', function () { apply('car'); });
+  el.sTabMusic.addEventListener('click', function () {
+    if (musOk === false) {
+      apply('music');            // 先把失败提示摆出来，别点了像没反应
+      probeMusic(function (ok) {
+        paintDots();
+        if (ok) apply('music');
+        else paintStatus();
+      });
       return;
+    }
+    apply('music');
+  });
+
+  el.sFailGo.addEventListener('click', function () { apply('car'); });
+
+  el.sReload.addEventListener('click', function () { location.reload(); });
+
+  // ---------- 设置 / 诊断（数据永远取 18766） ----------
+
+  var SEGS = {
+    diag: { url: '/diag', file: '车机诊断', slow: 18000,
+      tip: '端口、引擎绑定、安装包版本、动作项数、进程日志和 logcat 摘要。' },
+    log: { url: '/acts.log', file: '操作记录', slow: 6000,
+      tip: '每次点按钮的结果和耗时，最新的在最上面。' },
+    cards: { url: '/cards.txt', file: '车况快照', slow: 6000,
+      tip: '每张卡、每一项的名字和值。' },
+    acts: { url: '/acts.txt', file: '动作表', slow: 6000,
+      tip: '当前能执行的项和方法名。' }
+  };
+  var curSeg = 'diag';
+  var segCache = {};
+  var segBusy = false;
+
+  function openSheet() {
+    el.sSheet.className = 'ssheet show';
+    el.sMask.className = 'smask show';
+    el.sKv.textContent = '读取中…';
+    fetch(CAR_BASE + '/ping?_=' + Date.now(), withTimeout(3500))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || d.ok !== 1) { el.sKv.textContent = '18766 没响应'; return; }
+        el.sKv.textContent = '车控　' + CAR_BASE + '\n'
+          + '音乐　' + (musPort ? ('http://' + HOST + ':' + musPort) : '未探到') + '\n'
+          + '服务　端口 ' + d.port + (d.bound ? ' 已绑定' : ' 未绑定') + ' · 接口 v' + d.v + '\n'
+          + '引擎　' + (d.helper ? '已绑定' : '未绑定 ← 打开一次桌面助手')
+          + ' · 界面 ' + (d.activity ? '已出现' : '未出现') + '\n'
+          + '操作　' + (d.ops == null ? 0 : d.ops) + ' 次调用'
+          + (d.opsFail ? ' · 失败 ' + d.opsFail : '')
+          + (d.err ? '\n错误　' + d.err : '');
+      })
+      .catch(function () { el.sKv.textContent = '连不上 18766，诊断也取不到。'; });
+    pickSeg(curSeg);
+  }
+
+  function closeSheet() {
+    el.sSheet.className = 'ssheet';
+    el.sMask.className = 'smask';
+  }
+
+  function pickSeg(seg) {
+    if (!SEGS[seg]) return;
+    curSeg = seg;
+    Array.prototype.forEach.call(el.sSegs.children, function (b) {
+      b.classList.toggle('on', b.getAttribute('data-seg') === seg);
+    });
+    el.sTip.textContent = SEGS[seg].tip;
+    el.sTxt2.textContent = segCache[seg] || ('点「生成」取' + SEGS[seg].file + '。');
+    el.sTxt2.scrollTop = 0;
+    if (!segCache[seg] && !segBusy) loadSeg();
+  }
+
+  function loadSeg() {
+    if (segBusy) return;
+    var seg = curSeg;
+    var cfg = SEGS[seg];
+    segBusy = true;
+    el.sTxt2.textContent = '读取中…';
+    fetch(CAR_BASE + cfg.url + '?_=' + Date.now(), withTimeout(cfg.slow))
+      .then(function (r) { return r.text(); })
+      .then(function (t) {
+        segBusy = false; segCache[seg] = t;
+        if (curSeg === seg) { el.sTxt2.textContent = t; el.sTxt2.scrollTop = 0; }
+      })
+      .catch(function () {
+        segBusy = false;
+        if (curSeg === seg) {
+          el.sTxt2.textContent = '取不到：18766 没响应。\n'
+            + '浏览器里直接打开 ' + CAR_BASE + cfg.url + ' 看看。';
+        }
+      });
+  }
+
+  function toast(text) {
+    var t = document.getElementById('stoast');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'stoast';
+      t.style.cssText = 'position:fixed;left:50%;bottom:34px;transform:translate(-50%,10px);'
+        + 'max-width:80%;padding:10px 18px;border-radius:999px;z-index:200;'
+        + 'background:rgba(28,28,30,.96);border:1px solid rgba(255,255,255,.12);'
+        + 'font-size:13px;color:#fff;opacity:0;pointer-events:none;'
+        + 'transition:opacity .18s,transform .18s;font-family:inherit';
+      document.body.appendChild(t);
+    }
+    t.textContent = text;
+    t.style.opacity = '1';
+    t.style.transform = 'translate(-50%,0)';
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () {
+      t.style.opacity = '0';
+      t.style.transform = 'translate(-50%,10px)';
+    }, 1600);
+  }
+
+  function copyText(text) {
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;left:-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      toast(ok ? '已复制' : '复制被拦，长按文本全选');
     }
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(csText).then(function () {
-        toast('已复制');
-      }, csetFallbackCopy);
+      navigator.clipboard.writeText(text).then(function () { toast('已复制'); }, fallback);
     } else {
-      csetFallbackCopy();
+      fallback();
     }
   }
 
-  function csetFallbackCopy() {
-    var ta = document.createElement('textarea');
-    ta.value = csText;
-    ta.setAttribute('readonly', '');
-    ta.style.position = 'fixed';
-    ta.style.left = '-9999px';
-    document.body.appendChild(ta);
-    ta.select();
-    ta.setSelectionRange(0, csText.length);
-    var ok = false;
-    try {
-      ok = document.execCommand('copy');
-    } catch (e) {
-      ok = false;
-    }
-    document.body.removeChild(ta);
-    toast(ok ? '已复制' : '复制被拦，长按文本全选');
-  }
-
-  function csetSave() {
-    if (!csText) {
-      toast('先点「生成诊断」');
-      return;
-    }
+  function stamp() {
     var d = new Date();
     var p = function (n) { return (n < 10 ? '0' : '') + n; };
-    var name = '车机诊断_' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate())
-      + '-' + p(d.getHours()) + p(d.getMinutes()) + '.txt';
+    return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate())
+      + '-' + p(d.getHours()) + p(d.getMinutes());
+  }
+
+  function saveText(text, name) {
     try {
-      var blob = new Blob([csText], { type: 'text/plain;charset=utf-8' });
+      var blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');
       a.href = url;
@@ -1811,323 +1858,78 @@
       }, 1500);
       toast('已保存 ' + name);
     } catch (e) {
-      toast('下载不支持，长按文本手动复制');
+      toast('下载不支持，长按文本复制');
     }
   }
 
-  document.getElementById('carSet').addEventListener('click', csetOpen);
-  document.getElementById('csetClose').addEventListener('click', csetClose);
-  csMask.addEventListener('click', csetClose);
-  document.getElementById('csetLoad').addEventListener('click', csetLoad);
-  document.getElementById('csetCopy').addEventListener('click', csetCopy);
-  document.getElementById('csetSave').addEventListener('click', csetSave);
-
-
-  var isOpen = false;
-  var pollTimer = null;
-  var actsAt = 0;
-  var inflight = false;
-
-  // ---------- 基础 ----------
-
-  function setStatus(text, kind) {
-    statusEl.textContent = text;
-    dotEl.className = 'cddot' + (kind ? ' ' + kind : '');
-  }
-
-  function toast(text) {
-    var t = document.getElementById('toast');
-    if (!t) return;
-    t.textContent = text;
-    t.classList.add('show');
-    if (toast._t) clearTimeout(toast._t);
-    toast._t = setTimeout(function () { t.classList.remove('show'); }, 1600);
-  }
-
-  /** Android 的 #AARRGGBB -> CSS rgba() */
-  function argb(s) {
-    if (!s) return 'rgba(255,255,255,.9)';
-    var h = String(s).replace(/^#/, '');
-    if (h.length === 8) {
-      var a = parseInt(h.substr(0, 2), 16) / 255;
-      var r = parseInt(h.substr(2, 2), 16);
-      var g = parseInt(h.substr(4, 2), 16);
-      var b = parseInt(h.substr(6, 2), 16);
-      return 'rgba(' + r + ',' + g + ',' + b + ',' + (a > 0 ? a : 1).toFixed(3) + ')';
-    }
-    return '#' + h;
-  }
-
-  function req(path, opt) {
-    opt = opt || {};
-    var ctl = window.AbortController ? new AbortController() : null;
-    var opt2 = { cache: 'no-store', method: opt.method || 'GET', headers: opt.headers || {} };
-    if (ctl) opt2.signal = ctl.signal;
-    if (opt.body) opt2.body = opt.body;
-
-    var timer = ctl ? setTimeout(function () { ctl.abort(); }, 3500) : null;
-
-    return fetch(BASE + path, opt2).then(function (r) {
-      if (timer) clearTimeout(timer);
-      return r.text();
-    }).then(function (txt) {
-      return JSON.parse(txt);
-    }).catch(function (e) {
-      if (timer) clearTimeout(timer);
-      throw e;
-    });
-  }
-
-  // ---------- 卡面 ----------
-
-  function line(tag, cls, text) {
-    var n = document.createElement(tag);
-    if (cls) n.className = cls;
-    if (text != null) n.textContent = text;
-    return n;
-  }
-
-  function paintStyle(st) {
-    st = st || {};
-    var alpha = (st.alpha == null ? 90 : st.alpha) / 100;
-    cardsBox.style.setProperty('--calpha', alpha.toFixed(2));
-    cardsBox.style.setProperty('--cradius', (st.radius || 12) + 'px');
-    cardsBox.style.setProperty('--cmargin', (st.margin || 8) + 'px');
-    cardsBox.style.setProperty('--cprop', argb(st.propColor));
-    cardsBox.style.setProperty('--cvalue', argb(st.valueColor));
-    cardsBox.style.setProperty('--cfs', (st.fontSize || 20) + 'px');
-  }
-
-  function paintCards(d) {
-    cardsBox.textContent = '';
-
-    if (!d || d.ok !== 1) {
-      var box = line('div', 'carempty');
-      box.appendChild(line('div', null, '车机助手还没就绪'));
-      box.appendChild(line('div', null, (d && d.err) ? d.err : '拿不到卡片数据'));
-      cardsBox.appendChild(box);
-      if (d && d.log && d.log.length) showLog(d.log);
-      return;
-    }
-
-    paintStyle(d.style);
-    var cards = d.cards || [];
-    if (!cards.length) {
-      cardsBox.appendChild(line('div', 'carempty', '卡片暂无数据（车机助手可能还没生成车控卡）'));
-      return;
-    }
-
-    cards.forEach(function (c) {
-      var card = line('div', 'ccard');
-      if (c.title) card.appendChild(line('div', 'ccard-t', c.title));
-
-      var grid = line('div', 'cgrid');
-      var cols = Math.max(1, Math.min(4, c.cols || 1));
-      grid.style.gridTemplateColumns = 'repeat(' + cols + ', minmax(0,1fr))';
-
-      (c.items || []).forEach(function (it) {
-        var cell = line('div', 'citem');
-        cell.style.gridColumn = 'span ' + Math.max(1, Math.min(cols, it.s || 1));
-        cell.appendChild(line('span', 'k', it.k || ''));
-        cell.appendChild(line('span', 'v', it.v == null || it.v === '' ? '—' : it.v));
-        grid.appendChild(cell);
-      });
-
-      card.appendChild(grid);
-      cardsBox.appendChild(card);
-    });
-  }
-
-  // ---------- 能力 ----------
-
-  function paintActs(d) {
-    capsBox.textContent = '';
-    if (!d || d.ok !== 1) {
-      hintEl.textContent = '';
-      capsBox.appendChild(line('div', 'carempty', '动作表拿不到，18766 没响应'));
-      return;
-    }
-    var gs = d.groups || [];
-    var total = 0;
-    gs.forEach(function (g) {
-      var items = g.items || [];
-      if (!items.length) return;
-      total += items.length;
-      capsBox.appendChild(line('div', 'capgrp', g.g));
-      var grid = line('div', 'caps');
-      items.forEach(function (it) {
-        var b = line('button', 'cap');
-        b.appendChild(line('span', 'nm', it.t || it.id));
-        b.addEventListener('click', function () { doAct(it.id, it.t || it.id, it.v); });
-        grid.appendChild(b);
-      });
-      capsBox.appendChild(grid);
-    });
-    hintEl.textContent = total ? (total + ' 项') : '';
-    if (!total) {
-      capsBox.appendChild(line('div', 'carempty', '助手未绑定，先打开一次车机上的「桌面助手」'));
-    }
-  }
-
-  function doAct(id, name, v) {
-    if (busy) return;
-    busy = true;
-    statusEl.textContent = '执行：' + name;
-    req('/act', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ a: id, v: (v == null ? -1 : v) })
-    }).then(function (r) {
-      busy = false;
-      if (r && r.ok === 1) {
-        toast(name + ' 已执行');
-        setStatus('已执行：' + name, 'on');
-      } else {
-        toast(name + ' 没执行成功');
-        setStatus((r && r.err) ? r.err : '执行失败', 'warn');
-        if (r && r.tried) showLog('tried: ' + r.tried.join(' , '));
-      }
-      setTimeout(loadCards, 500);
-    }).catch(function (e) {
-      busy = false;
-      toast('连不上车机助手');
-      setStatus('18766 连不上：' + (e && e.name === 'AbortError' ? '超时' : '网络错误'), 'off');
-      badeEl.className = 'bade';
-    });
-  }
-
-  // ---------- 日志 ----------
-
-  function showLog(lines) {
-    if (!lines || !lines.length) return;
-    logEl.classList.remove('hidden');
-    logEl.textContent = lines.slice(-8).join('\n');
-  }
-
-  // ---------- 数据加载 ----------
-
-  function loadCards() {
-    if (inflight) return;
-    inflight = true;
-    req('/cards').then(function (d) {
-      inflight = false;
-      paintCards(d);
-      setStatus(d && d.ok === 1 ? '已连接 · 车机助手' : '车机助手未就绪', d && d.ok === 1 ? 'on' : 'warn');
-      badeEl.className = 'bade' + (d && d.ok === 1 ? ' on' : '');
-      if (d && d.log) showLog(d.log);
-    }).catch(function (e) {
-      inflight = false;
-      paintCards({ ok: 0, err: '连不上 18766（' + (e && e.name === 'AbortError' ? '超时' : '网络错误') + '）' });
-      setStatus('连不上车机助手 18766', 'off');
-      badeEl.className = 'bade';
-    });
-  }
-
-  function loadActs(force) {
-    var now = Date.now();
-    if (!force && now - actsAt < 30000) return;
-    req('/acts').then(function (d) {
-      actsAt = Date.now();
-      paintActs(d);
-    }).catch(function () {
-      paintActs(null);
-    });
-  }
-
-  function refreshAll() {
-    loadCards();
-    loadActs(true);
-  }
-
-  // ---------- 打开 / 关闭 ----------
-
-  function openCar() {
-    if (isOpen) return;
-    isOpen = true;
-    page.classList.add('open');
-    document.body.classList.add('car-open');
-    setStatus('正在连接车机助手…');
-    refreshAll();
-    if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(function () {
-      if (!isOpen || document.hidden) return;
-      loadCards();
-    }, POLL_MS);
-  }
-
-  function closeCar() {
-    if (!isOpen) return;
-    isOpen = false;
-    page.classList.remove('open');
-    document.body.classList.remove('car-open');
-    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-    csetClose();   // 面板跟着一起收，别留一层浮在音乐页上
-  }
-
-  document.getElementById('openCar').addEventListener('click', openCar);
-  document.getElementById('closeCar').addEventListener('click', closeCar);
-  document.getElementById('carRefresh').addEventListener('click', function () {
-    refreshAll();
-    toast('已刷新');
+  el.sSet.addEventListener('click', openSheet);
+  el.sClose.addEventListener('click', closeSheet);
+  el.sMask.addEventListener('click', closeSheet);
+  el.sSegs.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('.sstab') : null;
+    if (b) pickSeg(b.getAttribute('data-seg'));
+  });
+  el.sGen.addEventListener('click', loadSeg);
+  el.sCopy.addEventListener('click', function () {
+    if (!segCache[curSeg]) { toast('先点「生成」'); return; }
+    copyText(segCache[curSeg]);
+  });
+  el.sSave.addEventListener('click', function () {
+    if (!segCache[curSeg]) { toast('先点「生成」'); return; }
+    saveText(segCache[curSeg], SEGS[curSeg].file + '_' + stamp() + '.txt');
+  });
+  el.sDump.addEventListener('click', function () {
+    toast('正在打包…');
+    fetch(CAR_BASE + '/dump?_=' + Date.now(), withTimeout(25000))
+      .then(function (r) { return r.text(); })
+      .then(function (t) { saveText(t, '车机全量_' + stamp() + '.txt'); })
+      .catch(function () { toast('打包失败，先试单个「下载」'); });
+  });
+  el.sClear.addEventListener('click', function () {
+    fetch(CAR_BASE + '/log/clear', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (r && r.ok === 1) { delete segCache.log; toast('操作记录已清空'); }
+        else toast('清空失败');
+      })
+      .catch(function () { toast('连不上桥接服务'); });
   });
 
-  // 后台时不轮询，回到前台立刻补一次
-  document.addEventListener('visibilitychange', function () {
-    if (!document.hidden && isOpen) loadCards();
+  // ---------- 起 ----------
+
+  window.addEventListener('resize', paneTop);
+
+  apply(tab, true);
+  D.classList.add('ready');
+  paneTop();
+
+  probeCar(function () {
+    paintDots();
+    paintStatus();
+    // 第一次进来默认落音乐；音乐端没有就退回车控，别让人对着空框
+    if (tab === 'music' && !stored) {
+      probeMusic(function (ok) {
+        paintDots();
+        if (!ok) apply('car');
+        else apply('music', true);   // 探到了就把框补上，别停在「没响应」上
+      });
+      return;
+    }
+    probeMusic(function (ok) {
+      paintDots();
+      paintStatus();
+      // 开局那次 apply 可能还没探到端口，补一次
+      if (ok && tab !== NATIVE) apply(tab, true);
+    });
   });
 
-  // ---------- 左右滑动切换 ----------
-
-  var sx = 0, sy = 0, st = 0, tracking = false;
-
-  document.addEventListener('touchstart', function (e) {
-    tracking = false;
-    if (e.touches.length !== 1) return;
-    var t = e.target;
-    if (t && t.closest && t.closest('input,textarea,select')) return;
-    sx = e.touches[0].clientX;
-    sy = e.touches[0].clientY;
-    st = Date.now();
-    tracking = true;
-  }, { passive: true });
-
-  document.addEventListener('touchend', function (e) {
-    if (!tracking) return;
-    tracking = false;
-    // App 里和车控页嵌入里都不做左右滑：切换归原生 tab / 外层车控页管，这里再滑就是套娃
-    if (IN_APP || EMBED) return;
-    var t = e.changedTouches[0];
-    if (!t) return;
-    var dx = t.clientX - sx;
-    var dy = t.clientY - sy;
-
-    // 横向位移够大、且明显横多于竖、且不是长按拖拽
-    if (Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 1.6) return;
-    if (Date.now() - st > 1400) return;
-
-    if (!isOpen) {
-      // 音乐页上往左滑 -> 进车控
-      if (dx < 0) {
-        var sheet = document.getElementById('sheet');
-        var add = document.getElementById('addPanel');
-        if (sheet && sheet.classList.contains('open')) return;
-        if (add && !add.classList.contains('hidden')) return;
-        openCar();
-      }
-    } else if (dx > 0) {
-      closeCar();
-    }
-  }, { passive: true });
-
-  // 首屏静默探一次，让顶部小圆点一开始就有颜色
-  setTimeout(function () {
-    req('/ping').then(function () {
-      badeEl.className = 'bade on';
-    }).catch(function () {
-      badeEl.className = 'bade';
-    });
-  }, 1200);
+  setInterval(function () {
+    if (document.hidden) return;
+    probeCar(function () { paintDots(); paintStatus(); });
+  }, 15000);
 })();
+
 </script>
+<!--@/shell:script-->
 </body>
 </html>
