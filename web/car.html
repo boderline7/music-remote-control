@@ -150,6 +150,22 @@
   .svc-btn.on{color:#fff}
   a.svc-btn{display:flex;align-items:center;justify-content:center;text-decoration:none;
     -webkit-tap-highlight-color:transparent}
+  /* 18765 探活小圆点：绿=音乐端在跑，红=没起来（点了会撞空页，所以拦住） */
+  .svc-dot{display:inline-block;width:5px;height:5px;border-radius:50%;margin-left:5px;
+    background:#8e8e93;vertical-align:middle;transition:background .2s}
+  .svc-dot.on{background:#34c759}
+  .svc-dot.off{background:#ff453a}
+  .svc-seg[data-view="car"] .svc-knob{transform:translateX(0)}
+  .svc-seg[data-view="music"] .svc-knob{transform:translateX(calc(100% + 6px))}
+  .svc-knob{transition:transform .2s cubic-bezier(.32,.72,0,1)}
+
+  /* 音乐控制：贴一块 iframe 在同一个页面里，不做整页跳转。
+     真机上「闪一下又回原页」就是跳转被打断 —— 不跳就不会闪。
+     脚本全挂时，上面那只 <a href> 还是照旧整页跳过去，兜底不丢。 */
+  #musPane{position:fixed;left:0;right:0;bottom:0;z-index:120;display:none;
+    background:#0b0b0d;border-top:1px solid var(--line)}
+  #musPane.on{display:block}
+  #musFrame{display:block;width:100%;height:100%;border:0;background:#0b0b0d}
   header,#scroll{transition:transform .26s cubic-bezier(.32,.72,0,1)}
 
   #toast{
@@ -219,7 +235,7 @@
 <header>
   <span id="dot"></span>
   <span id="status">正在连接车机助手…</span>
-  <i class="ver">b14</i>
+  <i class="ver">b15</i>
   <button class="icon-btn" id="refresh" aria-label="刷新">
     <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
   </button>
@@ -229,18 +245,26 @@
 </header>
 
 <div class="svc">
-  <div class="svc-seg">
+  <div class="svc-seg" data-view="car">
     <span class="svc-knob"></span>
-    <a class="svc-btn on" href="javascript:void 0">车机控制</a>
-    <a class="svc-btn" id="goMusic" href="http://127.0.0.1:18765/">音乐控制</a>
+    <a class="svc-btn on" id="goCar" href="javascript:void 0">车机控制</a>
+    <a class="svc-btn" id="goMusic" href="http://{{HOST}}:18765/">音乐控制<i class="svc-dot" id="musDot"></i></a>
   </div>
 </div>
+<div id="musPane"><iframe id="musFrame" title="音乐控制"></iframe></div>
 <script>
-  /* 独立小脚本：只负责把地址换成当前主机的 18765，别的什么都不管 */
+  /* 地址两重保险：
+     1. 服务端下发时把 {{HOST}} 换成请求里的真实主机 —— 脚本全挂也点得动；
+     2. 这里再用 location.hostname 校正一次 —— 直接开网页文件时也成立。 */
   (function () {
-    var h = location.hostname || '127.0.0.1';
+    var h = location.hostname;
     var b = document.getElementById('goMusic');
-    if (b) b.href = 'http://' + h + ':18765/';
+    if (b && h) b.href = 'http://' + h + ':18765/';
+    // 被音乐页拿 iframe 嵌进来时，自己这条切换栏就不要了，省得套娃
+    if (location.search.indexOf('embed=1') >= 0) {
+      var sv = document.querySelector('.svc');
+      if (sv) sv.style.display = 'none';
+    }
   })();
 </script>
 
@@ -1060,10 +1084,106 @@
     if (!document.hidden) loadCards();
   });
 
-  // 顶部两个按钮是 <a href>，地址在上面那段小脚本里设好，这里不再绑事件。
+  /* 顶部两个按钮是 <a href>，地址在上面那段小脚本里设好，这里不绑跳转。
+     只多做一件事：盯着 18765 通不通，红了就别让人点进去撞空页。 */
+  var musDot = document.getElementById('musDot');
+  var musGo = document.getElementById('goMusic');
+  var musOk = null;
+
+  function paintMusDot() {
+    if (!musDot) return;
+    musDot.className = 'svc-dot' + (musOk === true ? ' on' : (musOk === false ? ' off' : ''));
+  }
+
+  function probeMusic() {
+    var h = location.hostname || '127.0.0.1';
+    var done = false;
+    var timer = setTimeout(function () {
+      if (done) return;
+      done = true;
+      musOk = false;
+      paintMusDot();
+    }, 2200);
+    fetch('http://' + h + ':18765/ping?t=' + (new Date().getTime()),
+          { mode: 'no-cors', cache: 'no-store' })
+      .then(function () {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        musOk = true;
+        paintMusDot();
+      })
+      .catch(function () {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        musOk = false;
+        paintMusDot();
+      });
+  }
+
+  /* 切页：不跳转，直接把 18765 的页面嵌进来（同一个屏幕里换内容）。 */
+  var musPane = document.getElementById('musPane');
+  var musFrame = document.getElementById('musFrame');
+  var carTab = document.getElementById('goCar');
+  var segBar = document.querySelector('.svc-seg');
+
+  function paneTop() {
+    if (!musPane || !segBar) return;
+    var r = segBar.getBoundingClientRect();
+    musPane.style.top = Math.max(0, Math.round(r.bottom + 6)) + 'px';
+  }
+
+  function showMusic() {
+    if (!musPane || !musFrame) return false;
+    var h = location.hostname || '127.0.0.1';
+    var src = 'http://' + h + ':18765/?embed=1';
+    if (musFrame.getAttribute('src') !== src) musFrame.setAttribute('src', src);
+    paneTop();
+    musPane.className = 'on';
+    if (segBar) segBar.setAttribute('data-view', 'music');
+    if (musGo) musGo.className = 'svc-btn on';
+    if (carTab) carTab.className = 'svc-btn';
+    return true;
+  }
+
+  function showCar() {
+    if (!musPane) return false;
+    musPane.className = '';
+    if (segBar) segBar.setAttribute('data-view', 'car');
+    if (musGo) musGo.className = 'svc-btn';
+    if (carTab) carTab.className = 'svc-btn on';
+    return true;
+  }
+
+  if (musGo) {
+    musGo.addEventListener('click', function (e) {
+      if (musOk === false) {
+        e.preventDefault();
+        toast('音乐端 18765 没响应：到车机上打开一次汽水音乐再切');
+        return;
+      }
+      if (showMusic()) e.preventDefault();   // 嵌进来了就不用跳
+    });
+  }
+  if (carTab) {
+    carTab.addEventListener('click', function (e) {
+      if (musPane && musPane.className.indexOf('on') >= 0) {
+        e.preventDefault();
+        showCar();
+      }
+    });
+  }
+  window.addEventListener('resize', paneTop);
 
   refreshAll();
   setInterval(function () { if (!document.hidden) loadCards(); }, POLL_MS);
+
+  // 探活放最后：老 WebView 上没有 fetch 也只是圆点不亮，别把整页脚本带崩
+  try {
+    probeMusic();
+    setInterval(probeMusic, 8000);
+  } catch (err) { }
 })();
 </script>
 </body>

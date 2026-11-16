@@ -121,13 +121,21 @@ final class HttpServer implements Runnable {
             }
 
             int contentLength = 0;
+            String host = "";
             String line;
             while ((line = readLine(in)) != null && line.length() > 0) {
                 int c = line.indexOf(':');
-                if (c > 0 && "content-length".equalsIgnoreCase(line.substring(0, c).trim())) {
-                    try {
-                        contentLength = Integer.parseInt(line.substring(c + 1).trim());
-                    } catch (NumberFormatException ignored) {
+                if (c > 0) {
+                    String k = line.substring(0, c).trim();
+                    String v = line.substring(c + 1).trim();
+                    if ("content-length".equalsIgnoreCase(k)) {
+                        try {
+                            contentLength = Integer.parseInt(v);
+                        } catch (NumberFormatException ignored) {
+                        }
+                    } else if ("host".equalsIgnoreCase(k)) {
+                        // 页面里的 @HOST@ 用它替换：手机/平板用局域网 IP 打开也能点到对端端口
+                        host = v;
                     }
                 }
             }
@@ -265,7 +273,7 @@ final class HttpServer implements Runnable {
                 // 只能靠这个软重启把 Activity / Helper 重新抓一遍，顺带再要一次前台服务。
                 out = restartJson(ctx);
             } else if ("/".equals(path) || "/index.html".equals(path) || "/ui".equals(path)) {
-                out = Page.html(ctx);
+                out = Page.html(ctx, host);
                 ct = "text/html; charset=utf-8";
             } else {
                 out = "{\"ok\":0,\"err\":\"unknown path\"}";

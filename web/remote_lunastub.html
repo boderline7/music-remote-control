@@ -428,6 +428,14 @@
     display: flex; align-items: center; justify-content: center;
     text-decoration: none; -webkit-tap-highlight-color: transparent;
   }
+  /* 车机控制：贴一块 iframe 在同一个页面里，不做整页跳转。
+     真机上「闪一下又回原页」就是跳转被打断 —— 不跳就不会闪。 */
+  #carPane {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 120; display: none;
+    background: #0b0b0d; border-top: 1px solid var(--line);
+  }
+  #carPane.on { display: block; }
+  #carFrame { display: block; width: 100%; height: 100%; border: 0; background: #0b0b0d; }
   body > header, #scroll { transition: transform .26s cubic-bezier(.32,.72,0,1); }
 
   /* ==================================================================
@@ -668,7 +676,7 @@
   <header>
     <span id="dot"></span>
     <span id="status">正在连接车机…</span>
-    <i class="ver">2.10.11</i>
+    <i class="ver">2.10.12</i>
     <button class="icon-btn" id="gear" aria-label="车机设置">
       <svg viewBox="0 0 24 24"><path d="M4 6h9M18 6h2M4 12h3M12 12h8M4 18h9M18 18h2"/><circle cx="15.5" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="15.5" cy="18" r="2"/></svg>
     </button>
@@ -684,16 +692,28 @@
   <div class="svc">
     <div class="svc-seg" data-view="music">
       <span class="svc-knob"></span>
-      <a class="svc-btn" id="goCar" data-view="car" href="http://127.0.0.1:18766/">车机控制</a>
-      <a class="svc-btn on" data-view="music" href="javascript:void 0">音乐控制</a>
+      <a class="svc-btn" id="goCar" data-view="car" href="http://{{HOST}}:18766/">车机控制</a>
+      <a class="svc-btn on" id="goMusic" data-view="music" href="javascript:void 0">音乐控制</a>
     </div>
   </div>
+  <div id="carPane"><iframe id="carFrame" title="车机控制"></iframe></div>
   <script>
-    /* 单独一段，放在按钮正下方：不依赖下面任何脚本，崩了也点得动 */
+    /* 地址两重保险：服务端把 {{HOST}} 换成真实主机（脚本全挂也点得动），
+       这里再用 location.hostname 校正一次（直接开网页文件时也成立）。 */
     (function () {
-      var h = location.hostname || '127.0.0.1';
+      var h = location.hostname;
       var a = document.getElementById('goCar');
-      if (a) a.href = 'http://' + h + ':18766/';
+      if (a && h) a.href = 'http://' + h + ':18766/';
+      // 被车控页拿 iframe 嵌进来时，自己这条切换栏、入口图标、顶栏都收起来：
+      // 外面那层已经有状态栏了，别叠成两条
+      if (location.search.indexOf('embed=1') >= 0) {
+        var sv = document.querySelector('.svc');
+        if (sv) sv.style.display = 'none';
+        var ic = document.getElementById('openCar');
+        if (ic) ic.style.display = 'none';
+        var hd = document.querySelector('body > header');
+        if (hd) hd.style.display = 'none';
+      }
     })();
   </script>
 
@@ -2776,27 +2796,47 @@
   /* 顶部两个按钮本身就是 <a href>，这里不再绑点击：
      多一层 JS 只会多一个可能失效的地方。 */
 
-  /* 车控页在 18766（车机助手那个包）。点了就整页过去，不做页内滑入、不做手势。 */
+  /* 车控页在 18766（车机助手那个包）。不跳转：用 iframe 贴进这一页，
+     切回去只是把它藏起来 —— 没有导航就不会「闪一下又回原页」。 */
+  var carPane = document.getElementById('carPane');
+  var carFrame = document.getElementById('carFrame');
+
   function carUrl() {
     return 'http://' + (location.hostname || '127.0.0.1') + ':18766/';
   }
 
+  function paneTop() {
+    var bar = document.querySelector('.svc');
+    if (!carPane || !bar) return;
+    var r = bar.getBoundingClientRect();
+    carPane.style.top = Math.max(0, Math.round(r.bottom + 6)) + 'px';
+  }
+
   function openCar() {
-    location.href = carUrl();
+    if (!carPane || !carFrame) { location.href = carUrl(); return; }   // 极端兜底
+    var src = carUrl() + '?embed=1';
+    if (carFrame.getAttribute('src') !== src) carFrame.setAttribute('src', src);
+    paneTop();
+    carPane.className = 'on';
+    isOpen = true;
+    syncSeg('car');
   }
 
   function closeCar() {
-    if (!isOpen) return;
+    if (!carPane || carPane.className.indexOf('on') < 0) { syncSeg('music'); return; }
+    carPane.className = '';
     isOpen = false;
-    page.classList.remove('open');
-    document.body.classList.remove('car-open');
-    anim(true);
-    mainX(0);
-    carX(window.innerWidth);
     syncSeg('music');
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
     csetClose();   // 面板跟着一起收，别留一层浮在音乐页上
   }
+  window.addEventListener('resize', paneTop);
+
+  // 顶部两个 tab：一个开 iframe，一个收起来，都不跳页
+  var goCarBtn = document.getElementById('goCar');
+  var goMusicBtn = document.getElementById('goMusic');
+  if (goCarBtn) goCarBtn.addEventListener('click', function (e) { e.preventDefault(); openCar(); });
+  if (goMusicBtn) goMusicBtn.addEventListener('click', function (e) { e.preventDefault(); closeCar(); });
 
   document.getElementById('openCar').addEventListener('click', openCar);
   document.getElementById('closeCar').addEventListener('click', closeCar);

@@ -2,17 +2,27 @@
 const http = require('http');
 const fs = require('fs');
 
+
+/* 和真机一致：把 {{HOST}} 换成请求里的主机名 */
+function withHost(html, req) {
+  const h = String(req.headers.host || '').split(':')[0] || '127.0.0.1';
+  return html.replace(/\{\{HOST\}\}/g, h);
+}
+
 const PAGE = process.argv[2] || 'D:/车机/车机桥接空调/web/remote_lunastub.html';
 
 http.createServer((req, res) => {
   const u = req.url.split('?')[0];
   if (u === '/' || u === '/index.html') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(fs.readFileSync(PAGE));
+    res.end(withHost(fs.readFileSync(PAGE, 'utf8'), req));
+  } else if (u === '/ping') {
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+    res.end('ok');
   } else {
     res.writeHead(404); res.end();
   }
-}).listen(18765, '127.0.0.1');
+}).listen(18765, '0.0.0.0');
 
 const cards = {
   ok: 1, at: Date.now(),
@@ -170,7 +180,7 @@ http.createServer((req, res) => {
   req.on('end', () => {
     if (u === '/' || u === '/index.html') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
-      res.end(fs.readFileSync('D:/车机/车机桥接空调/web/car.html')); return;
+      res.end(withHost(fs.readFileSync('D:/车机/车机桥接空调/web/car.html', 'utf8'), req)); return;
     }
     if (u === '/cards') { res.writeHead(200, h); res.end(JSON.stringify(cards)); return; }
     if (u === '/acts') { res.writeHead(200, h); res.end(JSON.stringify(acts)); return; }
@@ -256,6 +266,6 @@ http.createServer((req, res) => {
     }
     res.writeHead(404, h); res.end('{}');
   });
-}).listen(18766, '127.0.0.1');
+}).listen(18766, '0.0.0.0');
 
 console.log('preview up: http://127.0.0.1:18765/');

@@ -19,10 +19,21 @@ final class Page {
 
     private static final String ASSET = "carbridge.html";
 
+    /** 页面里的占位符：下发时换成请求 Host，客户端 JS 全挂也点得动。 */
+    private static final String HOST_TAG = "{{HOST}}";
+
     private Page() {
     }
 
     static String html(Context ctx) {
+        return html(ctx, "");
+    }
+
+    static String html(Context ctx, String host) {
+        return fill(raw(ctx), host);
+    }
+
+    private static String raw(Context ctx) {
         try {
             File dir = ctx.getExternalFilesDir(null);
             if (dir != null) {
@@ -45,6 +56,33 @@ final class Page {
             Bridge.note("page asset: " + Bridge.root(t));
         }
         return builtin();
+    }
+
+    /**
+     * 把 {{HOST}} 换成请求里的主机名。Host 是客户端给的，只放行 IP / 域名会用到的字符，
+     * 顺手去掉端口；换不到就退回 127.0.0.1 —— 车机自己访问永远成立。
+     */
+    private static String fill(String page, String host) {
+        if (page == null || page.indexOf(HOST_TAG) < 0) {
+            return page;
+        }
+        String h = host == null ? "" : host.trim();
+        int colon = h.indexOf(':');
+        if (colon > 0) {
+            h = h.substring(0, colon);
+        }
+        StringBuilder b = new StringBuilder(32);
+        for (int i = 0; i < h.length(); i++) {
+            char c = h.charAt(i);
+            if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z')
+                    || (c >= 'A' && c <= 'Z') || c == '.' || c == '-') {
+                b.append(c);
+            }
+        }
+        if (b.length() == 0) {
+            b.append("127.0.0.1");
+        }
+        return page.replace(HOST_TAG, b.toString());
     }
 
     private static String read(File f) throws Exception {
