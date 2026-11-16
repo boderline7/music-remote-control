@@ -8,7 +8,7 @@ import java.util.ArrayList;
 /** 常量与无检查异常的 JSON / LRC 小工具。全顶层类，避开 d8 8.2.2 的匿名类 NPE。 */
 final class Cfg {
     static final String TAG = "NcmRemote";
-    static final int PORT = 18765;
+    static final int PORT = 18764;
     static final int V = 1;
     static final String NSD_TYPE = "_cloudmusic-car._tcp";
     static final String NSD_NAME = "cloudmusic-car";

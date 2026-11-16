@@ -182,8 +182,14 @@ final class Acts {
             Bridge.note("fan: " + Bridge.root(t));
             return "{\"ok\":0,\"err\":" + Bridge.q(Bridge.root(t)) + "}";
         }
-        return "{\"ok\":1,\"front\":" + level(helper, "hvac_fan")
-                + ",\"rear\":" + level(helper, "hvac_rear_fan") + "}";
+        // 后排没有「未知」这种状态：读不到就当关着（0），否则界面上会出现一条横杠，
+        // 看着像坏了。前排是 1-7 档，读不到仍然给 -1，让界面显示未读到。
+        int fr = level(helper, "hvac_fan");
+        int rr = level(helper, "hvac_rear_fan");
+        if (rr < 0) {
+            rr = 0;
+        }
+        return "{\"ok\":1,\"front\":" + fr + ",\"rear\":" + rr + "}";
     }
 
     /** 读当前档位：借 getCarInfoValue(...)。读不到返回 -1，「关闭 / 关」算 0。 */

@@ -85,30 +85,27 @@
   .cap:active{background:rgba(250,45,72,.28);border-color:rgba(250,45,72,.5)}
   .cap .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-  /* 风量：连续量，做成减/加两个键，比滑条在车机屏上点得准 */
-  .fanrow{display:flex;align-items:center;gap:10px;margin:8px auto 0;max-width:420px;padding:8px 12px;
-    border-radius:12px;background:var(--card);border:1px solid var(--line)}
-  .fanrow .fl{flex:none;width:2.6em;font-size:13px;color:var(--dim)}
-  .fanrow .fv{flex:1;text-align:center;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
-  .fanrow .fb{flex:none;width:46px;height:38px;border-radius:10px;font-size:19px;line-height:1;
-    background:rgba(255,255,255,.07);border:1px solid var(--line);color:#fff}
-  .fanrow .fb:active{background:rgba(250,45,72,.3);border-color:rgba(250,45,72,.5)}
-  .fanrow .fb:disabled{opacity:.3}
-  .temprow{margin:8px auto 0;max-width:420px;padding:10px 12px 4px;border-radius:12px;
+  /* 连续量（温度 / 风量）统一成一只「滑块 + 加减」的卡片：
+     滑块给手感，两边的键给准头 —— 车机屏上手糙，单靠拖容易拖过。 */
+  .ctlrow{margin:8px auto 0;max-width:460px;padding:12px 14px 10px;border-radius:14px;
     background:var(--card);border:1px solid var(--line)}
-  .temprow .tline{display:flex;align-items:center;gap:10px}
-  .temprow .fl{flex:none;width:2.6em;font-size:13px;color:var(--dim)}
-  .temprow .tv{flex:1;text-align:center;font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;color:#fff}
-  .temprow .fb{flex:none;width:46px;height:38px;border-radius:10px;font-size:19px;line-height:1;
-    color:#fff;background:rgba(255,255,255,.07);border:1px solid var(--line)}
-  .temprow .fb:active{background:rgba(250,45,72,.3);border-color:rgba(250,45,72,.5)}
-  .temprow .fb:disabled{opacity:.3}
-  .temprow input[type=range]{-webkit-appearance:none;appearance:none;display:block;
-    width:100%;height:28px;margin:2px 0 0;background:transparent}
-  .temprow input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;
+  .ctlrow+.ctlrow{margin-top:8px}
+  .ctl-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:2px}
+  .ctl-name{font-size:12.5px;color:var(--dim)}
+  .ctl-val{font-size:19px;font-weight:600;color:#fff;font-variant-numeric:tabular-nums}
+  .ctl-body{display:flex;align-items:center;gap:12px}
+  .ctl-body input[type=range]{-webkit-appearance:none;appearance:none;flex:1;min-width:0;
+    height:34px;margin:0;background:transparent}
+  .ctl-body input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;
     background:rgba(255,255,255,.14)}
-  .temprow input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;
-    margin-top:-8px;border-radius:50%;background:#fa2d48;border:0}
+  .ctl-body input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;
+    margin-top:-9px;border-radius:50%;background:#fa2d48;border:0;
+    box-shadow:0 2px 8px rgba(250,45,72,.45)}
+  .ctl-body input[type=range]:disabled{opacity:.45}
+  .fb{flex:none;width:44px;height:40px;border-radius:11px;font-size:20px;line-height:1;
+    color:#fff;background:rgba(255,255,255,.07);border:1px solid var(--line)}
+  .fb:active{background:rgba(250,45,72,.3);border-color:rgba(250,45,72,.5)}
+  .fb:disabled{opacity:.3}
   .seatgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px;max-width:640px;margin:0 auto}
   .seatcell{padding:10px 12px;border-radius:12px;background:var(--card);border:1px solid var(--line)}
   .seatcell .sn{font-size:12px;color:var(--faint);margin-bottom:4px}
@@ -130,43 +127,27 @@
   footer{text-align:center;font-size:11px;color:var(--faint);padding:18px 12px 6px;line-height:1.7}
   footer a{color:var(--faint)}
 
-  /* ---------- 顶部切换：车机控制 / 音乐控制 ----------
-     车控在 18766、音乐在 18765。点「音乐控制」不跳转，用 iframe 把 18765 贴进同屏；
-     右边的 ↗ 是逃生口：18765 拒绝被嵌入时单独开一页。 */
-  .svc{position:relative;z-index:128;flex:none;width:100%;max-width:560px;margin:0 auto 6px;padding:0 16px;
-    display:flex;align-items:center;gap:8px}
-  .svc-seg{
-    position:relative;display:flex;flex:1;min-width:0;padding:3px;
-    background:rgba(26,26,32,.9);border:1px solid var(--line);
-    border-radius:12px;touch-action:pan-y;
-  }
-  /* 18765 万一把 iframe 拒了（白板），这里是逃生口：新开一页，车控页仍留在原标签 */
-  .svc-open{
-    flex:none;width:26px;height:26px;display:flex;align-items:center;justify-content:center;
-    border-radius:8px;background:rgba(255,255,255,.06);border:1px solid var(--line);
-    color:var(--dim);font-size:13px;line-height:1;text-decoration:none;
-    -webkit-tap-highlight-color:transparent;
-  }
-  .svc-open:active{background:rgba(255,255,255,.12);color:#fff}
-  .svc-knob{
-    position:absolute;top:3px;left:3px;bottom:3px;width:calc(50% - 3px);
-    border-radius:9px;background:rgba(255,255,255,.14);transform:translateX(0);
-  }
-  .svc-btn{
-    position:relative;flex:1;padding:7px 0;border:0;background:none;
-    font:inherit;font-size:12.5px;color:var(--dim);
-  }
-  .svc-btn.on{color:#fff}
-  a.svc-btn{display:flex;align-items:center;justify-content:center;text-decoration:none;
+  /* ---------- 页面切换：放在设置面板里，不在顶上占一条 ----------
+     车控在 18766、音乐在 18764（我们的桥接）或 18765（第三方）。
+     点「音乐控制」不跳转，用 iframe 贴进同屏；右边 ↗ 单独开一页。 */
+  .set-nav{display:flex;align-items:stretch;gap:8px;margin:0 0 14px}
+  .navbtn{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:6px;
+    padding:11px 6px;border-radius:11px;font-size:13px;color:var(--dim);
+    background:rgba(255,255,255,.05);border:1px solid var(--line)}
+  .navbtn.on{color:#fff;background:rgba(250,45,72,.16);border-color:rgba(250,45,72,.42)}
+  .navopen{flex:none;width:44px;display:flex;align-items:center;justify-content:center;
+    border-radius:11px;text-decoration:none;font-size:14px;color:var(--dim);
+    background:rgba(255,255,255,.05);border:1px solid var(--line);
     -webkit-tap-highlight-color:transparent}
-  /* 18765 探活小圆点：绿=音乐端在跑，红=没起来（点了会撞空页，所以拦住） */
-  .svc-dot{display:inline-block;width:5px;height:5px;border-radius:50%;margin-left:5px;
+  .navopen:active{background:rgba(255,255,255,.12);color:#fff}
+  /* App 里（client=android）切换由原生 tab 负责，设置面板里那块就不显示了；
+     被 iframe 嵌进来时同理。用 class 控制，脚本执行时设置面板可能还没解析出来。 */
+  .in-app .set-nav{display:none}
+  /* 音乐端探活小圆点：绿=在跑，红=没起来 */
+  .ndot{display:inline-block;width:5px;height:5px;border-radius:50%;
     background:#8e8e93;vertical-align:middle;transition:background .2s}
-  .svc-dot.on{background:#34c759}
-  .svc-dot.off{background:#ff453a}
-  .svc-seg[data-view="car"] .svc-knob{transform:translateX(0)}
-  .svc-seg[data-view="music"] .svc-knob{transform:translateX(calc(100% + 6px))}
-  .svc-knob{transition:transform .2s cubic-bezier(.32,.72,0,1)}
+  .ndot.on{background:#34c759}
+  .ndot.off{background:#ff453a}
 
   /* 音乐控制：贴一块 iframe 在同一个页面里，不做整页跳转。
      真机上「闪一下又回原页」就是跳转被打断 —— 不跳就不会闪。
@@ -186,11 +167,13 @@
   #toast.show{opacity:1;transform:translate(-50%,0)}
 
   /* ---------- 设置 / 诊断 ---------- */
+  /* 层序：电影面板 120 < 遮罩 129 < 设置面板 130
+     音乐贴进来的时候还能按齿轮打开设置切回去，否则人就困在音乐里了 */
   #setMask{position:fixed;inset:0;background:rgba(0,0,0,.6);opacity:0;pointer-events:none;
-    transition:opacity .2s;z-index:30}
+    transition:opacity .2s;z-index:129}
   #setMask.show{opacity:1;pointer-events:auto}
   #setSheet{
-    position:fixed;left:0;right:0;bottom:0;z-index:31;max-height:88vh;
+    position:fixed;left:0;right:0;bottom:0;z-index:130;max-height:88vh;
     transform:translateY(103%);transition:transform .26s cubic-bezier(.3,.8,.3,1);
     background:#141417;border-top:1px solid var(--line);border-radius:18px 18px 0 0;
     display:flex;flex-direction:column;box-shadow:0 -12px 40px rgba(0,0,0,.5);
@@ -244,7 +227,7 @@
 <header>
   <span id="dot"></span>
   <span id="status">正在连接车机助手…</span>
-  <i class="ver">b18</i>
+  <i class="ver">b19</i>
   <button class="icon-btn" id="refresh" aria-label="刷新">
     <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
   </button>
@@ -253,26 +236,15 @@
   </button>
 </header>
 
-<div class="svc">
-  <div class="svc-seg" data-view="car">
-    <span class="svc-knob"></span>
-    <a class="svc-btn on" id="goCar" href="javascript:void 0">车机控制</a>
-    <a class="svc-btn" id="goMusic" href="http://{{HOST}}:18765/">音乐控制<i class="svc-dot" id="musDot"></i></a>
-  </div>
-  <a class="svc-open" id="musOpen" href="http://{{HOST}}:18765/"
-     title="18765 单独打开">↗</a>
-</div>
 <div id="musPane"><iframe id="musFrame" title="音乐控制"></iframe></div>
 <script>
-  /* 地址两重保险：
+  /* 切换按钮在设置面板里（#setKv 下面一行），这里只管地址和兜底：
      1. 服务端下发时把 {{HOST}} 换成请求里的真实主机 —— 脚本全挂也点得动；
      2. 这里再用 location.hostname 校正一次 —— 直接开网页文件时也成立。 */
   (function () {
     var h = location.hostname;
-    var b = document.getElementById('goMusic');
-    if (b && h) b.href = 'http://' + h + ':18765/';
     var o = document.getElementById('musOpen');
-    if (o && h) o.href = 'http://' + h + ':18765/';
+    if (o && h) o.href = 'http://' + h + ':18764/';
     if (o) {
       /* 新标签能开就新开；开不了（手机 App 里的 WebView 常把 window.open 拦掉）
          就让它按默认原地跳，别出现「点了没反应」。 */
@@ -282,12 +254,11 @@
         if (w) e.preventDefault();
       });
     }
-    // 被音乐页 iframe 嵌进来、或被手机 App 的原生 tab 承载时，自己这条切换栏就收起来，
-    // 免得屏幕上出现两层切换（App 里那层是原生的，永远在上面）
+    // 被音乐页 iframe 嵌进来、或被手机 App 的原生 tab 承载时，切换已经不归这一页管：
+    // 按钮收起来，免得屏幕上出现两层切换
     var q = location.search;
     if (q.indexOf('embed=1') >= 0 || q.indexOf('client=android') >= 0) {
-      var sv = document.querySelector('.svc');
-      if (sv) sv.style.display = 'none';
+      document.documentElement.className += ' in-app';
     }
   })();
 </script>
@@ -317,6 +288,13 @@
   </div>
   <div class="set-body">
     <div class="set-kv" id="setKv">—</div>
+
+    <div class="set-nav">
+      <button class="navbtn on" id="navCar">车机控制</button>
+      <button class="navbtn" id="navMusic">音乐控制<i class="ndot" id="musDot"></i></button>
+      <a class="navopen" id="musOpen" href="http://{{HOST}}:18764/"
+         title="音乐页单独打开">↗</a>
+    </div>
 
     <div class="tabs" id="segTabs">
       <button class="tab on" data-seg="diag">诊断</button>
@@ -520,42 +498,68 @@
   var fanBusy = false;
 
   function fanBox(kind, label) {
-    var row = node('div', 'fanrow');
+    var f = kind === 'f';
+    var row = node('div', 'ctlrow');
     row.dataset.kind = kind;
-    row.appendChild(node('span', 'fl', label));
+
+    var head = node('div', 'ctl-head');
+    head.appendChild(node('span', 'ctl-name', label));
+    var val = node('span', 'ctl-val', '—');
+    head.appendChild(val);
+    row.appendChild(head);
+
+    var body = node('div', 'ctl-body');
     var minus = node('button', 'fb', '−');
-    var val = node('span', 'fv', '—');
+    var bar = document.createElement('input');
+    bar.type = 'range';
+    bar.min = f ? '1' : '0';
+    bar.max = f ? '7' : '4';
+    bar.step = '1';
+    bar.value = f ? '3' : '0';
     var plus = node('button', 'fb', '＋');
     minus.addEventListener('click', function () { fanStep(kind, -1); });
     plus.addEventListener('click', function () { fanStep(kind, 1); });
-    row.appendChild(minus);
-    row.appendChild(val);
-    row.appendChild(plus);
+    // 拖动时只改数字，松手（change）才发命令，不然一次拖拽会甩几十条
+    bar.addEventListener('input', function () { val.textContent = bar.value + ' 档'; });
+    bar.addEventListener('change', function () { fanSet(kind, parseInt(bar.value, 10)); });
+    body.appendChild(minus);
+    body.appendChild(bar);
+    body.appendChild(plus);
+    row.appendChild(body);
+    row._el = { minus: minus, plus: plus, bar: bar, val: val };
     return row;
   }
 
   function fanShow() {
-    var rows = capsBox.querySelectorAll('.fanrow');
+    var rows = capsBox.querySelectorAll('.ctlrow');
     for (var i = 0; i < rows.length; i++) {
       var f = rows[i].dataset.kind === 'f';
+      var el = rows[i]._el;
+      if (!el) continue;
       var v = f ? fanF : fanR;
-      rows[i].querySelector('.fv').textContent =
-        v < 0 ? '—' : (!f && v === 0 ? '关' : v);
-      var bs = rows[i].querySelectorAll('.fb');
+      // 后排 0 就是 0 档，别写成横杠或「关」—— 看着像没读到
+      el.val.textContent = v < 0 ? '—' : v + ' 档';
+      if (v >= 0) el.bar.value = String(v);
       // 读到确定档位才按边界灰化：后排刚关掉、状态还没回来时锁死加号，
       // 会变成「关了再也开不起来」。
-      bs[0].disabled = v >= 0 && v <= (f ? 1 : 0);
-      bs[1].disabled = v >= 0 && v >= (f ? 7 : 4);
+      el.minus.disabled = v >= 0 && v <= (f ? 1 : 0);
+      el.plus.disabled = v >= 0 && v >= (f ? 7 : 4);
     }
   }
 
   function fanStep(kind, d) {
-    if (fanBusy) return;
     var f = kind === 'f';
     var cur = f ? fanF : fanR;
-    if (cur < 0) cur = f ? 2 : 0;
-    var next = f ? Math.max(1, Math.min(7, cur + d)) : Math.max(0, Math.min(4, cur + d));
-    if (next === cur) return;
+    if (cur < 0) cur = f ? 2 : 1;
+    fanSet(kind, cur + d);
+  }
+
+  function fanSet(kind, v) {
+    if (fanBusy) return;
+    var f = kind === 'f';
+    var next = f ? Math.max(1, Math.min(7, v)) : Math.max(0, Math.min(4, v));
+    var cur = f ? fanF : fanR;
+    if (next === cur) { fanShow(); return; }
     fanBusy = true;
     var body = {};
     body[f ? 'v' : 'r'] = next;
@@ -569,13 +573,14 @@
         // 先按点的值显示，总线回读有延迟，600ms 后再校准一次
         if (f) fanF = next; else fanR = next;
         fanShow();
-        setStatus('风量 ' + (f ? '前排 ' : '后排 ') + (next === 0 ? '关' : next), 'on');
+        setStatus('风量 ' + (f ? '前排 ' : '后排 ') + next + ' 档', 'on');
         delete segCache.log;
         setTimeout(loadFan, 600);
         setTimeout(loadCards, 600);
       } else {
         toast((r && r.err) ? r.err : '风量没设上');
         setStatus((r && r.err) ? r.err : '风量设置失败', 'warn');
+        loadFan();
       }
     }).catch(function () {
       fanBusy = false;
@@ -603,27 +608,31 @@
     var box = document.getElementById('temp');
     if (!box || box.dataset.built) return;
     box.dataset.built = '1';
-    var row = node('div', 'temprow');
-    var top = node('div', 'tline');
-    top.appendChild(node('span', 'fl', '主驾'));
+
+    var row = node('div', 'ctlrow');
+    var head = node('div', 'ctl-head');
+    head.style.justifyContent = 'flex-end';
+    var val = node('span', 'ctl-val', '—');
+    head.appendChild(val);
+    row.appendChild(head);
+
+    var body = node('div', 'ctl-body');
     var minus = node('button', 'fb', '−');
-    var val = node('span', 'tv', '—');
-    var plus = node('button', 'fb', '＋');
-    top.appendChild(minus);
-    top.appendChild(val);
-    top.appendChild(plus);
     var bar = document.createElement('input');
     bar.type = 'range';
     bar.min = String(TEMP_MIN);
     bar.max = String(TEMP_MAX);
     bar.step = '1';
     bar.value = '24';
+    var plus = node('button', 'fb', '＋');
     minus.addEventListener('click', function () { tempStep(-1); });
     plus.addEventListener('click', function () { tempStep(1); });
     bar.addEventListener('input', function () { val.textContent = bar.value + '°C'; });
     bar.addEventListener('change', function () { tempSet(parseInt(bar.value, 10)); });
-    row.appendChild(top);
-    row.appendChild(bar);
+    body.appendChild(minus);
+    body.appendChild(bar);
+    body.appendChild(plus);
+    row.appendChild(body);
     box.appendChild(row);
     box._el = { minus: minus, plus: plus, val: val, bar: bar };
   }
@@ -902,6 +911,7 @@
     sheet.classList.add('show');
     mask.classList.add('show');
     loadPing();
+    probeMusic();
     pickSeg(curSeg);    // 里面对空缓存会自动取一次，省一次点击
   }
 
@@ -1108,96 +1118,122 @@
     if (!document.hidden) loadCards();
   });
 
-  /* 顶部两个按钮是 <a href>，地址在上面那段小脚本里设好，这里不绑跳转。
-     只多做一件事：盯着 18765 通不通，红了就别让人点进去撞空页。 */
+  /* ---------- 页面切换（在设置面板里，不占顶上那一条） ----------
+     音乐有两个来源，同一时刻只有一个在跑：
+       18764  我们自己的桥接页（官方网易云模式）
+       18765  第三方播放器自己发的页
+     探一下谁在跑，点「音乐控制」就把它的页面 iframe 贴进同屏，不跳转。 */
+  var MUSIC_PORTS = [18764, 18765];
   var musDot = document.getElementById('musDot');
-  var musGo = document.getElementById('goMusic');
-  var musOk = null;
+  var navCar = document.getElementById('navCar');
+  var navMusic = document.getElementById('navMusic');
+  var musOpen = document.getElementById('musOpen');
+  var musPane = document.getElementById('musPane');
+  var musFrame = document.getElementById('musFrame');
+  var musPort = 0;          // 0 = 还没探到
+  var musOk = null;         // null 未知 / true 有 / false 没有
+
+  function musicHost() { return location.hostname || '127.0.0.1'; }
 
   function paintMusDot() {
     if (!musDot) return;
-    musDot.className = 'svc-dot' + (musOk === true ? ' on' : (musOk === false ? ' off' : ''));
+    musDot.className = 'ndot' + (musOk === true ? ' on' : (musOk === false ? ' off' : ''));
   }
 
-  function probeMusic() {
-    var h = location.hostname || '127.0.0.1';
-    var done = false;
-    var timer = setTimeout(function () {
-      if (done) return;
-      done = true;
-      musOk = false;
-      paintMusDot();
-    }, 2200);
-    fetch('http://' + h + ':18765/ping?t=' + (new Date().getTime()),
-          { mode: 'no-cors', cache: 'no-store' })
-      .then(function () {
-        if (done) return;
-        done = true;
-        clearTimeout(timer);
-        musOk = true;
-        paintMusDot();
-      })
-      .catch(function () {
-        if (done) return;
-        done = true;
-        clearTimeout(timer);
+  function syncNav(music) {
+    if (navCar) navCar.className = 'navbtn' + (music ? '' : ' on');
+    if (navMusic) navMusic.className = 'navbtn' + (music ? ' on' : '');
+  }
+
+  /* 逐个试：先 18764（自己的），再 18765（第三方）。no-cors 只关心「连不连得上」，
+     第三方页没有 /ping 也无所谓 —— 有响应就算在跑。 */
+  function probeMusic(after) {
+    var h = musicHost();
+    var i = 0;
+    (function step() {
+      if (i >= MUSIC_PORTS.length) {
         musOk = false;
+        musPort = 0;
         paintMusDot();
-      });
+        if (after) after();
+        return;
+      }
+      var port = MUSIC_PORTS[i++];
+      var done = false;
+      var timer = setTimeout(function () {
+        if (done) return;
+        done = true;
+        step();
+      }, 1500);
+      fetch('http://' + h + ':' + port + '/?t=' + (new Date().getTime()),
+            { mode: 'no-cors', cache: 'no-store' })
+        .then(function () {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          musOk = true;
+          musPort = port;
+          if (musOpen) musOpen.href = 'http://' + h + ':' + port + '/';
+          paintMusDot();
+          if (after) after();
+        })
+        .catch(function () {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          step();
+        });
+    })();
   }
-
-  /* 切页：不跳转，直接把 18765 的页面嵌进来（同一个屏幕里换内容）。 */
-  var musPane = document.getElementById('musPane');
-  var musFrame = document.getElementById('musFrame');
-  var carTab = document.getElementById('goCar');
-  var segBar = document.querySelector('.svc-seg');
 
   function paneTop() {
-    if (!musPane || !segBar) return;
-    var r = segBar.getBoundingClientRect();
-    musPane.style.top = Math.max(0, Math.round(r.bottom + 6)) + 'px';
+    if (!musPane) return;
+    var hd = document.querySelector('body > header');
+    musPane.style.top = Math.max(0, hd ? Math.round(hd.getBoundingClientRect().bottom) : 0) + 'px';
   }
 
   function showMusic() {
     if (!musPane || !musFrame) return false;
-    var h = location.hostname || '127.0.0.1';
-    var src = 'http://' + h + ':18765/?embed=1';
+    var port = musPort || MUSIC_PORTS[0];
+    var src = 'http://' + musicHost() + ':' + port + '/?embed=1';
     if (musFrame.getAttribute('src') !== src) musFrame.setAttribute('src', src);
     paneTop();
     musPane.className = 'on';
-    if (segBar) segBar.setAttribute('data-view', 'music');
-    if (musGo) musGo.className = 'svc-btn on';
-    if (carTab) carTab.className = 'svc-btn';
+    syncNav(true);
     return true;
   }
 
   function showCar() {
     if (!musPane) return false;
     musPane.className = '';
-    if (segBar) segBar.setAttribute('data-view', 'car');
-    if (musGo) musGo.className = 'svc-btn';
-    if (carTab) carTab.className = 'svc-btn on';
+    syncNav(false);
     return true;
   }
 
-  if (musGo) {
-    musGo.addEventListener('click', function (e) {
+  if (navMusic) {
+    navMusic.addEventListener('click', function () {
       if (musOk === false) {
-        e.preventDefault();
-        toast('音乐端 18765 没响应：到车机上打开一次汽水音乐再切');
+        toast('音乐端没响应：到车机上打开一次汽水音乐 / 桥接包再试');
         return;
       }
-      if (showMusic()) e.preventDefault();   // 嵌进来了就不用跳
-    });
-  }
-  if (carTab) {
-    carTab.addEventListener('click', function (e) {
-      if (musPane && musPane.className.indexOf('on') >= 0) {
-        e.preventDefault();
-        showCar();
+      if (musOk === null) {          // 还没探到：探完再开，别点进白板
+        toast('正在探音乐端…');
+        probeMusic(function () {
+          if (musOk) { showMusic(); closeSet(); }
+          else toast('音乐端没响应：到车机上打开一次汽水音乐 / 桥接包再试');
+        });
+        return;
       }
+      if (showMusic()) closeSet();
     });
   }
+  if (navCar) {
+    navCar.addEventListener('click', function () {
+      showCar();
+      closeSet();
+    });
+  }
+
   window.addEventListener('resize', paneTop);
 
   refreshAll();
@@ -1206,7 +1242,7 @@
   // 探活放最后：老 WebView 上没有 fetch 也只是圆点不亮，别把整页脚本带崩
   try {
     probeMusic();
-    setInterval(probeMusic, 8000);
+    setInterval(probeMusic, 15000);
   } catch (err) { }
 })();
 </script>

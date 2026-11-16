@@ -142,7 +142,7 @@ final class Api {
         if (changed) {
             J.p(d, "message", target == Mode.OFFICIAL
                     ? "已切到官方网易云，服务 1 秒后重启"
-                    : "已切到第三方自研播放器，18765 交给它提供");
+                    : "已切到第三方自研播放器，由它提供音乐控制（18765）");
             restartLater(c, 700L);
         } else {
             J.p(d, "message", "已经是这个音源");

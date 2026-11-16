@@ -36,7 +36,7 @@ import java.util.Arrays;
  */
 public class Main extends Activity {
 
-    /** 1.x/2.4 那代独立探针，与合并包都占 18765，装着就必须卸掉。 */
+    /** 1.x/2.4 那代独立探针，与合并包都占 18764，装着就必须卸掉。 */
     private static final String OLD_PROBE = "com.wb.ncmremote";
 
     /** 小方块高度（dp）。宽度由行内权重撑满，横屏不再挤在左边。 */
@@ -269,7 +269,7 @@ public class Main extends Activity {
 
     void refresh() {
         if (tv == null || tvMini == null) return;
-        // 角色：本包占着 18765 就是它在服务；音源是第三方、或用户手动停过，本包都不干活
+        // 角色：本包占着 18764 就是它在服务；音源是第三方、或用户手动停过，本包都不干活
         boolean running = Server.I.isRunning();
         boolean yielded = Server.I.yielded;
         boolean third = Mode.isThirdParty(this);
@@ -294,7 +294,7 @@ public class Main extends Activity {
         // 两条线各说一句：车控常驻，音乐随音源启停
         sb.append("车控 18766：").append(carOk ? "常驻在线（车机助手提供）" : "未响应（车机助手没起来？）").append("\n");
         sb.append("探测：").append(CarPort.detail()).append("\n");
-        sb.append("音乐 18765：").append(running ? "运行中（本包提供）" : (third || yielded) ? "第三方提供" : "未运行").append("\n");
+        sb.append("音乐 18764：").append(running ? "运行中（本包提供）" : (third || yielded) ? "第三方提供" : "未运行").append("\n");
         sb.append("────────────\n");
         if (!Mode.hasOfficial(this) && !Mode.hasThirdParty(this)) {
             sb.append("车上没找到可用音源。请先安装官方网易云车机版，或第三方自研播放器。");
@@ -306,18 +306,18 @@ public class Main extends Activity {
                     .append("歌单：").append(Arrays.toString(Ncm.I.playlists()));
         } else if (third) {
             sb.append("服务：交给第三方自研播放器\n")
-                    .append("当前音源是第三方，本包不占 18765；心跳和开机也不会再拉起它\n")
+                    .append("当前音源是第三方，本包不占 18764；心跳和开机也不会再拉起它\n")
                     .append("地址：http://").append(addr).append(":").append(Cfg.PORT)
                     .append("（由第三方提供）");
         } else if (stopped) {
             sb.append("服务：已停止（你手动停的）\n")
-                    .append("心跳已撤销、18765 已关闭，不会自动拉起\n")
+                    .append("心跳已撤销、18764 已关闭，不会自动拉起\n")
                     .append("点「启动桥接」恢复桥接\n")
                     .append("地址：http://").append(addr).append(":").append(Cfg.PORT)
                     .append("（当前无人监听）");
         } else if (yielded) {
             sb.append("服务：交给第三方自研播放器\n")
-                    .append("18765 已被占用，本包自动让位，不抢端口\n")
+                    .append("18764 已被占用，本包自动让位，不抢端口\n")
                     .append("地址：http://").append(addr).append(":").append(Cfg.PORT)
                     .append("（由第三方提供）");
         } else {
@@ -327,7 +327,7 @@ public class Main extends Activity {
         }
         if (Mode.installed(this, OLD_PROBE)) {
             sb.append("\n⚠ 车上还装着旧版单遥控 APK（com.wb.ncmremote），")
-                    .append("它和本包争同一个 18765 端口，请按下面按钮卸掉。");
+                    .append("它和本包争同一个 18764 端口，请按下面按钮卸掉。");
         }
         if (addrBar != null) {
             String base = "http://" + addr + ":" + Cfg.PORT;
@@ -359,7 +359,7 @@ public class Main extends Activity {
             if (code == 1) {
                 // 当前音源是第三方时本包不该占端口，点了也只解释一句，免得又抢回去
                 if (Mode.isThirdParty(this)) {
-                    toast("当前音源是第三方自研，18765 交给它；要桥接官方请先切「官方网易云」");
+                    toast("当前音源是第三方自研，音乐控制交给它（18765）；要桥接官方请先切「官方网易云」");
                 } else {
                     Svc.startByUser(this);
                 }
@@ -436,21 +436,21 @@ public class Main extends Activity {
         Mode.save(this, target);
         // 同步给第三方 App：它按新模式自己启停 RemoteServer
         ModeSync.notify(this, target);
-        // 停服会撤心跳 + 立刻关 18765，端口马上还给系统
+        // 停服会撤心跳 + 立刻关 18764，端口马上还给系统
         Svc.stop(this);
         LogCapture.logAlways("MAIN 切换音源 → " + Mode.label(target));
         if (target == Mode.THIRD_PARTY) {
             // 切到第三方后本包彻底退出，不能 600ms 后又去把端口抢回来
-            toast("已切到「" + Mode.label(target) + "」，18765 交给它，本包不再自动拉起");
+            toast("已切到「" + Mode.label(target) + "」，音乐服务交给它，本包不再自动拉起");
             refresh();
             return;
         }
-        toast("已切回官方，桥接服务正在重新接管 18765");
+        toast("已切回官方，桥接服务正在重新接管 18764");
         refresh();
         handler.postDelayed(new MainRestart(this), 600L);
     }
 
-    /** 卸掉旧的独立探针包，避免两个包抢 18765。 */
+    /** 卸掉旧的独立探针包，避免两个包抢 18764。 */
     private void uninstallOld() {
         try {
             startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + OLD_PROBE)));
@@ -767,4 +767,4 @@ class MainClick implements View.OnClickListener {
     @Override public void onClick(View v) { a.click(code); }
 }
 
-/** 地址栏点击：把「地址：http://x.x.x.x:18765」里的完整地址复制到剪贴板。 */
+/** 地址栏点击：把「地址：http://x.x.x.x:18764」里的完整地址复制到剪贴板。 */

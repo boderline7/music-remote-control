@@ -23,12 +23,14 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
@@ -37,19 +39,23 @@ import java.net.InetSocketAddress
 import java.net.Socket
 
 /**
- * 车机遥控 3.0：一个 App、两个 tab。
+ * 车机遥控 3.1：一个 App、两个 tab。
  *
  *   ┌──────────────────────────────┐
  *   │ 车机控制 │ 音乐控制          │  ← 原生 tab，永远在，跟网页内容无关
  *   ├──────────────────────────────┤
- *   │ carWeb(18766) / musicWeb(18765) │
+ *   │ carWeb(18766) / musicWeb(18764 或 18765) │
  *   └──────────────────────────────┘
  *
- * 为什么不再只当"网页壳"：
- *   18765 有可能是第三方网易云自己发的页面 —— 里面没有返回车控的入口，也可能不允许被 iframe 嵌入。
- *   只要切换由原生 tab 承担，加载谁都不影响切换：页面再怎么跳、怎么刷，都只在自己那个 WebView 里。
+ * 音乐这一路有两个来源，同一时刻只有一个在跑：
+ *   18764  我们自己的桥接页（官方网易云模式）
+ *   18765  第三方播放器自己发的页
+ * App 连上后两个都探，谁在跑就进谁；两个都在时优先 18764。
  *
- * 网页侧配合：带 `client=android` 打开时，两页都会收掉自己的网页切换条，避免两层切换打架。
+ * 为什么切换放在原生层：18765 有可能是别人的页面 —— 里面没有返回车控的入口、
+ * 也可能不允许被 iframe 嵌入。加载谁都不影响切换，页面怎么跳都只在自己那个 WebView 里。
+ *
+ * 网页侧配合：带 `client=android` 打开时，车控页会收掉设置面板里的切换按钮。
  */
 class MainActivity : Activity() {
 
@@ -74,9 +80,15 @@ class MainActivity : Activity() {
     private lateinit var musicWeb: WebView
 
     private var host = ""
-    private var tab = TAB_CAR
+    private var tab = TAB_MUSIC
     private var carOk = false
-    private var musicOk = false
+
+    /** 音乐这一路实际进哪个端口；0 = 一个都没有 */
+    private var musicPort = 0
+
+    /** 两个音乐端口都在时，另一个放着备用（长按音乐 tab 切过去） */
+    private var musicAlt = 0
+
     private var webShown = false
     private var searching = false
     private var searchJob: Job? = null
@@ -93,8 +105,8 @@ class MainActivity : Activity() {
     private val clientVersion: String
         get() = runCatching {
             @Suppress("DEPRECATION")
-            packageManager.getPackageInfo(packageName, 0).versionName ?: "3.0.0"
-        }.getOrDefault("3.0.0")
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "3.1.0"
+        }.getOrDefault("3.1.0")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -158,6 +170,11 @@ class MainActivity : Activity() {
         musicTabBtn = tabView(TAB_MUSIC)
         carTabBtn.setOnClickListener { selectTab(TAB_CAR) }
         musicTabBtn.setOnClickListener { selectTab(TAB_MUSIC) }
+        // 两个音乐端口都在（少见）：长按换源，不用跑到车机上改音源模式
+        musicTabBtn.setOnLongClickListener {
+            swapMusicPort()
+            true
+        }
         bar.addView(carTabBtn, tabLp())
         bar.addView(musicTabBtn, tabLp())
 
@@ -217,18 +234,22 @@ class MainActivity : Activity() {
 
     private fun paintTabs() {
         styleTab(carTabBtn, tab == TAB_CAR, carOk)
-        styleTab(musicTabBtn, tab == TAB_MUSIC, musicOk)
+        styleTab(musicTabBtn, tab == TAB_MUSIC, musicPort > 0)
     }
 
     private fun styleTab(v: TextView, active: Boolean, ok: Boolean) {
         val label = if (v === carTabBtn) tabLabels[TAB_CAR] else tabLabels[TAB_MUSIC]
-        v.text = label
+        v.text = when {
+            !ok -> "$label ·"          // 这一路没起来：点一下会告诉你该怎么办
+            v === musicTabBtn && musicPort > 0 -> "$label $musicPort"
+            else -> label
+        }
         v.setTextColor(
             Color.parseColor(
                 when {
                     active -> "#FFFFFF"
                     ok -> "#9A9AA2"
-                    else -> "#5E5E66"     // 端口没起来：灰掉，但仍可点，点了给提示
+                    else -> "#5E5E66"
                 }
             )
         )
@@ -272,9 +293,6 @@ class MainActivity : Activity() {
     }
 
     private fun web(index: Int): WebView = if (index == TAB_CAR) carWeb else musicWeb
-
-    private fun portOf(index: Int): Int =
-        if (index == TAB_CAR) Protocol.PORT_CAR else Protocol.PORT
 
     private fun buildConnectPanel(): ScrollView {
         val panel = ScrollView(this).apply { setBackgroundColor(Color.parseColor("#0B0B0D")) }
@@ -350,7 +368,7 @@ class MainActivity : Activity() {
         ).apply { topMargin = dp(10) })
 
         box.addView(TextView(this).apply {
-            text = "只用填 IP：车控页在 18766、音乐页在 18765，App 自己探，哪个通了就能切到哪个。" +
+            text = "只用填 IP：车控 18766、音乐 18764（桥接）/ 18765（第三方），App 自己探。" +
                 "手动加的地址会一直留着，长按可删。"
             textSize = 12f
             setTextColor(Color.parseColor("#6E6E76"))
@@ -367,7 +385,7 @@ class MainActivity : Activity() {
     // ---------- tab 与页面 ----------
 
     private fun selectTab(index: Int) {
-        val ok = if (index == TAB_CAR) carOk else musicOk
+        val ok = if (index == TAB_CAR) carOk else musicPort > 0
         tab = index
         paintTabs()
 
@@ -378,7 +396,8 @@ class MainActivity : Activity() {
             placeholder.text = if (index == TAB_CAR)
                 "18766 车控页没响应\n\n到车机上打开一次「桌面助手」，再点这里重试"
             else
-                "18765 音乐页没响应\n\n到车机上打开一次汽水音乐（或桥接包），再点这里重试"
+                "音乐端没响应\n\n车上跑的是官方网易云就开桥接包（18764），\n" +
+                    "是第三方播放器就打开它（18765），再点这里重试"
             return
         }
 
@@ -387,25 +406,59 @@ class MainActivity : Activity() {
         musicWeb.visibility = if (index == TAB_MUSIC) View.VISIBLE else View.GONE
         if (!loaded[index]) {
             loaded[index] = true
-            web(index).loadUrl(pageUrl(portOf(index)))
+            web(index).loadUrl(pageUrl(if (index == TAB_CAR) Protocol.PORT_CAR else musicPort))
         }
     }
 
     private fun pageUrl(port: Int): String = "http://$host:$port/?client=android&cv=$clientVersion"
 
-    /** 两个端口都重探一遍；页面挂了点提示就能重试 */
+    /** 两个都探：车控固定 18766，音乐先 18764（自己的桥接）再 18765（第三方） */
+    private suspend fun probeAll(prefer: Int) = coroutineScope {
+        val c = async { reachable(host, Protocol.PORT_CAR) }
+        val b = async { reachable(host, Protocol.PORT_BRIDGE) }
+        val t = async { reachable(host, Protocol.PORT_THIRD) }
+        carOk = c.await()
+        val bridge = b.await()
+        val third = t.await()
+        val alive = ArrayList<Int>(2)
+        if (bridge) alive.add(Protocol.PORT_BRIDGE)
+        if (third) alive.add(Protocol.PORT_THIRD)
+        musicPort = when {
+            alive.isEmpty() -> 0
+            prefer > 0 && alive.contains(prefer) -> prefer
+            else -> alive.first()
+        }
+        musicAlt = alive.firstOrNull { it != musicPort } ?: 0
+        paintTabs()
+    }
+
+    /** 长按音乐 tab：两个端口都在时来回换 */
+    private fun swapMusicPort() {
+        if (musicAlt <= 0) {
+            toast(
+                if (musicPort > 0) "现在只有 $musicPort 在跑，没得换"
+                else "音乐端还没探到"
+            )
+            return
+        }
+        val t = musicPort
+        musicPort = musicAlt
+        musicAlt = t
+        loaded[TAB_MUSIC] = false
+        ready[TAB_MUSIC] = false
+        selectTab(TAB_MUSIC)
+        toast("音乐切到 $musicPort")
+    }
+
+    /** 端口都重探一遍；页面挂了点提示就能重试 */
     private fun recheck() {
         if (host.isEmpty()) return
         placeholder.text = "正在重试 $host …"
-        val h = host
+        val prefer = musicPort
         scope.launch {
-            val c = async { reachable(h, Protocol.PORT_CAR) }
-            val m = async { reachable(h, Protocol.PORT) }
-            carOk = c.await()
-            musicOk = m.await()
-            paintTabs()
-            if (!carOk && !musicOk) {
-                placeholder.text = "还是不通\n\n车机上确认 18766（车机助手）/ 18765（汽水音乐）在跑，再点这里重试"
+            probeAll(prefer)
+            if (!carOk && musicPort <= 0) {
+                placeholder.text = "还是不通\n\n车机上确认 18766（车机助手）/ 18764（桥接包）/ 18765（第三方）在跑，再点这里重试"
                 return@launch
             }
             // 重新拉一次，别停在旧的白板页上
@@ -415,9 +468,9 @@ class MainActivity : Activity() {
             ready[1] = false
             val target = when {
                 tab == TAB_CAR && carOk -> TAB_CAR
-                tab == TAB_MUSIC && musicOk -> TAB_MUSIC
-                carOk -> TAB_CAR
-                else -> TAB_MUSIC
+                tab == TAB_MUSIC && musicPort > 0 -> TAB_MUSIC
+                musicPort > 0 -> TAB_MUSIC
+                else -> TAB_CAR
             }
             selectTab(target)
         }
@@ -429,7 +482,8 @@ class MainActivity : Activity() {
         Prefs.addManual(h)
         webShown = true
         carOk = false
-        musicOk = false
+        musicPort = 0
+        musicAlt = 0
         loaded[0] = false
         loaded[1] = false
         ready[0] = false
@@ -440,20 +494,17 @@ class MainActivity : Activity() {
         connectPanel.visibility = View.GONE
         placeholder.visibility = View.VISIBLE
         placeholder.text = "正在连接 $h …"
-        tab = TAB_CAR
+        tab = TAB_MUSIC          // 进 App 默认落在音乐控制
         paintTabs()
 
         scope.launch {
-            val c = async { reachable(h, Protocol.PORT_CAR) }
-            val m = async { reachable(h, Protocol.PORT) }
-            carOk = c.await()
-            musicOk = m.await()
-            paintTabs()
-            if (!carOk && !musicOk) {
-                showConnect("$h 能连上，但 18766 / 18765 都没响应 · 车机上确认页面在跑")
+            probeAll(0)
+            if (!carOk && musicPort <= 0) {
+                showConnect("$h 能连上，但 18766 / 18764 / 18765 都没响应 · 车机上确认页面在跑")
                 return@launch
             }
-            selectTab(if (carOk) TAB_CAR else TAB_MUSIC)
+            // 默认进音乐；音乐没起来就退到车控
+            selectTab(if (musicPort > 0) TAB_MUSIC else TAB_CAR)
         }
     }
 
@@ -467,7 +518,7 @@ class MainActivity : Activity() {
     }
 
     private fun failPage(index: Int, desc: String) {
-        if (index == TAB_CAR) carOk = false else musicOk = false
+        if (index == TAB_CAR) carOk = false else musicPort = 0
         loaded[index] = false
         ready[index] = false
         paintTabs()
@@ -476,6 +527,10 @@ class MainActivity : Activity() {
 
     private fun setStatus(text: String) {
         statusText.text = text
+    }
+
+    private fun toast(text: String) {
+        Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
     }
 
     // ---------- 发现与连接 ----------
@@ -507,7 +562,7 @@ class MainActivity : Activity() {
             val collectJob = launch {
                 combine(Discovery.found, Scanner.results) { nsd, hits -> nsd to hits }
                     .collect { (nsd, hits) ->
-                        // 一台车机只留一条：端口对用户没意义，App 两个都探
+                        // 一台车机只留一条：端口对用户没意义，App 三个都探
                         nsd.forEach { found[it.host] = it.name.ifEmpty { "车机" } }
                         hits.forEach { hp ->
                             if (!found.containsKey(hp.first)) found[hp.first] = "车机"
@@ -591,23 +646,17 @@ class MainActivity : Activity() {
             if (!searching) discover(autoConnect = true)
             return
         }
-        val h = host
+        val prefer = musicPort
         scope.launch {
-            val c = async { reachable(h, Protocol.PORT_CAR) }
-            val m = async { reachable(h, Protocol.PORT) }
-            val carNow = c.await()
-            val musicNow = m.await()
-            if (!carNow && !musicNow) {
+            probeAll(prefer)
+            if (!carOk && musicPort <= 0) {
                 showConnect("车机地址变了，正在重新搜索…")
                 discover(autoConnect = true)
                 return@launch
             }
-            carOk = carNow
-            musicOk = musicNow
-            paintTabs()
             when {
-                tab == TAB_CAR && !carNow -> selectTab(TAB_MUSIC)
-                tab == TAB_MUSIC && !musicNow -> selectTab(TAB_CAR)
+                tab == TAB_CAR && !carOk -> selectTab(TAB_MUSIC)
+                tab == TAB_MUSIC && musicPort <= 0 -> selectTab(TAB_CAR)
                 ready[tab] -> web(tab).evaluateJavascript(
                     "window.carRemoteRefresh && window.carRemoteRefresh()", null
                 )
@@ -631,7 +680,7 @@ class MainActivity : Activity() {
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun onBackPressed() {
         if (webShown) {
-            // tab 一直在，返回键直接退到连接页，不再需要「先切 tab 再退」那一套
+            // tab 一直在，返回键直接退到连接页，不用「先切 tab 再退」
             showConnect("已返回连接页 · 点「重新搜索」可再连")
             return
         }

@@ -41,7 +41,7 @@ final class Alive {
     }
 
     /** 撤掉心跳。用户主动停服时必须调：setInexactRepeating 排下的闹钟不会因为
-     *  stopService 消失，不撤的话 15 分钟后它又把服务拉起来重新占 18765。 */
+     *  stopService 消失，不撤的话 15 分钟后它又把服务拉起来重新占 18764。 */
     static void cancel(Context c) {
         try {
             AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
