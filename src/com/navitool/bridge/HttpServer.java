@@ -214,6 +214,10 @@ final class HttpServer implements Runnable {
             } else if ("/log/clear".equals(path)) {
                 OpLog.clear();
                 out = "{\"ok\":1}";
+            } else if ("/restart".equals(path)) {
+                // 音频桥接包的「重启」按钮会打这里：车控不会自己发现引擎掉了，
+                // 只能靠这个软重启把 Activity / Helper 重新抓一遍，顺带再要一次前台服务。
+                out = restartJson(ctx);
             } else if ("/".equals(path) || "/index.html".equals(path) || "/ui".equals(path)) {
                 out = Page.html(ctx);
                 ct = "text/html; charset=utf-8";
@@ -280,8 +284,36 @@ final class HttpServer implements Runnable {
         return new String(buf.toByteArray(), "UTF-8");
     }
 
+    /**
+     * 软重启：重抓 Activity / Helper，再向前台服务要一次启动（幂等）。
+     * 不杀进程——杀了要等系统按 START_STICKY 拉起，中间那几秒车控是真的断的。
+     */
+    private static String restartJson(Context ctx) {
+        Bridge.lastError = "";
+        boolean regrab = false;
+        if (Bridge.activity != null) {
+            Bridge.grab(Bridge.activity);
+            regrab = true;
+        }
+        try {
+            BridgeService.kick(ctx);
+        } catch (Throwable t) {
+            Bridge.note("restart kick: " + Bridge.root(t));
+        }
+        HttpServer.start(ctx);
+        boolean bound = Bridge.helper != null;
+        Bridge.note("restart: helper=" + bound + " activity=" + (Bridge.activity != null));
+        return "{\"ok\":" + (bound ? 1 : 0)
+                + ",\"helper\":" + (bound ? 1 : 0)
+                + ",\"activity\":" + (Bridge.activity != null ? 1 : 0)
+                + ",\"regrab\":" + (regrab ? 1 : 0)
+                + ",\"ops\":" + OpLog.total()
+                + ",\"err\":" + Bridge.q(Bridge.lastError)
+                + "}";
+    }
+
     private static String pingJson() {
-        return "{\"ok\":1,\"v\":\"1.1\",\"port\":" + Bridge.PORT
+        return "{\"ok\":1,\"v\":\"1.2\",\"port\":" + Bridge.PORT
                 + ",\"bound\":" + (Bridge.bound ? 1 : 0)
                 + ",\"helper\":" + (Bridge.helper != null ? 1 : 0)
                 + ",\"activity\":" + (Bridge.activity != null ? 1 : 0)

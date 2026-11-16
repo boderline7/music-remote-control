@@ -123,8 +123,8 @@ public class Main extends Activity {
         ScrollView scroll = new ScrollView(this);
         LinearLayout grid = new LinearLayout(this);
         grid.setOrientation(LinearLayout.VERTICAL);
-        grid.addView(row(button(1, "启动"), button(2, "重启"), button(4, "停止")));
-        grid.addView(row(button(3, "刷新状态"), button(6, "打开音乐 App"), button(14, "拉起助手")));
+        grid.addView(row(button(1, "启动桥接"), button(6, "启动音乐")));
+        grid.addView(row(button(2, "重启"), button(5, "停止退出"), button(3, "刷新")));
 
         switchRow = new LinearLayout(this);
         switchRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -364,26 +364,48 @@ public class Main extends Activity {
                     Svc.startByUser(this);
                 }
             } else if (code == 2) {
-                // 重启：先停干净再拉起。端口被占、服务假死时用它
+                // 重启：音乐这边是本地重复启停，车控那边发 /restart 让车机助手重抓引擎；
+                // 18766 完全不通时再拉起车机助手（车机上没法自己清后台，只能这样兜）
                 Svc.stop(this);
-                toast("正在重启音乐遥控…");
-                handler.postDelayed(new MainRestart(this), 800L);
+                toast("正在重启：音乐 + 车控");
+                handler.postDelayed(new MainRestart(this), 900L);
+                CarPort.restartRemoteAsync(new Runnable() {
+                    public void run() {
+                        toast("车控 18766 已重启");
+                        CarPort.invalidate();
+                        refresh();
+                    }
+                }, new Runnable() {
+                    public void run() {
+                        toast("车控没响应，正在拉起车机助手");
+                        launchNavi();
+                    }
+                });
             } else if (code == 3) {
                 // 「刷新状态」之前没有分支，点了没反应
                 CarPort.invalidate();
                 refresh();
-            } else if (code == 4) {
+            } else if (code == 5) {
+                // 车机没有可靠的任务管理器，退出得由 App 自己收尾：停服、关端口、移出任务栈
                 Svc.stop(this);
+                toast("已停止音乐桥接，正在退出…");
+                handler.postDelayed(new Runnable() {
+                    public void run() {
+                        try {
+                            finishAndRemoveTask();
+                        } catch (Throwable t) {
+                            finish();
+                        }
+                    }
+                }, 700L);
+                return;      // 退出中不再刷新，免得又去探测、又把界面画一遍
             } else if (code == 6) {
-                openMusicApp();
+                startMusic();
             } else if (code == 10) {
                 openCarPage();
             } else if (code == 11) {
                 CarPort.invalidate();
                 refresh();
-            } else if (code == 14) {
-                launchNavi();
-                return;
             } else if (code == 7) {
                 switchTo(Mode.OFFICIAL);
                 return;
@@ -449,6 +471,37 @@ public class Main extends Activity {
             startActivity(intent);
         } catch (Throwable t) {
             toast("打不开：" + pkg);
+        }
+    }
+
+    /**
+     * 启动音乐：把播放器叫到前台，再补一个播放键。
+     *
+     * 只打开 App 不够——上次是暂停状态的话，打开还是暂停。
+     * 媒体键两条线的播放器都认，比猜它的 Activity 靠谱。
+     */
+    void startMusic() {
+        openMusicApp();
+        handler.postDelayed(new Runnable() {
+            public void run() {
+                mediaPlay();
+            }
+        }, 900L);
+    }
+
+    void mediaPlay() {
+        try {
+            android.media.AudioManager am =
+                    (android.media.AudioManager) getSystemService(AUDIO_SERVICE);
+            if (am == null) {
+                return;
+            }
+            am.dispatchMediaKeyEvent(new android.view.KeyEvent(
+                    android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_MEDIA_PLAY));
+            am.dispatchMediaKeyEvent(new android.view.KeyEvent(
+                    android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_MEDIA_PLAY));
+        } catch (Throwable t) {
+            Log.w(Cfg.TAG, "mediaPlay failed", t);
         }
     }
 
@@ -594,6 +647,66 @@ final class CarPort {
         }
         if (g == null || g.length() == 0) g = "127.0.0.1";
         return "http://" + g + ":" + PORT + "/";
+    }
+
+    /**
+     * 让 18766 自己软重启（重抓引擎 + 再要一次前台服务）。
+     * 通了调 onOk；一个地址都不通才调 onFail——那时只能让上层去拉起车机助手。
+     */
+    static void restartRemoteAsync(final Runnable onOk, final Runnable onFail) {
+        new Thread(new Runnable() {
+            public void run() {
+                boolean ok = false;
+                String g = good;
+                if (g != null && g.length() > 0 && httpGet(g, "/restart")) {
+                    ok = true;
+                } else {
+                    String[] cand = candidates();
+                    for (int i = 0; i < cand.length && !ok; i++) {
+                        if (cand[i].equals(g)) {
+                            continue;
+                        }
+                        if (httpGet(cand[i], "/restart")) {
+                            good = cand[i];
+                            ok = true;
+                        }
+                    }
+                }
+                if (ok) {
+                    at = 0L;            // 让下一次探测真的跑一遍
+                }
+                UI.post(ok ? onOk : onFail);
+            }
+        }, "car-restart").start();
+    }
+
+    /** 极简 GET：只关心有没有 200，body 读掉就扔 */
+    private static boolean httpGet(String host, String path) {
+        java.net.HttpURLConnection c = null;
+        try {
+            c = (java.net.HttpURLConnection) new java.net.URL(
+                    "http://" + host + ":" + PORT + path).openConnection();
+            c.setConnectTimeout(900);
+            c.setReadTimeout(2500);     // /restart 里要重抓一次引擎，给它慢一点
+            c.setRequestMethod("GET");
+            c.setUseCaches(false);
+            int code = c.getResponseCode();
+            java.io.InputStream in = code == 200 ? c.getInputStream() : c.getErrorStream();
+            if (in != null) {
+                byte[] buf = new byte[512];
+                while (in.read(buf) > 0) {
+                    // 丢弃
+                }
+                in.close();
+            }
+            return code == 200;
+        } catch (Throwable t) {
+            return false;
+        } finally {
+            if (c != null) {
+                c.disconnect();
+            }
+        }
     }
 
     /** 通返回 null，不通返回异常简称（ConnectException / SocketTimeoutException / EACCES…） */
