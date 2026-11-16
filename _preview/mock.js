@@ -2,7 +2,7 @@
 const http = require('http');
 const fs = require('fs');
 
-const PAGE = process.argv[2] || 'D:/车机/车机桥接空调/work/cloudmusic-car/app/src/main/assets/remote.html';
+const PAGE = process.argv[2] || 'D:/车机/车机桥接空调/web/remote_lunastub.html';
 
 http.createServer((req, res) => {
   const u = req.url.split('?')[0];
@@ -172,6 +172,11 @@ http.createServer((req, res) => {
     if (u === '/cards') { res.writeHead(200, h); res.end(JSON.stringify(cards)); return; }
     if (u === '/acts') { res.writeHead(200, h); res.end(JSON.stringify(acts)); return; }
     if (u === '/probe') { res.writeHead(200, h); res.end(JSON.stringify(probe)); return; }
+    if (u === '/' || u === '/index.html') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(fs.readFileSync('D:/车机/车机桥接空调/web/car.html'));
+      return;
+    }
     if (u === '/ping') {
       const okN = ops.filter((o) => o.ok).length;
       res.writeHead(200, h);
