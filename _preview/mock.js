@@ -46,10 +46,6 @@ const acts = {
   ok: 1,
   groups: [
     { g: '空调', items: [{ id: 'handleHvacAutoClick', t: 'AUTO', v: -1 }, { id: 'handleHvacCirculationClick', t: '内外循环', v: -1 }] },
-    { g: '车身', items: [
-      { id: 'handleTrunkClick', t: '后备箱', v: -1 }, { id: 'handleWirelessChargingClick', t: '无线充电', v: -1 },
-      { id: 'handlePedestrianAlertClick', t: '行人提示音', v: -1 },
-      { id: 'actionSetChildLock', t: '儿童锁 开', v: 1 }, { id: 'actionSetChildLock', t: '儿童锁 关', v: 0 }] },
     { g: '底盘', items: [
       { id: 'actionSetSuspensionModeComfort', t: '悬架 舒适', v: -1 }, { id: 'actionSetSuspensionModeStandard', t: '悬架 标准', v: -1 },
       { id: 'actionSetSuspensionModeSport', t: '悬架 运动', v: -1 },

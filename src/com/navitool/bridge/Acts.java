@@ -25,17 +25,12 @@ final class Acts {
      * 组, 方法名, 按钮文字, 参数值（-1 表示不需要）
      *
      * 已按需求剔除：吹风模式、雨刮灵敏度、方向盘加热、大灯高度；
-     * 整组不显示：驾驶模式（7 种）、辅助（雷达 / 手刹）、底盘制动联动。
+     * 整组不显示：驾驶模式（7 种）、辅助（雷达 / 手刹）、底盘制动联动、车身（后备箱 / 无线充电 /
+     * 行人提示音 / 儿童锁）。
      */
     private static final String[][] TABLE = {
             {"空调", "handleHvacAutoClick", "AUTO", "-1"},
             {"空调", "handleHvacCirculationClick", "内外循环", "-1"},
-
-            {"车身", "handleTrunkClick", "后备箱", "-1"},
-            {"车身", "handleWirelessChargingClick", "无线充电", "-1"},
-            {"车身", "handlePedestrianAlertClick", "行人提示音", "-1"},
-            {"车身", "actionSetChildLock", "儿童锁 开", "1"},
-            {"车身", "actionSetChildLock", "儿童锁 关", "0"},
 
             {"底盘", "actionSetSuspensionModeComfort", "悬架 舒适", "-1"},
             {"底盘", "actionSetSuspensionModeStandard", "悬架 标准", "-1"},

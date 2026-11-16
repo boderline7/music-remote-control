@@ -131,9 +131,6 @@ final class Probe {
         if ("hvac_mode".equals(id)) {
             return "showHvacModeGrid";
         }
-        if ("trunk_switch".equals(id) || "trunk".equals(id)) {
-            return "handleTrunkClick";
-        }
         return null;
     }
 

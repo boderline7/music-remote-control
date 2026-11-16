@@ -22,8 +22,6 @@ final class Actions {
     private static final String[][] ALIAS = {
             {"hvac_circ", "handleHvacCirculationClick"},
             {"hvac_mode", "showHvacModeGrid"},
-            {"trunk", "handleTrunkClick"},
-            {"trunk_switch", "handleTrunkClick"},
             {"memory_apply", "handleSeatMemoryApply"},
             {"memory_save", "handleSeatMemorySave"},
     };
