@@ -1,0 +1,149 @@
+name: iOS IPA (车机遥控 手机端)
+
+on:
+  push:
+    paths:
+      - 'work/phone/ios/**'
+      - '.github/workflows/ios-phone.yml'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: '可选：填了就同时发到 GitHub Release，例如 v1.0.0-ios'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks | grep iphoneos
+
+      - name: Install XcodeGen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen --version
+
+      - name: Generate Xcode project
+        working-directory: work/phone/ios
+        run: |
+          # XcodeGen 会把 info.path 指向的 Info.plist 覆写成它自己生成的版本
+          # （实测只剩 CFBundle* 几个键），所以先在生成工程之前留一份权威副本。
+          cp CarRemote/Info.plist "$RUNNER_TEMP/CarRemote-Info.plist.source"
+          grep -c NSBonjourServices CarRemote/Info.plist
+          xcodegen generate
+          echo "after xcodegen, NSBonjourServices count:"
+          grep -c NSBonjourServices CarRemote/Info.plist || true
+
+      - name: Show Info.plist settings
+        working-directory: work/phone/ios
+        run: |
+          xcodebuild -project CarRemote.xcodeproj -scheme CarRemote \
+            -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' -showBuildSettings 2>/dev/null \
+            | grep -E 'GENERATE_INFOPLIST_FILE|INFOPLIST_FILE|MARKETING_VERSION' || true
+
+      - name: Archive (no code signing)
+        working-directory: work/phone/ios
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project CarRemote.xcodeproj \
+            -scheme CarRemote \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/CarRemote.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            clean archive
+
+      - name: Pack unsigned IPA
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/CarRemote.xcarchive/Products/Applications/CarRemote.app"
+          test -d "$APP" || { echo "::error::CarRemote.app not found in archive"; exit 1; }
+          # Xcode 16 + XcodeGen 可能改用自动生成的 Info.plist，把仓库里那份丢掉。
+          # ATS 明文放行 / 本地网络权限 / NSBonjourServices 一旦缺失，App 就发现不了车机，
+          # 所以这里以仓库内的 Info.plist 为准强制合并，并在打包前逐键校验。
+          python3 - "$APP/Info.plist" "$RUNNER_TEMP/CarRemote-Info.plist.source" <<'PY'
+          import plistlib, sys
+          dst_path, src_path = sys.argv[1], sys.argv[2]
+          src = plistlib.load(open(src_path, "rb"))
+          dst = plistlib.load(open(dst_path, "rb"))
+          required = ("NSAppTransportSecurity", "NSLocalNetworkUsageDescription",
+                      "NSBonjourServices", "CFBundleDisplayName")
+          for key in required:
+              assert key in src, "source plist was overwritten, missing: " + key
+          merged = []
+          for key, value in src.items():
+              # 这些键由 Xcode 的 build settings 展开，源 plist 里只是 $(...) 占位符，跳过
+              if isinstance(value, str) and "$(" in value:
+                  continue
+              dst[key] = value
+              merged.append(key)
+          plistlib.dump(dst, open(dst_path, "wb"))
+          print("merged keys:", ", ".join(sorted(merged)))
+          for key in required:
+              assert key in dst, "missing required Info.plist key: " + key
+              print("OK", key, "=", dst[key])
+          PY
+          plutil -lint "$APP/Info.plist"
+          OUT="$GITHUB_WORKSPACE/work/phone/ios/out"
+          rm -rf "$OUT"
+          mkdir -p "$OUT/Payload"
+          cp -R "$APP" "$OUT/Payload/"
+          cd "$OUT"
+          zip -qry CarRemote-unsigned.ipa Payload
+          shasum -a 256 CarRemote-unsigned.ipa | tee CarRemote-unsigned.ipa.sha256
+          echo "GITHUB_SHA=$GITHUB_SHA" > build-info.txt
+          echo "RUN_ID=$GITHUB_RUN_ID" >> build-info.txt
+          unzip -l CarRemote-unsigned.ipa | head -10
+          ls -lh CarRemote-unsigned.ipa
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarRemote-unsigned-ipa
+          path: |
+            work/phone/ios/out/CarRemote-unsigned.ipa
+            work/phone/ios/out/CarRemote-unsigned.ipa.sha256
+            work/phone/ios/out/build-info.txt
+          retention-days: 90
+
+      - name: Publish to Release (optional)
+        if: ${{ inputs.release_tag != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          NOTES="GitHub Actions 云构建的 iOS 遥控客户端（未签名 IPA）。
+          发现逻辑与安卓 App 一致：Bonjour 搜 _cloudmusic-car._tcp + 扫本机 /24 网段，18766（车控）与 18765（音乐）一起探，拿到纯 IPv4 直连。
+          安装方式见 work/phone/ios/README.md：Sideloadly / AltStore 用本机 Apple ID 签名，或自有开发者证书签名。"
+          if gh release create "$TAG" \
+              work/phone/ios/out/CarRemote-unsigned.ipa \
+              work/phone/ios/out/CarRemote-unsigned.ipa.sha256 \
+              work/phone/ios/out/build-info.txt \
+              --title "iOS 遥控 $TAG" --notes "$NOTES"; then
+            echo "release created: $TAG"
+          else
+            gh release upload "$TAG" \
+              work/phone/ios/out/CarRemote-unsigned.ipa \
+              work/phone/ios/out/CarRemote-unsigned.ipa.sha256 \
+              work/phone/ios/out/build-info.txt --clobber
+            echo "assets replaced: $TAG"
+          fi
