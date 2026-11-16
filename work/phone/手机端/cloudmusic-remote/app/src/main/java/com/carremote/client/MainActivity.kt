@@ -422,6 +422,8 @@ class MainActivity : Activity() {
         connected = false
         webView.visibility = View.GONE
         connectPanel.visibility = View.VISIBLE
+        // 直接连上次地址进来时没走过 discover，手动地址列表要在这里补一次
+        renderCandidates()
         setStatus(message)
     }
 
