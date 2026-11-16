@@ -1,0 +1,2116 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="车机遥控">
+<meta name="theme-color" content="#0b0b0d">
+<link rel="apple-touch-icon" href="/icon.png">
+<title>车机遥控</title>
+<style>
+  :root {
+    --red: #fa2d48;
+    --fg: #ffffff;
+    --dim: rgba(255,255,255,.55);
+    --faint: rgba(255,255,255,.32);
+    --line: rgba(255,255,255,.12);
+    --card: rgba(255,255,255,.06);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: radial-gradient(120% 60% at 50% 0%, #1b1b22 0%, #0b0b0d 62%) fixed;
+    color: var(--fg);
+    font-family: -apple-system, system-ui, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  button { border: 0; background: none; color: var(--fg); padding: 0; cursor: pointer; font: inherit; }
+  button:active { opacity: .55; }
+  /* 手机 WebView 里默认那条白色滚动条非常扎眼，三端统一隐藏（内容照样能滚） */
+  * { scrollbar-width: none; -ms-overflow-style: none; }
+  *::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+  /* 宽屏浏览器 / 平板也保持手机版式居中，不然标题和右侧按钮会被拉到屏幕两头 */
+  header, main { width: 100%; max-width: 560px; margin-left: auto; margin-right: auto; }
+  header {
+    flex: none;
+    display: flex; align-items: center; gap: 8px;
+    padding: calc(10px + env(safe-area-inset-top)) 20px 6px;
+    font-size: 13px; color: var(--dim);
+  }
+  #dot { width: 8px; height: 8px; border-radius: 50%; background: #8e8e93; flex: none; transition: background .2s; }
+  #dot.on { background: #34c759; }
+  #dot.warn { background: #ff9f0a; }
+  #status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .icon-btn {
+    flex: none; width: 38px; height: 38px; border-radius: 50%;
+    background: var(--card); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .icon-btn svg { width: 19px; height: 19px; fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .icon-btn:active { background: var(--red); }
+  .icon-btn.spin svg { animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  main {
+    flex: 1;
+    overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    padding: 4px 20px calc(22px + env(safe-area-inset-bottom));
+  }
+
+  /* ---------- 正在播放 ---------- */
+  /* 标题和歌手要在同一列紧挨着：以前 #artist 在 head-row 外面，
+     被右侧竖排按钮撑出一大片空白，看上去像两截不相关的东西 */
+  .head-row { display: flex; align-items: center; gap: 12px; }
+  .head-text { flex: 1; min-width: 0; }
+  #title {
+    margin: 0; font-size: 26px; font-weight: 700; line-height: 1.25;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  /* 右侧横排：爱心与「添加到歌单」并排，两个圆钮完全同尺寸 */
+  .side-actions { flex: none; display: flex; flex-direction: row; align-items: center; gap: 8px; }
+  .side-btn {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: var(--card); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .side-btn:disabled { opacity: .35; }
+  .side-btn svg { width: 21px; height: 21px; fill: none; stroke: rgba(255,255,255,.8); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  #like.on svg { fill: var(--red); stroke: var(--red); }
+  /* 只留一点淡红描边区分功能，尺寸与爱心保持一致 */
+  #addToPlaylist:not(:disabled) { border-color: rgba(250,45,72,.42); }
+  #artist { margin: 3px 0 0; font-size: 14px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .progress { margin-top: 16px; }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 6px; border-radius: 3px; outline: none; margin: 0;
+    background: linear-gradient(to right, var(--red) var(--p, 0%), var(--line) var(--p, 0%));
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,.55);
+  }
+  input[type=range]:disabled { opacity: .35; }
+  .times { display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+  /* 左列放播放模式，中列始终居中是三键，右列留白配平 —— 模式钮不挤进播控中间 */
+  .controls {
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+    margin: 20px 0 4px;
+  }
+  .ctl-core { display: flex; align-items: center; gap: 44px; }
+  .mode-btn {
+    justify-self: start; width: 38px; height: 38px; border-radius: 50%;
+    background: var(--card); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .mode-btn svg { width: 19px; height: 19px; fill: none; stroke: var(--dim); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .mode-btn.on svg { stroke: var(--red); }
+  .mode-btn:active { background: rgba(250,45,72,.2); border-color: rgba(250,45,72,.5); }
+  .skip svg { width: 32px; height: 32px; fill: rgba(255,255,255,.9); }
+  .main { width: 70px; height: 70px; border-radius: 50%; background: var(--red); box-shadow: 0 10px 24px rgba(250,45,72,.32); }
+  .main svg { width: 30px; height: 30px; fill: #fff; }
+
+  .volume { display: flex; align-items: center; gap: 10px; margin-top: 16px; }
+  /* 音量加减只是微调，不该比播放键还抢眼：收成和右上刷新钮同一套低调小圆钮 */
+  .round {
+    flex: none; width: 38px; height: 38px; border-radius: 50%;
+    background: var(--card); border: 1px solid var(--line);
+    font-size: 21px; line-height: 1; color: var(--dim); font-weight: 400;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .round:active { background: rgba(250,45,72,.2); border-color: rgba(250,45,72,.5); color: #fff; }
+  .volume input[type=range] { flex: 1; height: 4px; }
+  .volume input[type=range]::-webkit-slider-thumb { width: 15px; height: 15px; }
+  #volVal { min-width: 24px; flex: none; text-align: right; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .hidden { display: none !important; }
+
+  /* 资料库卡片：彩色渐变大方框，图标 + 播放钮在框内同一行，不再悬空 */
+  .tile {
+    position: relative; min-height: 108px; padding: 14px;
+    border-radius: 18px; border: 1px solid rgba(255,255,255,.16);
+    display: flex; flex-direction: column; justify-content: space-between;
+    text-align: left; overflow: hidden;
+  }
+  .tile.liked { background: linear-gradient(135deg, #7d1e30 0%, #3a1119 100%); }
+  .tile.cloud { background: linear-gradient(135deg, #294672 0%, #141d33 100%); }
+  .tile .tile-top { display: flex; align-items: center; justify-content: space-between; }
+  .tile .ico {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: rgba(255,255,255,.16);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .tile .ico svg { width: 18px; height: 18px; fill: #fff; }
+  .tile .tilePlay {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: rgba(255,255,255,.94); color: #1a1a1f;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .tile .tilePlay svg { width: 16px; height: 16px; fill: currentColor; }
+  .tile .tilePlay:active { background: var(--red); color: #fff; }
+
+  /* 页面最顶部的歌词方框：固定显示 3 行，每行等高，当前行高亮。
+     行高固定后 JS 可以用「行号 × 行高」精确定位，不会因为高亮字号变化而抖动；
+     内部不允许手动滑（overflow hidden），手势交给外层 main 滚整页。 */
+  .lyric-card {
+    margin: 2px 0 18px; border-radius: 18px;
+    background: rgba(255,255,255,.045); border: 1px solid var(--line);
+    padding: 12px 10px 10px;
+  }
+  .lyric-card .cap {
+    display: flex; align-items: baseline; gap: 8px;
+    font-size: 12px; color: var(--dim); margin: 0 6px 6px;
+  }
+  .lyric-card .cap b { color: #fff; font-weight: 600; font-size: 13px; }
+  #lyricBox {
+    --lyric-row: 34px;
+    height: calc(var(--lyric-row) * 3);
+    overflow: hidden; position: relative;
+    scrollbar-width: none; scroll-behavior: smooth;
+    /* 禁止手动滑动，但手势仍能冒泡给 main 滚整页 */
+    touch-action: pan-y;
+    /* 只有 3 行，不再用渐隐遮罩，避免吞掉首尾两行 */
+  }
+  #lyricBox::-webkit-scrollbar { display: none; }
+  #lyricBox .empty {
+    height: calc(var(--lyric-row) * 3); padding: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .lyric-line {
+    height: var(--lyric-row); line-height: var(--lyric-row);
+    padding: 0 10px; font-size: 13px; text-align: center;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: rgba(255,255,255,.44); transition: color .2s, background .2s;
+  }
+  /* 译文并排在同一行，不额外占高度，保证「固定 3 行」 */
+  .lyric-line .tr { display: inline; margin-left: 8px; font-size: 11px; color: rgba(255,255,255,.3); }
+  .lyric-line.on { color: #fff; font-size: 15px; font-weight: 700; }
+  .lyric-line.on .tr { color: rgba(255,255,255,.62); }
+
+  /* 添加到歌单选择面板 */
+  .overlay {
+    position: fixed; inset: 0; z-index: 15; background: rgba(0,0,0,.62);
+    display: flex; align-items: flex-end;
+  }
+  .overlay .panel {
+    width: 100%; max-height: 70vh; overflow-y: auto;
+    background: #16161a; border-radius: 20px 20px 0 0;
+    padding: 18px 16px calc(24px + env(safe-area-inset-bottom));
+  }
+  .overlay .panel-head { display: flex; align-items: center; margin-bottom: 14px; }
+  .overlay .panel-head h3 { flex: 1; margin: 0; font-size: 17px; }
+  .overlay .panel-head button { color: var(--dim); font-size: 14px; }
+  .overlay .panel-sub { margin: -8px 0 12px; font-size: 12px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .overlay .plrow {
+    width: 100%; display: flex; align-items: center; gap: 10px;
+    padding: 14px 4px; border-bottom: 1px solid var(--line);
+    text-align: left; color: #fff;
+  }
+  .overlay .plrow .n { flex: 1; font-size: 15px; }
+  .overlay .plrow .c { font-size: 12px; color: var(--faint); }
+
+  /* ---------- 搜索 ---------- */
+  .search { display: flex; align-items: center; gap: 8px; margin-top: 22px; }
+  .field {
+    flex: 1; display: flex; align-items: center; gap: 8px;
+    background: var(--card); border-radius: 14px; padding: 0 4px 0 14px;
+  }
+  #q {
+    flex: 1; min-width: 0; background: none; border: 0; outline: none;
+    color: #fff; font-size: 16px; padding: 12px 0;
+  }
+  #q::placeholder { color: var(--faint); }
+  /* type=search 在部分 WebView 里自带清除叉 / 装饰，和右侧红色搜索钮重复 */
+  #q::-webkit-search-cancel-button,
+  #q::-webkit-search-decoration { -webkit-appearance: none; appearance: none; display: none; }
+  #go { width: 46px; height: 40px; border-radius: 11px; background: var(--red); display: flex; align-items: center; justify-content: center; }
+  #go svg { width: 20px; height: 20px; fill: none; stroke: #fff; stroke-width: 2.2; }
+
+  /* ---------- 区块 ---------- */
+  .sec { margin-top: 26px; display: flex; align-items: baseline; gap: 8px; }
+  .sec h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .sec .hint { font-size: 12px; color: var(--faint); flex: 1; }
+
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+  .tile .n { display: block; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile .c { display: block; margin-top: 4px; font-size: 12px; color: rgba(255,255,255,.68); }
+
+  .rows { margin-top: 12px; }
+  .row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 13px 14px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 8px; text-align: left; }
+  .row .n { flex: 1; min-width: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .c { font-size: 12px; color: var(--faint); flex: none; }
+  .row .chev { color: var(--faint); font-size: 17px; flex: none; }
+  /* 行内「顺序播放」：整行是入口，这个小圆钮不进去，直接从头播整列 */
+  .row .pl { flex: none; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #1a1a1f; background: rgba(255,255,255,.94); }
+  .row .pl svg { width: 16px; height: 16px; fill: currentColor; }
+  .row .pl:active { background: var(--red); color: #fff; }
+  /* 带副标题的行（每日推荐 / 心动模式）：主标题在上，说明在下 */
+  .row .t { flex: 1; min-width: 0; }
+  .row .sub { margin-top: 3px; font-size: 12px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 折叠时末尾那个「展开全部 / 收起」 */
+  .row.more { justify-content: center; padding: 11px 14px; }
+  .row.more .n { flex: none; font-size: 13px; color: var(--dim); }
+  .empty { font-size: 13px; color: var(--faint); padding: 4px 2px; }
+
+  /* 页面整体禁选中防误触，但地址要能长按复制 */
+  footer { margin: 26px 0 0; font-size: 11px; color: var(--faint); text-align: center;
+           user-select: text; -webkit-user-select: text; }
+  footer b { color: var(--dim); font-weight: 500; }
+
+  /* ---------- 曲目面板 ---------- */
+  .sheet {
+    position: fixed; inset: 0; z-index: 9; background: #0d0d10;
+    display: flex; flex-direction: column;
+    transform: translateY(100%); transition: transform .26s cubic-bezier(.32,.72,0,1);
+    will-change: transform;
+  }
+  .sheet.open { transform: translateY(0); }
+  .sheet-head {
+    flex: none; display: flex; align-items: center; gap: 10px;
+    padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .sheet-head .t { flex: 1; min-width: 0; }
+  .sheet-head h2 { margin: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sheet-head .s { margin-top: 3px; font-size: 12px; color: var(--faint); }
+  #back { flex: none; width: 40px; height: 40px; font-size: 26px; line-height: 1; color: var(--dim); }
+  .sheet-body {
+    flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    padding: 6px 16px calc(20px + env(safe-area-inset-bottom));
+  }
+  .track { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 4px; border-bottom: 1px solid rgba(255,255,255,.06); text-align: left; }
+  .track .idx { width: 22px; flex: none; text-align: right; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .track .t { flex: 1; min-width: 0; }
+  .track .nm { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .track .ar { margin-top: 3px; font-size: 12px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .track .dur { flex: none; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .track.off { opacity: .38; }
+  #more { width: 100%; margin-top: 14px; padding: 13px; border-radius: 14px; background: var(--card); color: var(--dim); font-size: 14px; }
+  #toast {
+    position: fixed; left: 50%; bottom: calc(28px + env(safe-area-inset-bottom));
+    transform: translate(-50%, 12px); opacity: 0; pointer-events: none;
+    background: rgba(30,30,36,.96); color: #fff; font-size: 13px;
+    padding: 10px 18px; border-radius: 999px; transition: opacity .18s, transform .18s; z-index: 60;
+    max-width: 80vw; text-align: center;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  /* 断线遮罩：断连后旧 state 不可信，盖住整页并禁用控件，别让人误以为车机还在执行 */
+  #offline {
+    position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px; background: rgba(11,11,13,.94);
+  }
+  #offline .box {
+    width: 100%; max-width: 340px; text-align: center;
+    padding: 30px 24px 24px; border-radius: 20px;
+    background: #1b1b22; border: 1px solid var(--line);
+    box-shadow: 0 24px 60px rgba(0,0,0,.55);
+  }
+  #offline .mark {
+    width: 46px; height: 46px; margin: 0 auto 16px; border-radius: 50%;
+    background: rgba(255,159,10,.14); border: 1px solid rgba(255,159,10,.45);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #offline .mark::after { content: ''; width: 10px; height: 10px; border-radius: 50%; background: #ff9f0a; }
+  #offline h2 { margin: 0 0 8px; font-size: 19px; font-weight: 700; }
+  #offline .sub { margin: 0 0 20px; font-size: 13px; line-height: 1.6; color: var(--dim); }
+  #offline .kv {
+    display: flex; justify-content: space-between;
+    font-size: 13px; padding: 7px 0; color: var(--dim);
+  }
+  #offline .kv b { color: var(--fg); font-weight: 500; }
+  #offline .bar { height: 3px; margin: 12px 0 18px; border-radius: 2px; background: var(--line); overflow: hidden; }
+  #offline .bar span { display: block; height: 100%; width: 0; background: var(--red); transition: width .2s linear; }
+  #offline .retry {
+    width: 100%; padding: 12px; border-radius: 12px;
+    background: var(--red); color: #fff; font-size: 14px; font-weight: 600;
+  }
+  #offline .tip { margin: 14px 0 0; font-size: 12px; color: var(--faint); }
+
+
+  /* ==================================================================
+     车机控制页：从右侧滑入，盖在音乐页之上。
+     内容和样式全部来自车机助手（/cards + /probe），这里没有写死任何一项。
+     ================================================================== */
+  #carPage {
+    position: fixed; inset: 0; z-index: 18;
+    display: flex; flex-direction: column;
+    background: radial-gradient(120% 60% at 50% 0%, #1b1b22 0%, #0b0b0d 62%) fixed;
+    transform: translateX(102%);
+    transition: transform .26s cubic-bezier(.32,.72,0,1);
+    will-change: transform;
+    pointer-events: none;
+  }
+  /* 车控页打开时，音乐侧的断线遮罩让位：两边是各自独立的通道 */
+  body.car-open #offline { display: none !important; }
+  #carPage.open { transform: translateX(0); pointer-events: auto; }
+  #carPage .car-head {
+    flex: none; display: flex; align-items: center; gap: 8px;
+    width: 100%; max-width: 560px; margin: 0 auto;
+    padding: calc(10px + env(safe-area-inset-top)) 16px 8px;
+    font-size: 13px; color: var(--dim);
+  }
+  #carPage .cddot {
+    width: 8px; height: 8px; border-radius: 50%; background: #8e8e93; flex: none;
+    transition: background .2s;
+  }
+  #carPage .cddot.on { background: #34c759; }
+  #carPage .cddot.warn { background: #ff9f0a; }
+  #carPage .cddot.off { background: #ff453a; }
+  #carPage #carStatus {
+    flex: 1; min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  #carScroll {
+    flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    width: 100%; max-width: 560px; margin: 0 auto;
+    padding: 4px 0 calc(24px + env(safe-area-inset-bottom));
+  }
+  /* 卡片区：背景/圆角/透明度/字号由 /cards 的 style 决定 */
+  #carCards { padding-top: 2px; }
+  .ccard {
+    background: var(--ccard-bg, rgba(12,12,14,.55));
+    border: 1px solid rgba(255,255,255,.055);
+    border-radius: var(--cradius, 12px);
+    margin: 0 var(--cmargin, 8px) var(--cmargin, 8px);
+    padding: 13px 15px 15px;
+    opacity: var(--calpha, .9);
+    color: var(--cvalue, #fff);
+  }
+  .ccard-t {
+    font-size: 13px; font-weight: 600; letter-spacing: .02em;
+    color: rgba(255,255,255,.78); margin-bottom: 10px;
+  }
+  .cgrid { display: grid; gap: 10px 8px; }
+  .citem { min-width: 0; }
+  .citem .k {
+    display: block; font-size: 11px; line-height: 1.3;
+    color: var(--cprop, rgba(255,255,255,.55));
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .citem .v {
+    display: block; margin-top: 3px;
+    font-size: var(--cfs, 20px); line-height: 1.2; font-weight: 600;
+    color: var(--cvalue, #fff);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* 能力区 */
+  .car-sec {
+    display: flex; align-items: baseline; gap: 8px;
+    padding: 14px 18px 8px;
+  }
+  .car-sec h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .car-sec .hint { font-size: 12px; color: var(--faint); }
+    .capgrp {
+    margin: 12px 16px 6px; font-size: 12px; letter-spacing: .06em; color: rgba(255,255,255,.42);
+  }
+  .caps {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    padding: 0 16px;
+  }
+  .cap {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 12px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--line);
+    font-size: 14px; text-align: left; line-height: 1.2;
+    min-height: 46px;
+  }
+  .cap:active { background: rgba(250,45,72,.28); border-color: rgba(250,45,72,.5); }
+  .cap.dead { opacity: .42; }
+  .cap .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cap .tag {
+    flex: none; font-size: 10px; padding: 2px 5px; border-radius: 5px;
+    color: rgba(255,255,255,.6); background: rgba(255,255,255,.08);
+  }
+  .cap.dead .tag { color: #ff9f0a; background: rgba(255,159,10,.14); }
+  /* ---------- 车控页里的设置 / 诊断 ---------- */
+  #csetMask{position:fixed;inset:0;background:rgba(0,0,0,.6);opacity:0;pointer-events:none;
+    transition:opacity .2s;z-index:44}
+  #csetMask.show{opacity:1;pointer-events:auto}
+  #csetSheet{position:fixed;left:0;right:0;bottom:0;z-index:45;max-height:88vh;
+    transform:translateY(103%);transition:transform .26s cubic-bezier(.3,.8,.3,1);
+    background:#141417;border-top:1px solid rgba(255,255,255,.12);border-radius:18px 18px 0 0;
+    display:flex;flex-direction:column;box-shadow:0 -12px 40px rgba(0,0,0,.5)}
+  #csetSheet.show{transform:translateY(0)}
+  #csetSheet .cs-head{flex:none;display:flex;align-items:center;gap:10px;
+    padding:15px 18px 12px;border-bottom:1px solid rgba(255,255,255,.1)}
+  #csetSheet .cs-head h3{margin:0;font-size:16px;font-weight:600;flex:1;color:#fff}
+  #csetSheet .cs-x{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;
+    font-size:15px;color:rgba(255,255,255,.55)}
+  #csetSheet .cs-body{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    padding:14px 16px calc(20px + env(safe-area-inset-bottom))}
+  #csetSheet .cs-kv{font-size:12px;line-height:1.95;color:rgba(255,255,255,.55);
+    margin:0 2px 12px;white-space:pre-wrap;word-break:break-all}
+  #csetSheet .cs-row{display:flex;gap:8px;margin-bottom:12px}
+  #csetSheet .cs-row button{flex:1;min-height:42px;border-radius:11px;background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.12);font-size:13.5px;color:#fff}
+  #csetSheet .cs-row button:active{background:rgba(255,255,255,.12)}
+  #csetSheet .cs-row button.primary{background:rgba(250,45,72,.16);border-color:rgba(250,45,72,.42)}
+  #csetDiag{margin:0;padding:12px;border-radius:12px;background:rgba(0,0,0,.38);
+    border:1px solid rgba(255,255,255,.12);font:11px/1.65 ui-monospace,Consolas,monospace;
+    color:rgba(255,255,255,.74);white-space:pre-wrap;word-break:break-all;
+    min-height:130px;max-height:46vh;overflow:auto;user-select:text;-webkit-user-select:text}
+  #csetSheet .cs-tip{font-size:11.5px;line-height:1.75;color:rgba(255,255,255,.32);margin:10px 2px 0}
+
+  .carlog {
+    margin: 12px 16px 0; padding: 12px;
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    border-radius: 12px; font-size: 11px; line-height: 1.6;
+    color: rgba(255,255,255,.6);
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .carempty {
+    margin: 8px 16px 0; padding: 18px 16px;
+    background: rgba(255,255,255,.04); border: 1px dashed var(--line);
+    border-radius: 12px; font-size: 13px; line-height: 1.6; color: var(--dim);
+  }
+  #carFoot {
+    text-align: center; font-size: 11px; color: var(--faint);
+    padding: 18px 0 6px;
+  }
+  #carFoot a { color: var(--faint); text-decoration: underline; }
+  /* 顶部切换按钮上的小圆点：18766 通不通一眼可见 */
+  #openCar { position: relative; }
+  #openCar .bade {
+    position: absolute; right: 3px; top: 3px;
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #ff453a; border: 1.5px solid #0b0b0d;
+  }
+  #openCar .bade.on { background: #34c759; }
+</style>
+</head>
+<body>
+  <header>
+    <span id="dot"></span>
+    <span id="status">正在连接车机…</span>
+    <button class="icon-btn" id="openCar" aria-label="车机控制">
+      <svg viewBox="0 0 24 24"><path d="M4 13l1.6-4.2A2 2 0 0 1 7.5 7.5h9a2 2 0 0 1 1.9 1.3L20 13"/><path d="M3.5 13h17v4.5a1 1 0 0 1-1 1h-1.5a1 1 0 0 1-1-1V17H7v.5a1 1 0 0 1-1 1H4.5a1 1 0 0 1-1-1z"/></svg>
+      <span class="bade" id="carBade"></span>
+    </button>
+    <button class="icon-btn" id="refresh" aria-label="刷新">
+      <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+    </button>
+  </header>
+
+  <main id="scroll">
+    <div class="lyric-card">
+      <div class="cap"><b>歌词</b></div>
+      <div id="lyricBox"></div>
+    </div>
+
+    <div class="head-row">
+      <div class="head-text">
+        <h1 id="title">未在播放</h1>
+        <p id="artist">—</p>
+      </div>
+      <div class="side-actions">
+        <button class="side-btn" id="like" aria-label="喜欢">
+          <svg viewBox="0 0 24 24"><path d="M12 20.5s-7.6-4.7-9.2-9C1.6 7.9 3.6 4.8 6.8 4.8c2 0 3.4 1.1 4.2 2.3.3.4.9.4 1.2 0 .8-1.2 2.2-2.3 4.2-2.3 3.2 0 5.2 3.1 4 6.7-1.6 4.3-9.2 9-9.2 9z"/></svg>
+        </button>
+        <button class="side-btn" id="addToPlaylist" aria-label="添加到歌单" disabled>
+          <svg viewBox="0 0 24 24"><path d="M4 6h9M4 11h9M4 16h5"/><path d="M16 13v7M12.5 16.5h7"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="progress">
+      <input id="prog" type="range" min="0" max="1000" value="0" disabled aria-label="进度">
+      <div class="times"><span id="cur">0:00</span><span id="dur">0:00</span></div>
+    </div>
+
+    <div class="controls">
+      <button class="mode-btn hidden" id="mode" aria-label="播放模式">
+        <svg id="modeIcon" viewBox="0 0 24 24"></svg>
+      </button>
+      <div class="ctl-core">
+        <button class="skip" id="prev" aria-label="上一首">
+          <svg viewBox="0 0 24 24"><path d="M6 6h2.4v12H6zm3.6 6L18 6v12z"/></svg>
+        </button>
+        <button class="main" id="play" aria-label="播放/暂停">
+          <svg id="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+        <button class="skip" id="next" aria-label="下一首">
+          <svg viewBox="0 0 24 24"><path d="M15.6 6H18v12h-2.4zM6 6l8.4 6L6 18z"/></svg>
+        </button>
+      </div>
+      <span></span>
+    </div>
+
+    <div class="volume hidden" id="volumeRow">
+      <button class="round" id="volDown" aria-label="音量减">−</button>
+      <input id="vol" type="range" min="0" max="30" value="0" aria-label="音量">
+      <span id="volVal">0</span>
+      <button class="round" id="volUp" aria-label="音量加">+</button>
+    </div>
+
+    <div class="search">
+      <div class="field">
+        <input id="q" type="search" placeholder="搜索歌曲、歌手" enterkeyhint="search" autocomplete="off" autocorrect="off" spellcheck="false">
+        <button id="go" aria-label="搜索">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>资料库</h2>
+      <span class="hint" id="libHint"></span>
+    </div>
+    <div class="tiles">
+      <button class="tile liked" id="tileLiked">
+        <span class="tile-top">
+          <span class="ico"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.6-4.7-9.2-9C1.6 7.9 3.6 4.8 6.8 4.8c2 0 3.4 1.1 4.2 2.3.3.4.9.4 1.2 0 .8-1.2 2.2-2.3 4.2-2.3 3.2 0 5.2 3.1 4 6.7-1.6 4.3-9.2 9-9.2 9z"/></svg></span>
+          <span class="pl tilePlay" id="likedPlay" role="button" aria-label="顺序播放我喜欢的音乐"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+        </span>
+        <span class="n" id="likedName">我喜欢的音乐</span>
+        <span class="c" id="likedCount">—</span>
+      </button>
+      <button class="tile cloud" id="tileCloud">
+        <span class="tile-top">
+          <span class="ico"><svg viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 .4-8A6 6 0 0 0 6 9.2 4.4 4.4 0 0 0 7 18z"/></svg></span>
+          <span class="pl tilePlay" id="cloudPlay" role="button" aria-label="顺序播放音乐云盘"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+        </span>
+        <span class="n" id="cloudName">音乐云盘</span>
+        <span class="c" id="cloudCount">—</span>
+      </button>
+    </div>
+
+    <div class="sec"><h2>为你推荐</h2></div>
+    <div class="rows" id="quick">
+      <button class="row" id="dailyRow">
+        <div class="t"><div class="n">每日推荐</div><div class="sub">根据你的口味 · 每天 6:00 更新</div></div>
+        <span class="pl" id="dailyPlay" role="button" aria-label="顺序播放每日推荐"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+        <span class="chev">›</span>
+      </button>
+      <button class="row" id="hbRow">
+        <div class="t"><div class="n">心动模式</div><div class="sub">根据红心推荐 · 边放边续</div></div>
+        <span class="pl" id="hbPlay" role="button" aria-label="顺序播放心动模式"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+        <span class="chev">›</span>
+      </button>
+    </div>
+
+    <div class="sec"><h2>我创建的歌单</h2><span class="hint" id="plHint"></span></div>
+    <div class="rows" id="playlists"></div>
+
+    <div class="sec"><h2>排行榜</h2><span class="hint" id="topHint"></span></div>
+    <div class="rows" id="tops"></div>
+
+    <div class="sec"><h2>推荐歌单</h2><span class="hint" id="recHint"></span></div>
+    <div class="rows" id="recs"></div>
+
+    <footer>当前 IP 地址 <b id="host">—</b></footer>
+  </main>
+
+  <div class="overlay hidden" id="addPanel">
+    <div class="panel">
+      <div class="panel-head"><h3>添加到歌单</h3><button id="addClose">关闭</button></div>
+      <div class="panel-sub" id="addTrack"></div>
+      <div id="addList"></div>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheet">
+    <div class="sheet-head">
+      <button id="back" aria-label="返回">‹</button>
+      <div class="t">
+        <h2 id="sheetTitle">列表</h2>
+        <div class="s" id="sheetSub"></div>
+      </div>
+    </div>
+    <div class="sheet-body" id="sheetBody"></div>
+  </div>
+
+  <!-- ===================== 车机控制页 ===================== -->
+  <div id="carPage">
+    <div class="car-head">
+      <span class="cddot" id="carDot"></span>
+      <span id="carStatus">正在连接车机助手…</span>
+      <button class="icon-btn" id="carSet" aria-label="设置与诊断">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9.1 19a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 4.8 15a1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.8 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 9.1 4.8 1.6 1.6 0 0 0 10 3.3V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+      </button>
+      <button class="icon-btn" id="carRefresh" aria-label="刷新车控">
+        <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+      </button>
+      <button class="icon-btn" id="closeCar" aria-label="返回音乐">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+
+    <div id="carScroll">
+      <div id="carCards"></div>
+
+      <div class="car-sec">
+        <h2>控制</h2>
+        <span class="hint" id="capHint"></span>
+      </div>
+      <div id="carCaps"></div>
+
+      <div id="carLog" class="carlog hidden"></div>
+
+      <footer id="carFoot">车机助手 · 18766 · <a id="carDiag" href="#">独立打开</a></footer>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+  <!-- 设置 / 诊断：车机上复制不了，全部走网页这里 -->
+  <div id="csetMask"></div>
+  <div id="csetSheet">
+    <div class="cs-head">
+      <h3>设置 · 诊断</h3>
+      <button class="cs-x" id="csetClose" aria-label="关闭">✕</button>
+    </div>
+    <div class="cs-body">
+      <div class="cs-kv" id="csetKv">—</div>
+      <div class="cs-row">
+        <button class="primary" id="csetLoad">生成诊断</button>
+        <button id="csetCopy">复制</button>
+        <button id="csetSave">下载</button>
+      </div>
+      <pre id="csetDiag">点上面的「生成诊断」，从车机助手里取当前状态和最近日志。</pre>
+      <div class="cs-tip">
+        诊断里有端口状态、引擎绑定、安装包版本、动作项数和最近日志。<br>
+        「复制」放进剪贴板直接发出去；「下载」存成 txt，手机的文件管理器里能找到。<br>
+        下载没反应时长按上面的文本全选——App 的下载由系统管，手机浏览器里最稳。
+      </div>
+    </div>
+  </div>
+
+
+
+
+  <!-- 断线时盖住整页；hidden 由 setOffline() 切换 -->
+  <div id="offline" class="hidden">
+    <div class="box">
+      <div class="mark"></div>
+      <h2>与车机断开连接</h2>
+      <p class="sub">页面状态已冻结，操作不会被车机执行</p>
+      <div class="kv"><span>最后同步</span><b id="offlineSync">—</b></div>
+      <div class="kv"><span>自动重连</span><b id="offlineRetry">—</b></div>
+      <div class="bar"><span id="offlineBar"></span></div>
+      <button class="retry" id="offlineNow">立即重试</button>
+      <p class="tip">连上后会自动拉取车机的最新状态</p>
+    </div>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+
+  var PROTO_VERSION = 1;
+  // 壳层（安卓 WebView / iOS WKWebView）在 URL 上带客户端标识，车机侧能看到是谁连进来了；
+  // 浏览器直接打开时没有这两个参数，走默认值。
+  var qs = new URLSearchParams(location.search);
+  var CLIENT = {
+    name: qs.get('client') || 'Safari',
+    version: qs.get('cv') || '1.0.0'
+  };
+  var K_TOKEN = 'carremote.token';
+  var K_DEVICE = 'carremote.deviceId';
+  var PAGE_SIZE = 20;   // 与服务端 RemoteLibrary.PAGE_SIZE 对齐，仅用于「加载更多」文案
+
+  var ICON_PLAY = '<path d="M8 5v14l11-7z"/>';
+  var ICON_PAUSE = '<path d="M6.5 5h4v14h-4zm7 0h4v14h-4z"/>';
+
+  // 与车机 PlayModes 对齐：0 顺序 / 1 单曲循环 / 2 随机
+  var MODE_NAMES = ['顺序播放', '单曲循环', '随机播放'];
+  var MODE_REPEAT = '<path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/>' +
+                    '<path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/>';
+  var MODE_ICONS = [
+    MODE_REPEAT,
+    MODE_REPEAT + '<path d="M11 10l1-1v6"/>',
+    '<path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/>' +
+      '<path d="M15 15l6 6"/><path d="M4 4l5 5"/>'
+  ];
+
+  var el = {};
+  ['dot', 'status', 'title', 'artist', 'like', 'prog', 'cur', 'dur', 'play', 'playIcon', 'prev', 'next',
+   'mode', 'modeIcon',
+   'volumeRow', 'vol', 'volVal', 'volUp', 'volDown', 'q', 'go', 'likedName', 'likedCount',
+   'cloudName', 'cloudCount', 'playlists', 'tops', 'recs', 'libHint', 'plHint', 'topHint', 'recHint',
+   'sheet', 'sheetTitle', 'sheetSub', 'sheetBody', 'back', 'toast', 'host', 'tileLiked', 'tileCloud', 'scroll',
+   'dailyRow', 'hbRow', 'dailyPlay', 'hbPlay',
+   'refresh', 'lyricBox',
+   'addToPlaylist', 'addPanel', 'addList', 'addClose', 'addTrack', 'likedPlay', 'cloudPlay',
+   'offline', 'offlineSync', 'offlineRetry', 'offlineBar', 'offlineNow'
+  ].forEach(function (id) { el[id] = document.getElementById(id); });
+
+  var ws = null;
+  var seq = 0;
+  var state = {};
+  var lastSeq = -1;
+  var stateAt = 0;
+  var draggingSeek = false;
+  var pendingSeek = 0;
+  var reconnectDelay = 1000;
+  var reconnectTimer = null;
+  var connectFails = 0;
+  var toastTimer = null;
+
+  // 断连 fail-safe：断线后旧 state 不可信，遮罩覆盖期间所有控件都不可点
+  var offline = false;
+  var offlineControls = [];
+  var offlineTick = null;
+  var nextRetryAt = 0;
+  var retrySpan = 0;
+
+  var lyricLines = [];               // [{ t, text, trans }]
+  var lyricActive = -1;
+  var lyricTrackId = '';             // 这份歌词属于哪首歌
+  var lyricFresh = false;            // 刚换歌词：第一次定位必须钉在第一句
+  var lastLyricTitle = '';           // 上一次 state 的「歌名|歌手」，用来识别换歌
+  var lastLyricPos = -1;             // 上一次 state 的播放位置，用来识别进度回退
+
+  var library = null;                // { liked, cloud, playlists[] }
+  var catalog = null;                // { top[], recommend[] }
+  var list = null;                   // { id, title, total, items[], loading, error }
+
+  // 歌单默认只铺 5 个。自建歌单可能有几十个，全铺出来会把下面的榜单、底部的地址全顶出屏，
+  // 手机上要划半天才到头；默认收着，想看全的点「展开全部」。
+  var COLLAPSE_MAX = 5;
+  var plExpanded = false;
+  var recExpanded = false;
+  var topExpanded = false;
+
+  el.host.textContent = location.hostname;
+
+  // ---------- 基础 ----------
+
+  function deviceId() {
+    var v = localStorage.getItem(K_DEVICE);
+    if (!v) {
+      v = 'web-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      localStorage.setItem(K_DEVICE, v);
+    }
+    return v;
+  }
+
+  function setStatus(text, kind) {
+    el.status.textContent = text;
+    el.dot.className = kind || '';
+    // 主动把连接状态告诉原生壳：安卓据此决定是否拦截硬件音量键、记住成功的地址。
+    // iOS 壳没有注入这个对象，可选调用直接跳过；浏览器打开也安全。
+    try {
+      if (window.CarRemoteNative && window.CarRemoteNative.onConnection) {
+        window.CarRemoteNative.onConnection(kind === 'on', text);
+      }
+    } catch (e) {}
+  }
+
+  function toast(text) {
+    el.toast.textContent = text;
+    el.toast.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.toast.classList.remove('show'); }, 1800);
+  }
+
+  /** 刷新遮罩上的「最后同步」与重连倒计时；只在断线期间每 250ms 跑一次。 */
+  function updateOffline() {
+    if (!offline) return;
+    var sec = stateAt ? Math.max(0, Math.floor((Date.now() - stateAt) / 1000)) : -1;
+    el.offlineSync.textContent = sec < 0 ? '尚未同步' : (sec < 60 ? sec + ' 秒前' : Math.floor(sec / 60) + ' 分钟前');
+    var left = Math.max(0, nextRetryAt - Date.now());
+    el.offlineRetry.textContent = left > 0 ? Math.ceil(left / 1000) + ' 秒后' : '正在连接…';
+    el.offlineBar.style.width = (retrySpan > 0 ? Math.max(0, Math.min(100, (1 - left / retrySpan) * 100)) : 0).toFixed(1) + '%';
+  }
+
+  /**
+   * 断线时盖住整页并禁用所有控件（只留「立即重试」一个出口），
+   * 收到服务端 state 才解除 —— 认证成功时已经发出 getState / getLyrics / loadAll。
+   */
+  function setOffline(on) {
+    if (on === offline) return;
+    offline = on;
+    if (on) el.offline.classList.remove('hidden'); else el.offline.classList.add('hidden');
+    if (on) {
+      offlineControls = [];
+      var nodes = document.querySelectorAll ? document.querySelectorAll('button, input, select, textarea') : [];
+      for (var i = 0; i < nodes.length; i++) {
+        var n = nodes[i];
+        if (n.disabled || n.id === 'offlineNow') continue;
+        // 车控页和它的入口走 18766，跟音乐这条 WebSocket 不是一条线，不该被一起冻住
+        if (n.id === 'openCar' || (n.closest && (n.closest('#carPage') || n.closest('#csetSheet')))) continue;
+        n.disabled = true;
+        n.setAttribute('data-offline-off', '1');
+        offlineControls.push(n);
+      }
+      updateOffline();
+      if (!offlineTick) offlineTick = setInterval(updateOffline, 250);
+    } else {
+      if (offlineTick) { clearInterval(offlineTick); offlineTick = null; }
+      for (var j = 0; j < offlineControls.length; j++) {
+        var c = offlineControls[j];
+        if (c.getAttribute('data-offline-off')) {
+          c.disabled = false;
+          c.setAttribute('data-offline-off', '');
+        }
+      }
+      offlineControls = [];
+      paintNow();   // 按真实状态还原，别把本来该置灰的按钮放开
+    }
+  }
+
+  function send(type, data) {
+    if (!ws || ws.readyState !== 1) {
+      // 不再静默丢指令：断线时的任何一次点击都把遮罩立起来
+      setOffline(true);
+      return;
+    }
+
+    seq += 1;
+    ws.send(JSON.stringify({
+      v: PROTO_VERSION, type: type, id: 'w' + seq, ts: Date.now(), data: data || {}
+    }));
+  }
+
+  function command(action, args) {
+    var payload = { action: action };
+    if (args) payload.args = args;
+    send('command', payload);
+  }
+
+  function fmt(ms) {
+    if (!ms || ms < 0) ms = 0;
+    var total = Math.floor(ms / 1000);
+    var m = Math.floor(total / 60);
+    var s = total % 60;
+    return m + ':' + (s < 10 ? '0' + s : s);
+  }
+
+  function setBar(input, ratio) {
+    input.style.setProperty('--p', (Math.max(0, Math.min(1, ratio)) * 100).toFixed(2) + '%');
+  }
+
+  /** 清空一个容器。不用 replaceChildren，老 Safari 没有。 */
+  function clear(node) {
+    while (node.firstChild) node.removeChild(node.firstChild);
+  }
+
+  function el_(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  /**
+   * 一个入口行：点整行进列表看曲目，点右边的小圆钮直接从头顺序播。
+   * 圆钮用 span 不用 button —— button 里套 button 是非法结构，浏览器会把内层拆出去。
+   */
+  function row(name, count, onClick, onPlay) {
+    var b = el_('button', 'row');
+    b.appendChild(el_('span', 'n', name));
+    if (count != null) b.appendChild(el_('span', 'c', count + ' 首'));
+    if (onPlay) b.appendChild(playBtn('顺序播放 ' + name, onPlay));
+    b.appendChild(el_('span', 'chev', '›'));
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  function playBtn(label, onPlay) {
+    var s = el_('span', 'pl');
+    s.setAttribute('role', 'button');
+    s.setAttribute('aria-label', label);
+    s.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+    s.addEventListener('click', function (e) {
+      e.stopPropagation();   // 别让整行的 click 把列表也打开了
+      onPlay();
+    });
+    return s;
+  }
+
+  // ---------- 渲染：正在播放 ----------
+
+  function paintNow() {
+    el.addToPlaylist.disabled = !state.title;
+    el.title.textContent = state.title || '未在播放';
+    el.artist.textContent = state.artist || '—';
+    el.playIcon.innerHTML = state.playing ? ICON_PAUSE : ICON_PLAY;
+    paintLike();
+    paintMode();
+
+    var dur = state.durationMs || 0;
+    el.dur.textContent = fmt(dur);
+    if (!draggingSeek) {
+      var pos = Math.min(dur || 0, state.positionMs || 0);
+      el.prog.max = dur || 1000;
+      el.prog.value = pos;
+      el.cur.textContent = fmt(pos);
+      setBar(el.prog, dur ? pos / dur : 0);
+    }
+    el.prog.disabled = !dur;
+
+    var max = state.volumeMax || 0;
+    if (max > 0 && typeof state.volume === 'number' && state.volume >= 0) {
+      el.volumeRow.classList.remove('hidden');
+      el.vol.max = max;
+      if (document.activeElement !== el.vol) {
+        el.vol.value = state.volume;
+        setBar(el.vol, state.volume / max);
+        el.volVal.textContent = state.volume;
+      }
+    } else {
+      el.volumeRow.classList.add('hidden');
+    }
+  }
+
+  function paintLike() {
+    if (state.liked) el.like.classList.add('on');
+    else el.like.classList.remove('on');
+  }
+
+  /** 旧版车机不推 playMode，整个按钮藏起来，免得点了没反应。 */
+  function paintMode() {
+    var has = typeof state.playMode === 'number' && state.playMode >= 0 && state.playMode <= 2;
+    if (has) el.mode.classList.remove('hidden'); else el.mode.classList.add('hidden');
+    if (!has) return;
+    el.modeIcon.innerHTML = MODE_ICONS[state.playMode];
+    el.mode.setAttribute('aria-label', MODE_NAMES[state.playMode]);
+    if (state.playMode === 2) el.mode.classList.add('on'); else el.mode.classList.remove('on');
+  }
+
+  // 进度条自己走：车机每秒推一次 tick，中间靠本地插值补齐
+  setInterval(function () {
+    // 断线后别再用本地时间把进度条往前推，那样看着像车机还在播
+    if (!ws || ws.readyState !== 1 || draggingSeek || !state.playing || !state.durationMs) return;
+    var pos = Math.min(state.durationMs, (state.positionMs || 0) + (Date.now() - stateAt));
+    el.prog.value = pos;
+    el.cur.textContent = fmt(pos);
+    setBar(el.prog, pos / state.durationMs);
+  }, 250);
+
+  // ---------- 渲染：资料库 / 榜单 ----------
+
+  function paintLibrary() {
+    var lib = library;
+    if (!lib) {
+      el.libHint.textContent = '读取中…';
+      return;
+    }
+    el.libHint.textContent = '';
+    el.likedName.textContent = lib.liked.name || '我喜欢的音乐';
+    el.likedCount.textContent = lib.liked.count + ' 首';
+    el.cloudName.textContent = lib.cloud.name || '音乐云盘';
+    el.cloudCount.textContent = lib.cloud.count + ' 首';
+
+    var items = lib.playlists || [];
+    el.plHint.textContent = items.length ? items.length + ' 个' : '';
+    paintPlaylists(items);
+  }
+
+  /** 自建歌单单独抽出来，是因为「展开 / 收起」要就地重画这一块，不能整页重来。 */
+  function paintPlaylists(items) {
+    fillEntries(el.playlists, items, plExpanded, function () {
+      plExpanded = !plExpanded;
+      paintPlaylists(items);
+    }, '还没有自建歌单');
+  }
+
+  function paintCatalog() {
+    var cat = catalog;
+    if (!cat) {
+      el.topHint.textContent = '读取中…';
+      el.recHint.textContent = '读取中…';
+      return;
+    }
+    var tops = cat.top || [];
+    el.topHint.textContent = tops.length ? tops.length + ' 个' : '';
+    fillEntries(el.tops, tops, topExpanded, function () {
+      topExpanded = !topExpanded;
+      paintCatalog();
+    }, '榜单读取失败');
+
+    var recs = cat.recommend || [];
+    el.recHint.textContent = recs.length ? recs.length + ' 个' : '';
+    fillEntries(el.recs, recs, recExpanded, function () {
+      recExpanded = !recExpanded;
+      paintCatalog();
+    }, '暂无推荐');
+  }
+
+  /**
+   * 铺一列可折叠的入口：超过 COLLAPSE_MAX 个就只铺前 5 个，末尾挂一行「展开全部／收起」。
+   * 展开状态由调用方持有，刷新、重连之后保持用户刚才的选择。
+   * 每行右侧都有播放钮：不进去，直接把整列从头放。
+   */
+  function fillEntries(box, items, expanded, onToggle, emptyText) {
+    clear(box);
+    items = items || [];
+    if (!items.length) {
+      box.appendChild(el_('div', 'empty', emptyText));
+      return;
+    }
+    var shown = expanded ? items : items.slice(0, COLLAPSE_MAX);
+    shown.forEach(function (p) {
+      box.appendChild(row(
+        p.name, p.count,
+        function () { openList(p.id, p.name); },
+        function () { playList(p.id, p.name); }
+      ));
+    });
+    if (items.length > COLLAPSE_MAX) {
+      var more = el_('button', 'row more');
+      more.appendChild(el_('span', 'n', expanded ? '收起' : '展开全部（' + items.length + ' 个）'));
+      more.addEventListener('click', onToggle);
+      box.appendChild(more);
+    }
+  }
+
+  // ---------- 曲目面板 ----------
+
+  function openSheet() {
+    el.sheet.classList.add('open');
+  }
+
+  function closeSheet() {
+    el.sheet.classList.remove('open');
+    list = null;
+  }
+
+  /**
+   * 不打开列表，直接从头顺序播放整列。
+   * 车机端 playTracks 会自己 load(id) 把整张歌单塞进队列，index 只是起点，
+   * 所以这里不必先 getTracks，省一次往返。
+   */
+  function playList(id, title) {
+    command('playTracks', { id: id, index: 0 });
+    toast('正在播放：' + title);
+    el.scroll.scrollTop = 0;
+  }
+
+  function openList(id, title) {
+    list = { id: id, title: title, total: 0, items: [], loading: true, error: null };
+    el.sheetTitle.textContent = title;
+    el.sheetSub.textContent = '读取中…';
+    paintList();
+    openSheet();
+    command('getTracks', { id: id, offset: 0 });
+  }
+
+  function openSearch(keyword) {
+    var q = (keyword || '').trim();
+    if (!q) return;
+    list = { id: 'search:' + q, title: '搜索：' + q, total: 0, items: [], loading: true, error: null };
+    el.sheetTitle.textContent = list.title;
+    el.sheetSub.textContent = '搜索中…';
+    paintList();
+    openSheet();
+    command('search', { q: q });
+  }
+
+  function paintList() {
+    if (!list) return;
+    clear(el.sheetBody);
+
+    if (list.error) {
+      el.sheetSub.textContent = '';
+      el.sheetBody.appendChild(el_('div', 'empty', list.error));
+      var again = el_('button', 'row');
+      again.appendChild(el_('span', 'n', '重试'));
+      again.addEventListener('click', function () { requestMore(true); });
+      el.sheetBody.appendChild(again);
+      return;
+    }
+
+    el.sheetSub.textContent = list.loading && !list.items.length
+      ? '读取中…'
+      : (list.total ? list.items.length + ' / ' + list.total + ' 首' : list.items.length + ' 首');
+
+    list.items.forEach(function (t) {
+      var b = el_('button', 'track' + (t.playable === false ? ' off' : ''));
+      b.appendChild(el_('span', 'idx', String(t.index + 1)));
+      var box = el_('div', 't');
+      box.appendChild(el_('div', 'nm', t.name));
+      box.appendChild(el_('div', 'ar', t.artist || '未知歌手'));
+      b.appendChild(box);
+      b.appendChild(el_('span', 'dur', fmt(t.durationMs)));
+      b.addEventListener('click', function () { playTrack(t); });
+      el.sheetBody.appendChild(b);
+    });
+
+    if (list.loading) {
+      el.sheetBody.appendChild(el_('div', 'empty', '加载中…'));
+    } else if (!list.items.length) {
+      el.sheetBody.appendChild(el_('div', 'empty', '这里没有歌'));
+    } else if (list.items.length < list.total) {
+      var more = el_('button');
+      more.id = 'more';
+      more.textContent = '加载更多（' + list.items.length + '/' + list.total + '）';
+      more.addEventListener('click', function () { requestMore(false); });
+      el.sheetBody.appendChild(more);
+    }
+  }
+
+  function requestMore(reset) {
+    if (!list) return;
+    list.loading = true;
+    list.error = null;
+    var offset = reset ? 0 : list.items.length;
+    if (reset) list.items = [];
+    paintList();
+    command('getTracks', { id: list.id, offset: offset });
+  }
+
+  function playTrack(t) {
+    if (!list) return;
+    if (t.playable === false) { toast('这首歌在车机上不可播放'); return; }
+    command('playTracks', { id: list.id, index: t.index });
+    toast('正在播放：' + t.name);
+    closeSheet();
+    el.scroll.scrollTop = 0;
+  }
+
+  // ---------- 消息 ----------
+
+  function handle(type, data) {
+    switch (type) {
+      case 'pair_result':
+        if (data.ok) {
+          localStorage.setItem(K_TOKEN, data.token || '');
+          setStatus('已连接 · ' + (data.carName || '车机'), 'on');
+          command('getState');
+          command('getLyrics');
+          loadAll();
+        } else {
+          setStatus(data.message || '配对失败', 'warn');
+        }
+        break;
+
+      case 'auth_result':
+        if (data.ok) {
+          setStatus('已连接 · ' + (data.carName || '车机'), 'on');
+          command('getState');
+          command('getLyrics');
+          loadAll();
+        } else {
+          localStorage.removeItem(K_TOKEN);
+          setStatus('授权失效，重新配对…', 'warn');
+          send('pair', { pin: '', deviceId: deviceId(), deviceName: CLIENT.name, clientVersion: CLIENT.version });
+        }
+        break;
+
+      case 'state':
+        if (typeof data.seq === 'number') {
+          if (data.seq <= lastSeq) return;
+          lastSeq = data.seq;
+        }
+        // 松手 seek 后车机要过一会儿才推到新位置，这期间别让进度条跳回旧值
+        if (pendingSeek && Math.abs((data.positionMs || 0) - pendingSeek) < 2500) {
+          pendingSeek = 0;
+          draggingSeek = false;
+        }
+        state = data;
+        stateAt = Date.now();
+        setOffline(false);   // 拿到车机的真实状态才算恢复
+        // 换歌 / 进度回退（切上一首、拖回首）时把歌词锁回第一句。
+        // 车机端换歌是先推「空歌词」再推「新歌词」，中间那几帧 state 还是上一首的
+        // positionMs（可能已经两三分钟），不锁住就会先甩到歌词中段再弹回来，看着像乱跑。
+        var titleKey = (data.title || '') + '|' + (data.artist || '');
+        var pos = data.positionMs || 0;
+        if (titleKey !== lastLyricTitle || (lastLyricPos >= 0 && pos < lastLyricPos - 1500)) {
+          lockFirstLyric();
+        }
+        lastLyricTitle = titleKey;
+        lastLyricPos = pos;
+        paintNow();
+        highlightLyric();
+        break;
+
+      case 'lyrics':
+        var lines = (data.lines || []).slice().sort(function (a, b) { return (a.t || 0) - (b.t || 0); });
+        var hadLines = lyricLines.length > 0;
+        var tid = data.trackId || '';
+        var swapped = tid !== lyricTrackId || (!hadLines && lines.length > 0) || !lines.length;
+        lyricTrackId = tid;
+        lyricLines = lines;
+        renderLyrics();
+        // 换歌 / 歌词刚异步到位：一律从第一句起步，不拿旧的 state 位置去乱定位
+        if (swapped) lockFirstLyric();
+        // 只有真正换歌/歌词才钉第一句；同一首歌补推译文之类不打断正在跟随的位置
+        lyricFresh = swapped && lyricLines.length > 0;
+        highlightLyric();
+        break;
+
+      case 'library':
+        if (data.ok) {
+          library = {
+            liked: data.liked || { name: '我喜欢的音乐', count: 0 },
+            cloud: data.cloud || { name: '音乐云盘', count: 0 },
+            playlists: data.playlists || []
+          };
+          paintLibrary();
+        } else {
+          library = null;
+          el.libHint.textContent = data.message || '资料库读取失败';
+        }
+        break;
+
+      case 'catalog':
+        if (data.ok) {
+          catalog = { top: data.top || [], recommend: data.recommend || [] };
+          paintCatalog();
+        } else {
+          catalog = { top: [], recommend: [] };
+          el.topHint.textContent = data.message || '榜单读取失败';
+        }
+        break;
+
+      case 'tracks':
+        if (!list || data.id !== list.id) return;   // 迟到的上一份列表，丢掉
+        if (data.ok) {
+          var page = data.tracks || [];
+          // 车机按字节预算裁页，条数不固定，所以偏移一律用「已收到的条数」
+          if (!data.offset) list.items = page;
+          else list.items = list.items.concat(page);
+          list.total = data.total || list.items.length;
+          list.error = null;
+        } else {
+          list.error = data.message || '读取失败';
+        }
+        list.loading = false;
+        paintList();
+        break;
+
+      case 'ack':
+        if (data.ok === false) toast('指令失败：' + (data.message || data.error || ''));
+        else if (data.action === 'addToPlaylist') {
+          closeAddPanel(); toast('已添加到歌单');
+          command('library');   // 车机已清 library 缓存，重拉一次让歌单数立刻更新
+        } else if (data.action === 'refresh') {
+          el.refresh.classList.remove('spin');
+          toast('已刷新');
+        }
+        break;
+
+      case 'error':
+        toast(data.message || ('错误 ' + data.error));
+        break;
+
+      case 'revoked':
+        localStorage.removeItem(K_TOKEN);
+        send('pair', { pin: '', deviceId: deviceId(), deviceName: CLIENT.name, clientVersion: CLIENT.version });
+        break;
+    }
+  }
+
+  function loadAll() {
+    library = null;
+    catalog = null;
+    el.libHint.textContent = '';
+    paintLibrary();
+    paintCatalog();
+    command('library');
+    command('catalog');
+  }
+
+  /** 真正的刷新：走服务端 refresh 清缓存并重推资料库/榜单/状态/歌词；断线时改为重载页面。 */
+  var refreshTimer = null;
+  function refreshAll(silent) {
+    if (!ws || ws.readyState > 1) {
+      if (!silent) toast('连接已断开，正在重新加载…');
+      location.reload();
+      return;
+    }
+    if (!silent) toast('正在刷新…');
+    el.refresh.classList.add('spin');
+    if (refreshTimer) clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(function () { el.refresh.classList.remove('spin'); }, 8000);
+    library = null;
+    catalog = null;
+    lyricLines = [];
+    lyricActive = -1;
+    lyricTrackId = '';
+    lyricFresh = false;
+    lastLyricTitle = '';
+    lastLyricPos = -1;
+    renderLyrics();
+    paintLibrary();
+    paintCatalog();
+    command('refresh');
+  }
+
+  // ---------- 连接 ----------
+
+  function connect() {
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    // 车机侧的 seq 在服务重启后从 1 重新数；页面若沿用断线前的值，
+    // 新连接的每条 state 都会被「seq <= lastSeq」判成过期丢掉，表现为页面卡在旧歌不动。
+    lastSeq = -1;
+    setStatus('正在连接车机…', '');
+    var scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(scheme + '://' + location.host + '/');
+
+    ws.onopen = function () {
+      reconnectDelay = 1000;
+      connectFails = 0;
+      var token = localStorage.getItem(K_TOKEN) || '';
+      if (token) {
+        send('auth', { token: token, deviceId: deviceId(), clientVersion: CLIENT.version });
+        setStatus('正在认证…', '');
+      } else {
+        send('pair', { pin: '', deviceId: deviceId(), deviceName: CLIENT.name, clientVersion: CLIENT.version });
+        setStatus('正在配对…', '');
+      }
+    };
+
+    ws.onmessage = function (ev) {
+      var msg;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      handle(msg.type, msg.data || {});
+    };
+
+    ws.onclose = function () {
+      ws = null;
+      connectFails++;
+      // 车机热点重启后 IP 会变，而浏览器对域名的解析结果有自己的缓存（我们发的 A 记录
+      // TTL 是 120 秒，期间不会重新问）。所以这里不能一直闷头重试：
+      // 超过 20 秒还连不上就明确告诉用户「刷新一下」，刷新会让浏览器重新解析域名。
+      if (connectFails >= 4) {
+        setStatus('连不上车机 · 点右上角刷新或下拉重试', 'warn');
+      } else {
+        setStatus('已断开，重连中…', 'warn');
+      }
+      retrySpan = reconnectDelay;
+      nextRetryAt = Date.now() + reconnectDelay;
+      setOffline(true);
+      reconnectTimer = setTimeout(connect, reconnectDelay);
+      // 地址变了的时候退避到 10 秒会让恢复很慢，封顶 5 秒
+      reconnectDelay = Math.min(reconnectDelay * 2, 5000);
+    };
+
+    ws.onerror = function () { /* onclose 会跟着来，这里不重复处理 */ };
+  }
+
+  // 心跳：协议要求 20 秒一次，车机 90 秒没收到任何帧就断
+  setInterval(function () { send('ping', {}); }, 20000);
+
+  // 从后台切回来时立刻重连，不用等退避
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && (!ws || ws.readyState > 1)) {
+      reconnectDelay = 1000;
+      connect();
+    }
+  });
+
+  // ---------- 歌单 / 歌词 双页 ----------
+
+  function renderLyrics() {
+    var box = el.lyricBox;
+    box.textContent = '';
+    lyricActive = -1;
+    if (!lyricLines.length) {
+      var empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = '暂无歌词';
+      box.appendChild(empty);
+      box.scrollTop = 0;
+      return;
+    }
+    var frag = document.createDocumentFragment();
+    lyricLines.forEach(function (line) {
+      var d = document.createElement('div');
+      d.className = 'lyric-line';
+      d.appendChild(document.createTextNode(line.text || ''));
+      if (line.trans) {
+        var tr = document.createElement('span');
+        tr.className = 'tr';
+        tr.textContent = line.trans;
+        d.appendChild(tr);
+      }
+      frag.appendChild(d);
+    });
+    box.appendChild(frag);
+    // 重建 DOM 后立刻把滚动位置钉回顶部（不走 CSS smooth，避免开场动画乱跑）
+    setLyricScroll(0, true);
+  }
+
+  /** 清掉高亮并把方框拉回第一行；instant=true 时跳过平滑动画。 */
+  function lockFirstLyric() {
+    var box = el.lyricBox;
+    Array.prototype.forEach.call(box.children, function (n) { n.classList.remove('on'); });
+    lyricActive = -1;
+    setLyricScroll(0, true);
+  }
+
+  function setLyricScroll(top, instant) {
+    var box = el.lyricBox;
+    if (instant) {
+      var old = box.style.scrollBehavior;
+      box.style.scrollBehavior = 'auto';
+      box.scrollTop = top;
+      box.style.scrollBehavior = old;
+    } else {
+      // CSS 里的 scroll-behavior: smooth 负责逐行跟随
+      box.scrollTop = top;
+    }
+  }
+
+  function highlightLyric() {
+    if (!lyricLines.length) return;
+    var pos = (state.positionMs || 0) + (state.playing ? Math.min(1500, Date.now() - stateAt) : 0);
+    var idx = -1;
+    for (var i = 0; i < lyricLines.length; i++) {
+      if ((lyricLines[i].t || 0) <= pos) idx = i; else break;
+    }
+    // 前奏 / 还没到第一句：也钉在第一句，不显示「没有高亮行」的空框
+    if (idx < 0) idx = 0;
+    // 新歌开头 2.5 秒内、或歌词刚换好：固定第一句，等真正的 state 位置到了再跟随
+    var pinFirst = lyricFresh || pos < 2500;
+    lyricFresh = false;
+    if (pinFirst) idx = 0;
+    var nodes = el.lyricBox.children;
+    if (idx === lyricActive && !pinFirst) return;
+    if (lyricActive >= 0 && nodes[lyricActive]) nodes[lyricActive].classList.remove('on');
+    if (nodes[idx]) nodes[idx].classList.add('on');
+    lyricActive = idx;
+
+    // 固定 3 行：当前行落在中间那行（第 0 行时自然是顶部三行）。
+    // 行高从真实 DOM 量出来，CSS 改 --lyric-row 也不用同步改这里。
+    var base = nodes[0] ? nodes[0].offsetTop : 0;
+    var rowH = nodes[1] ? nodes[1].offsetTop - base : el.lyricBox.clientHeight / 3;
+    var top = pinFirst ? 0 : Math.max(0, (nodes[idx] ? nodes[idx].offsetTop : base) - base - rowH);
+    setLyricScroll(top, pinFirst);
+  }
+
+  // 下拉刷新：只在页面已经滚到顶、且不是拖输入框/滑杆时接管。三端共用这一份手势。
+  (function bindPullRefresh() {
+    // iOS 壳用 WKWebView 的 UIRefreshControl（有 spinner 反馈），这里别重复触发刷新
+    if (CLIENT.name === 'ios') return;
+    var y0 = 0, tracking = false;
+    el.scroll.addEventListener('touchstart', function (e) {
+      var tag = (e.target.tagName || '').toLowerCase();
+      tracking = (e.touches.length === 1 && el.scroll.scrollTop <= 0
+                  && tag !== 'input' && tag !== 'textarea');
+      if (tracking) y0 = e.touches[0].clientY;
+    }, { passive: true });
+    el.scroll.addEventListener('touchend', function (e) {
+      if (!tracking || !e.changedTouches.length) return;
+      tracking = false;
+      if (e.changedTouches[0].clientY - y0 > 75) refreshAll(false);
+    }, { passive: true });
+  })();
+
+  // ---------- 添加到歌单 ----------
+
+  function openAddPanel() {
+    el.addTrack.textContent = state.title
+      ? '当前曲目：' + state.title + (state.artist ? ' · ' + state.artist : '')
+      : '当前没有播放';
+    var items = (library && library.playlists) || [];
+    el.addList.textContent = '';
+    if (!items.length) {
+      var empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = '还没有自建歌单';
+      el.addList.appendChild(empty);
+    } else {
+      items.forEach(function (p) {
+        var b = document.createElement('button');
+        b.className = 'plrow';
+        var n = document.createElement('span'); n.className = 'n'; n.textContent = p.name || '未命名歌单';
+        var c = document.createElement('span'); c.className = 'c'; c.textContent = (p.count || 0) + ' 首';
+        b.appendChild(n); b.appendChild(c);
+        b.addEventListener('click', function () {
+          command('addToPlaylist', { playlistId: String(p.id) });
+        });
+        el.addList.appendChild(b);
+      });
+    }
+    el.addPanel.classList.remove('hidden');
+  }
+
+  function closeAddPanel() { el.addPanel.classList.add('hidden'); }
+
+  // 原生层（安卓 onKeyDown / iOS VolumeKeyWatcher）拦到硬件音量键后调它；dir 为 +1 / -1。
+  // iOS 壳在 documentStart 注入了一个「先排队」的同名函数，页面没加载完时按下的音量键
+  // 不会丢；这里换成真实现后把队列补放一遍（安卓 / 浏览器没有注入脚本，队列为空）。
+  var stepVolumeImpl = function (dir) { stepVolume(dir); };
+  window.carRemoteStepVolume = stepVolumeImpl;
+  (window.__carRemoteVolumeQueue || []).forEach(stepVolumeImpl);
+  window.__carRemoteVolumeQueue = [];
+  // 原生层从后台切回、或需要主动刷新时调用
+  window.carRemoteRefresh = function () { refreshAll(true); };
+
+  // ---------- 操作 ----------
+
+  el.play.addEventListener('click', function () {
+    command(state.playing ? 'pause' : 'play');
+  });
+  el.prev.addEventListener('click', function () { command('prev'); });
+  el.next.addEventListener('click', function () { command('next'); });
+
+  // 一键在「顺序 ↔ 随机」之间切；车机若停在单曲循环，点一下先回顺序
+  el.mode.addEventListener('click', function () {
+    var cur = typeof state.playMode === 'number' ? state.playMode : 0;
+    var next = cur === 0 ? 2 : 0;
+    state.playMode = next;
+    paintMode();
+    command('setPlayMode', { mode: next });
+    toast(MODE_NAMES[next]);
+  });
+
+  el.like.addEventListener('click', function () {
+    if (!state.title) { toast('当前没有播放'); return; }
+    // 先按预期翻一下，车机随即会推一次 state 覆盖成真值（失败也会被纠正回来）
+    state.liked = !state.liked;
+    paintLike();
+    command('like');
+    toast(state.liked ? '已加入我喜欢的音乐' : '已取消喜欢');
+  });
+
+  el.prog.addEventListener('input', function () {
+    draggingSeek = true;
+    el.cur.textContent = fmt(+el.prog.value);
+    setBar(el.prog, state.durationMs ? (+el.prog.value) / state.durationMs : 0);
+  });
+  el.prog.addEventListener('change', function () {
+    pendingSeek = +el.prog.value;
+    command('seek', { positionMs: Math.round(pendingSeek) });
+    // 兜底：车机没回新位置（不支持 seek 之类）也要把拖动状态放掉
+    setTimeout(function () {
+      pendingSeek = 0;
+      draggingSeek = false;
+    }, 1500);
+  });
+
+  function pushVolume(v) {
+    var max = state.volumeMax || 0;
+    if (!max) return;
+    command('setVolume', { volume: Math.max(0, Math.min(max, Math.round(v))) });
+  }
+
+  el.vol.addEventListener('input', function () {
+    el.volVal.textContent = el.vol.value;
+    setBar(el.vol, (+el.vol.value) / (state.volumeMax || 1));
+  });
+  el.vol.addEventListener('change', function () { pushVolume(+el.vol.value); });
+
+  function stepVolume(dir) {
+    var max = state.volumeMax || 0;
+    if (!max) return;
+    var cur = state.volume >= 0 ? state.volume : Math.round(max / 2);
+    var step = Math.max(1, Math.round(max / 15));
+    pushVolume(cur + dir * step);
+  }
+  el.volUp.addEventListener('click', function () { stepVolume(1); });
+  el.volDown.addEventListener('click', function () { stepVolume(-1); });
+
+  el.go.addEventListener('click', function () { openSearch(el.q.value); });
+  el.q.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.keyCode === 13) {
+      e.preventDefault();
+      el.q.blur();
+      openSearch(el.q.value);
+    }
+  });
+
+  el.addToPlaylist.addEventListener('click', openAddPanel);
+  el.addClose.addEventListener('click', closeAddPanel);
+  el.addPanel.addEventListener('click', function (e) { if (e.target === el.addPanel) closeAddPanel(); });
+  el.likedPlay.addEventListener('click', function (e) { e.stopPropagation(); playList('liked', '我喜欢的音乐'); });
+  el.cloudPlay.addEventListener('click', function (e) { e.stopPropagation(); playList('cloud', '音乐云盘'); });
+  el.refresh.addEventListener('click', function () { refreshAll(false); });
+
+  // 断线遮罩上唯一的出口：跳过退避立刻再试一次
+  el.offlineNow.addEventListener('click', function () {
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    connect();
+  });
+  el.tileLiked.addEventListener('click', function () { openList('liked', '我喜欢的音乐'); });
+  el.tileCloud.addEventListener('click', function () { openList('cloud', '音乐云盘'); });
+  // daily / heartbeat 是车机端的两个虚拟列表 id，和歌单一样先看列表再点歌
+  el.dailyRow.addEventListener('click', function () { openList('daily', '每日推荐'); });
+  el.hbRow.addEventListener('click', function () { openList('heartbeat', '心动模式'); });
+  el.dailyPlay.addEventListener('click', function (e) { e.stopPropagation(); playList('daily', '每日推荐'); });
+  el.hbPlay.addEventListener('click', function (e) { e.stopPropagation(); playList('heartbeat', '心动模式'); });
+  el.back.addEventListener('click', function () { closeSheet(); });
+
+  connect();
+})();
+</script>
+
+<script>
+/* ==========================================================================
+   车机控制页
+   只跟「车机助手」的 18766 端口说话：GET /cards 拿卡面数据和样式，
+   GET /probe 拿能力清单，POST /act 让助手自己执行动作。
+   这里不发任何车机总线命令，也不认识任何功能码。
+   ========================================================================== */
+(function () {
+  'use strict';
+
+  var PORT = 18766;
+  var BASE = 'http://' + location.hostname + ':' + PORT;
+  var POLL_MS = 2500;
+
+  var page = document.getElementById('carPage');
+  var cardsBox = document.getElementById('carCards');
+  var capsBox = document.getElementById('carCaps');
+  var statusEl = document.getElementById('carStatus');
+  var dotEl = document.getElementById('carDot');
+  var logEl = document.getElementById('carLog');
+  var hintEl = document.getElementById('capHint');
+  var badeEl = document.getElementById('carBade');
+  var foot = document.getElementById('carDiag');
+
+  foot.href = BASE + '/';
+
+  // 从 127.0.0.1 / localhost 打开时 hostname 是回环，车控那边要的是真实网卡地址。
+  // 18766 只认得到本机，问一下 18765 自己是谁，再把 BASE 换过去。
+  if (!location.hostname || location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+    fetch('/api/where', { cache: 'no-store' }).then(function (r) {
+      return r.json();
+    }).then(function (d) {
+      if (d && d.ip) {
+        BASE = 'http://' + d.ip + ':' + PORT;
+        foot.href = BASE + '/';
+        loadCards();
+      }
+    }).catch(function () {});
+  }
+
+  // ---------- 设置 / 诊断（车机屏幕没法复制，这里取文本到手机上） ----------
+
+  var csMask = document.getElementById('csetMask');
+  var csSheet = document.getElementById('csetSheet');
+  var csKv = document.getElementById('csetKv');
+  var csBox = document.getElementById('csetDiag');
+  var csText = '';
+  var csBusy = false;
+
+  function csetOpen() {
+    csSheet.classList.add('show');
+    csMask.classList.add('show');
+    csKv.textContent = '读取中…';
+    req('/ping').then(function (d) {
+      if (!d || d.ok !== 1) {
+        csKv.textContent = '18766 没响应';
+        return;
+      }
+      csKv.textContent = '地址　' + BASE + '\n'
+        + '服务　端口 ' + d.port + (d.bound ? ' 已绑定' : ' 未绑定') + ' · 接口 v' + d.v + '\n'
+        + '引擎　' + (d.helper ? '已绑定' : '未绑定 ← 打开一次桌面助手')
+        + ' · 界面 ' + (d.activity ? '已出现' : '未出现')
+        + (d.err ? '\n错误　' + d.err : '');
+    }).catch(function () {
+      csKv.textContent = '连不上 18766。先确认车机助手在跑。';
+    });
+  }
+
+  function csetClose() {
+    csSheet.classList.remove('show');
+    csMask.classList.remove('show');
+  }
+
+  /** 诊断要等服务端跑 logcat，普通 req() 那 3.5 秒不够 */
+  function csetLoad() {
+    if (csBusy) return;        // 服务端跑一次 logcat 要一两秒，连点会堆请求
+    csBusy = true;
+    csBox.textContent = '读取中…';
+    csText = '';
+    var ctl = window.AbortController ? new AbortController() : null;
+    var o = { cache: 'no-store' };
+    var timer = null;
+    if (ctl) {
+      o.signal = ctl.signal;
+      timer = setTimeout(function () { ctl.abort(); }, 15000);
+    }
+    fetch(BASE + '/diag', o).then(function (r) {
+      if (timer) clearTimeout(timer);
+      return r.text();
+    }).then(function (t) {
+      csBusy = false;
+      csText = t;
+      csBox.textContent = t;
+      csBox.scrollTop = 0;
+    }).catch(function () {
+      if (timer) clearTimeout(timer);
+      csBusy = false;
+      csBox.textContent = '取不到诊断：18766 没响应。';
+    });
+  }
+
+  function csetCopy() {
+    if (!csText) {
+      toast('先点「生成诊断」');
+      return;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(csText).then(function () {
+        toast('已复制');
+      }, csetFallbackCopy);
+    } else {
+      csetFallbackCopy();
+    }
+  }
+
+  function csetFallbackCopy() {
+    var ta = document.createElement('textarea');
+    ta.value = csText;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, csText.length);
+    var ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch (e) {
+      ok = false;
+    }
+    document.body.removeChild(ta);
+    toast(ok ? '已复制' : '复制被拦，长按文本全选');
+  }
+
+  function csetSave() {
+    if (!csText) {
+      toast('先点「生成诊断」');
+      return;
+    }
+    var d = new Date();
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    var name = '车机诊断_' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate())
+      + '-' + p(d.getHours()) + p(d.getMinutes()) + '.txt';
+    try {
+      var blob = new Blob([csText], { type: 'text/plain;charset=utf-8' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () {
+        if (a.parentNode) a.parentNode.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 1500);
+      toast('已保存 ' + name);
+    } catch (e) {
+      toast('下载不支持，长按文本手动复制');
+    }
+  }
+
+  document.getElementById('carSet').addEventListener('click', csetOpen);
+  document.getElementById('csetClose').addEventListener('click', csetClose);
+  csMask.addEventListener('click', csetClose);
+  document.getElementById('csetLoad').addEventListener('click', csetLoad);
+  document.getElementById('csetCopy').addEventListener('click', csetCopy);
+  document.getElementById('csetSave').addEventListener('click', csetSave);
+
+
+  var isOpen = false;
+  var pollTimer = null;
+  var actsAt = 0;
+  var inflight = false;
+
+  // ---------- 基础 ----------
+
+  function setStatus(text, kind) {
+    statusEl.textContent = text;
+    dotEl.className = 'cddot' + (kind ? ' ' + kind : '');
+  }
+
+  function toast(text) {
+    var t = document.getElementById('toast');
+    if (!t) return;
+    t.textContent = text;
+    t.classList.add('show');
+    if (toast._t) clearTimeout(toast._t);
+    toast._t = setTimeout(function () { t.classList.remove('show'); }, 1600);
+  }
+
+  /** Android 的 #AARRGGBB -> CSS rgba() */
+  function argb(s) {
+    if (!s) return 'rgba(255,255,255,.9)';
+    var h = String(s).replace(/^#/, '');
+    if (h.length === 8) {
+      var a = parseInt(h.substr(0, 2), 16) / 255;
+      var r = parseInt(h.substr(2, 2), 16);
+      var g = parseInt(h.substr(4, 2), 16);
+      var b = parseInt(h.substr(6, 2), 16);
+      return 'rgba(' + r + ',' + g + ',' + b + ',' + (a > 0 ? a : 1).toFixed(3) + ')';
+    }
+    return '#' + h;
+  }
+
+  function req(path, opt) {
+    opt = opt || {};
+    var ctl = window.AbortController ? new AbortController() : null;
+    var opt2 = { cache: 'no-store', method: opt.method || 'GET', headers: opt.headers || {} };
+    if (ctl) opt2.signal = ctl.signal;
+    if (opt.body) opt2.body = opt.body;
+
+    var timer = ctl ? setTimeout(function () { ctl.abort(); }, 3500) : null;
+
+    return fetch(BASE + path, opt2).then(function (r) {
+      if (timer) clearTimeout(timer);
+      return r.text();
+    }).then(function (txt) {
+      return JSON.parse(txt);
+    }).catch(function (e) {
+      if (timer) clearTimeout(timer);
+      throw e;
+    });
+  }
+
+  // ---------- 卡面 ----------
+
+  function line(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  function paintStyle(st) {
+    st = st || {};
+    var alpha = (st.alpha == null ? 90 : st.alpha) / 100;
+    cardsBox.style.setProperty('--calpha', alpha.toFixed(2));
+    cardsBox.style.setProperty('--cradius', (st.radius || 12) + 'px');
+    cardsBox.style.setProperty('--cmargin', (st.margin || 8) + 'px');
+    cardsBox.style.setProperty('--cprop', argb(st.propColor));
+    cardsBox.style.setProperty('--cvalue', argb(st.valueColor));
+    cardsBox.style.setProperty('--cfs', (st.fontSize || 20) + 'px');
+  }
+
+  function paintCards(d) {
+    cardsBox.textContent = '';
+
+    if (!d || d.ok !== 1) {
+      var box = line('div', 'carempty');
+      box.appendChild(line('div', null, '车机助手还没就绪'));
+      box.appendChild(line('div', null, (d && d.err) ? d.err : '拿不到卡片数据'));
+      cardsBox.appendChild(box);
+      if (d && d.log && d.log.length) showLog(d.log);
+      return;
+    }
+
+    paintStyle(d.style);
+    var cards = d.cards || [];
+    if (!cards.length) {
+      cardsBox.appendChild(line('div', 'carempty', '卡片暂无数据（车机助手可能还没生成车控卡）'));
+      return;
+    }
+
+    cards.forEach(function (c) {
+      var card = line('div', 'ccard');
+      if (c.title) card.appendChild(line('div', 'ccard-t', c.title));
+
+      var grid = line('div', 'cgrid');
+      var cols = Math.max(1, Math.min(4, c.cols || 1));
+      grid.style.gridTemplateColumns = 'repeat(' + cols + ', minmax(0,1fr))';
+
+      (c.items || []).forEach(function (it) {
+        var cell = line('div', 'citem');
+        cell.style.gridColumn = 'span ' + Math.max(1, Math.min(cols, it.s || 1));
+        cell.appendChild(line('span', 'k', it.k || ''));
+        cell.appendChild(line('span', 'v', it.v == null || it.v === '' ? '—' : it.v));
+        grid.appendChild(cell);
+      });
+
+      card.appendChild(grid);
+      cardsBox.appendChild(card);
+    });
+  }
+
+  // ---------- 能力 ----------
+
+  function paintActs(d) {
+    capsBox.textContent = '';
+    if (!d || d.ok !== 1) {
+      hintEl.textContent = '';
+      capsBox.appendChild(line('div', 'carempty', '动作表拿不到，18766 没响应'));
+      return;
+    }
+    var gs = d.groups || [];
+    var total = 0;
+    gs.forEach(function (g) {
+      var items = g.items || [];
+      if (!items.length) return;
+      total += items.length;
+      capsBox.appendChild(line('div', 'capgrp', g.g));
+      var grid = line('div', 'caps');
+      items.forEach(function (it) {
+        var b = line('button', 'cap');
+        b.appendChild(line('span', 'nm', it.t || it.id));
+        b.addEventListener('click', function () { doAct(it.id, it.t || it.id, it.v); });
+        grid.appendChild(b);
+      });
+      capsBox.appendChild(grid);
+    });
+    hintEl.textContent = total ? (total + ' 项') : '';
+    if (!total) {
+      capsBox.appendChild(line('div', 'carempty', '助手未绑定，先打开一次车机上的「桌面助手」'));
+    }
+  }
+
+  function doAct(id, name, v) {
+    if (busy) return;
+    busy = true;
+    statusEl.textContent = '执行：' + name;
+    req('/act', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ a: id, v: (v == null ? -1 : v) })
+    }).then(function (r) {
+      busy = false;
+      if (r && r.ok === 1) {
+        toast(name + ' 已执行');
+        setStatus('已执行：' + name, 'on');
+      } else {
+        toast(name + ' 没执行成功');
+        setStatus((r && r.err) ? r.err : '执行失败', 'warn');
+        if (r && r.tried) showLog('tried: ' + r.tried.join(' , '));
+      }
+      setTimeout(loadCards, 500);
+    }).catch(function (e) {
+      busy = false;
+      toast('连不上车机助手');
+      setStatus('18766 连不上：' + (e && e.name === 'AbortError' ? '超时' : '网络错误'), 'off');
+      badeEl.className = 'bade';
+    });
+  }
+
+  // ---------- 日志 ----------
+
+  function showLog(lines) {
+    if (!lines || !lines.length) return;
+    logEl.classList.remove('hidden');
+    logEl.textContent = lines.slice(-8).join('\n');
+  }
+
+  // ---------- 数据加载 ----------
+
+  function loadCards() {
+    if (inflight) return;
+    inflight = true;
+    req('/cards').then(function (d) {
+      inflight = false;
+      paintCards(d);
+      setStatus(d && d.ok === 1 ? '已连接 · 车机助手' : '车机助手未就绪', d && d.ok === 1 ? 'on' : 'warn');
+      badeEl.className = 'bade' + (d && d.ok === 1 ? ' on' : '');
+      if (d && d.log) showLog(d.log);
+    }).catch(function (e) {
+      inflight = false;
+      paintCards({ ok: 0, err: '连不上 18766（' + (e && e.name === 'AbortError' ? '超时' : '网络错误') + '）' });
+      setStatus('连不上车机助手 18766', 'off');
+      badeEl.className = 'bade';
+    });
+  }
+
+  function loadActs(force) {
+    var now = Date.now();
+    if (!force && now - actsAt < 30000) return;
+    req('/acts').then(function (d) {
+      actsAt = Date.now();
+      paintActs(d);
+    }).catch(function () {
+      paintActs(null);
+    });
+  }
+
+  function refreshAll() {
+    loadCards();
+    loadActs(true);
+  }
+
+  // ---------- 打开 / 关闭 ----------
+
+  function openCar() {
+    if (isOpen) return;
+    isOpen = true;
+    page.classList.add('open');
+    document.body.classList.add('car-open');
+    setStatus('正在连接车机助手…');
+    refreshAll();
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(function () {
+      if (!isOpen || document.hidden) return;
+      loadCards();
+    }, POLL_MS);
+  }
+
+  function closeCar() {
+    if (!isOpen) return;
+    isOpen = false;
+    page.classList.remove('open');
+    document.body.classList.remove('car-open');
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    csetClose();   // 面板跟着一起收，别留一层浮在音乐页上
+  }
+
+  document.getElementById('openCar').addEventListener('click', openCar);
+  document.getElementById('closeCar').addEventListener('click', closeCar);
+  document.getElementById('carRefresh').addEventListener('click', function () {
+    refreshAll();
+    toast('已刷新');
+  });
+
+  // 后台时不轮询，回到前台立刻补一次
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && isOpen) loadCards();
+  });
+
+  // ---------- 左右滑动切换 ----------
+
+  var sx = 0, sy = 0, st = 0, tracking = false;
+
+  document.addEventListener('touchstart', function (e) {
+    tracking = false;
+    if (e.touches.length !== 1) return;
+    var t = e.target;
+    if (t && t.closest && t.closest('input,textarea,select')) return;
+    sx = e.touches[0].clientX;
+    sy = e.touches[0].clientY;
+    st = Date.now();
+    tracking = true;
+  }, { passive: true });
+
+  document.addEventListener('touchend', function (e) {
+    if (!tracking) return;
+    tracking = false;
+    var t = e.changedTouches[0];
+    if (!t) return;
+    var dx = t.clientX - sx;
+    var dy = t.clientY - sy;
+
+    // 横向位移够大、且明显横多于竖、且不是长按拖拽
+    if (Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 1.6) return;
+    if (Date.now() - st > 1400) return;
+
+    if (!isOpen) {
+      // 音乐页上往左滑 -> 进车控
+      if (dx < 0) {
+        var sheet = document.getElementById('sheet');
+        var add = document.getElementById('addPanel');
+        if (sheet && sheet.classList.contains('open')) return;
+        if (add && !add.classList.contains('hidden')) return;
+        openCar();
+      }
+    } else if (dx > 0) {
+      closeCar();
+    }
+  }, { passive: true });
+
+  // 首屏静默探一次，让顶部小圆点一开始就有颜色
+  setTimeout(function () {
+    req('/ping').then(function () {
+      badeEl.className = 'bade on';
+    }).catch(function () {
+      badeEl.className = 'bade';
+    });
+  }, 1200);
+})();
+</script>
+</body>
+</html>

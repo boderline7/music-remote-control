@@ -1,0 +1,26 @@
+# ---- 构建产物 ----
+out/
+dex/*.dex
+*.apk
+
+# ---- 第三方副本 / 解包目录 ----
+# 从 D:/车机/车机助手_改版工程 复制而来，体积 76M，需要时重新复制即可
+work/apk_decoded/
+
+# ---- gradle ----
+work/cloudmusic-car/**/build/
+work/cloudmusic-car/.gradle/
+work/cloudmusic-car/**/.gradle/
+work/cloudmusic-car/local.properties
+.gradle/
+build/
+.idea/
+*.iml
+
+# ---- 预览截图（调试用，随时重生成）----
+_preview/*.png
+
+# ---- 系统 ----
+.DS_Store
+Thumbs.db
+*.log
