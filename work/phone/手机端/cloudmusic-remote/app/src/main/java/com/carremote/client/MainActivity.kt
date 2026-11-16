@@ -22,6 +22,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -218,7 +219,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(26), 0, dp(10))
         })
         manualInput = EditText(this).apply {
-            hint = "车机 IP，如 192.168.43.1[:18765]"
+            hint = "车机 IP，如 192.168.43.1[:18766]"
             textSize = 15f
             setTextColor(Color.WHITE)
             setHintTextColor(Color.parseColor("#6E6E76"))
@@ -271,7 +272,9 @@ class MainActivity : Activity() {
         ).apply { topMargin = dp(10) })
 
         box.addView(TextView(this).apply {
-            text = "自动探测 18766（车控 + 音乐，页面顶部切换），不通再退回 18765。手动加的地址会一直留着，长按候选可删除。"
+            text = "自动探测 18766（车控 + 音乐，页面顶部切换），不通再退回 18765。" +
+                "想直连音乐页就填 IP:18765；停在 18765 时按返回键切回车控页。" +
+                "手动加的地址会一直留着，长按候选可删除。"
             textSize = 12f
             setTextColor(Color.parseColor("#6E6E76"))
             setPadding(0, dp(20), 0, 0)
@@ -319,9 +322,14 @@ class MainActivity : Activity() {
                 combine(Discovery.found, Scanner.results) { nsd, hits -> nsd to hits }
                     .collect { (nsd, hits) ->
                         nsd.forEach {
-                            // 统一进车控页，音乐那边由页面上的 tab 切过去
-                            val ep = Endpoint(it.name.ifEmpty { "车机" }, it.host, Protocol.PORT_CAR)
-                            found[ep.key] = ep
+                            // 车控页是统一入口；广播里带的那个端口也留着，想直接进音乐页时能点
+                            val name = it.name.ifEmpty { "车机" }
+                            val car = Endpoint(name, it.host, Protocol.PORT_CAR)
+                            found[car.key] = car
+                            if (it.port != Protocol.PORT_CAR && it.port > 0) {
+                                val alt = Endpoint(name, it.host, it.port)
+                                if (!found.containsKey(alt.key)) found[alt.key] = alt
+                            }
                         }
                         hits.forEach { hp ->
                             val ep = Endpoint(Protocol.role(hp.second), hp.first, hp.second)
@@ -346,7 +354,8 @@ class MainActivity : Activity() {
             } else if (autoConnect) {
                 // 优先上次连过的那条地址；只有一条时直接进；多条并列交给用户点，避免连错
                 val target = found["${Prefs.lastHost}:${Prefs.lastPort}"]
-                    ?: found.values.firstOrNull { it.host == Prefs.lastHost }
+                    ?: found["${Prefs.lastHost}:${Protocol.PORT_CAR}"]
+                    ?: found.values.filter { it.port == Protocol.PORT_CAR }.singleOrNull()
                     ?: found.values.singleOrNull()
                 if (target != null) loadHost(target.host, target.port)
                 else setStatus("找到 ${found.size} 个入口，点一下连接")
@@ -402,6 +411,9 @@ class MainActivity : Activity() {
         Prefs.lastPort = p
         pageLoaded = false
         connected = false
+        // 同一台车机的另一个端口也放进候选：从 18765 那边退回来时能一键切回车控页
+        val sib = if (p == Protocol.PORT_CAR) Protocol.PORT else Protocol.PORT_CAR
+        if (!found.containsKey("$h:$sib")) found["$h:$sib"] = Endpoint("车机", h, sib)
         showWeb()
         // 壳层带上客户端标识，车机侧能看到是安卓 / 哪个版本连进来的
         webView.loadUrl("http://$h:$p/?client=android&cv=$clientVersion")
@@ -490,10 +502,28 @@ class MainActivity : Activity() {
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun onBackPressed() {
         if (webShown) {
+            // 停在 18765（很可能是第三方网易云自己的页面，里面没有回车控的入口）：
+            // 返回键先切回 18766 的车控页，再按一次才回连接页。
+            if (port != Protocol.PORT_CAR && host.isNotEmpty()) {
+                val h = host
+                scope.launch {
+                    if (reachable(h, Protocol.PORT_CAR)) {
+                        loadHost(h, Protocol.PORT_CAR)
+                        toast("已切到车控页 18766 · 再按返回回到连接页")
+                    } else {
+                        showConnect("18766 没响应 · 已返回连接页")
+                    }
+                }
+                return
+            }
             showConnect("已返回连接页 · 点「重新搜索」可再连")
             return
         }
         super.onBackPressed()
+    }
+
+    private fun toast(text: String) {
+        Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
     }
 
     override fun onResume() {

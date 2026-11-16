@@ -131,8 +131,8 @@
   footer a{color:var(--faint)}
 
   /* ---------- 顶部切换：车机控制 / 音乐控制 ----------
-     车控在 18766、音乐在 18765，这里只能整页滑出去再跳；位置跟刷新按钮同一列，
-     放在它下面，不占最顶上那行。 */
+     车控在 18766、音乐在 18765。点「音乐控制」不跳转，用 iframe 把 18765 贴进同屏；
+     右边的 ↗ 是逃生口：18765 拒绝被嵌入时单独开一页。 */
   .svc{position:relative;z-index:128;flex:none;width:100%;max-width:560px;margin:0 auto 6px;padding:0 16px;
     display:flex;align-items:center;gap:8px}
   .svc-seg{
@@ -244,7 +244,7 @@
 <header>
   <span id="dot"></span>
   <span id="status">正在连接车机助手…</span>
-  <i class="ver">b16</i>
+  <i class="ver">b17</i>
   <button class="icon-btn" id="refresh" aria-label="刷新">
     <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
   </button>
@@ -259,7 +259,7 @@
     <a class="svc-btn on" id="goCar" href="javascript:void 0">车机控制</a>
     <a class="svc-btn" id="goMusic" href="http://{{HOST}}:18765/">音乐控制<i class="svc-dot" id="musDot"></i></a>
   </div>
-  <a class="svc-open" id="musOpen" href="http://{{HOST}}:18765/" target="_blank"
+  <a class="svc-open" id="musOpen" href="http://{{HOST}}:18765/"
      title="18765 单独打开">↗</a>
 </div>
 <div id="musPane"><iframe id="musFrame" title="音乐控制"></iframe></div>
@@ -273,6 +273,15 @@
     if (b && h) b.href = 'http://' + h + ':18765/';
     var o = document.getElementById('musOpen');
     if (o && h) o.href = 'http://' + h + ':18765/';
+    if (o) {
+      /* 新标签能开就新开；开不了（手机 App 里的 WebView 常把 window.open 拦掉）
+         就让它按默认原地跳，别出现「点了没反应」。 */
+      o.addEventListener('click', function (e) {
+        var w = null;
+        try { w = window.open(o.href, '_blank'); } catch (err) { w = null; }
+        if (w) e.preventDefault();
+      });
+    }
     // 被音乐页拿 iframe 嵌进来时，自己这条切换栏就不要了，省得套娃
     if (location.search.indexOf('embed=1') >= 0) {
       var sv = document.querySelector('.svc');
