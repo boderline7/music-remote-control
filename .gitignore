@@ -2,6 +2,7 @@
 out/
 dex/*.dex
 *.apk
+*.ipa
 *.idsig
 
 # ---- 第三方副本 / 解包目录 ----
