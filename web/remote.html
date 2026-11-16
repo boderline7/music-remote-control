@@ -648,8 +648,8 @@
   };
   // 被车控页 iframe 嵌进来（embed=1）：自己这条顶栏收掉，外面那层已经有状态行了，别叠两层
   var EMBED = qs.get('embed') === '1';
-  // 手机 App 里由原生 tab 承载（client=android）：机头那个「车机控制」入口和左滑手势都收掉，
-  // 否则会在这里再开一份内嵌车控页，跟原生那个 tab 重复
+  // client=android / client=ios 只是告诉车机侧谁连进来了（握手上报 CLIENT 时已用）。
+  // 3.2 起切换条由页面自己画，App 不再有原生 tab，这个标志不再控制任何 UI。
   var IN_APP = qs.get('client') === 'android';
   var K_TOKEN = 'carremote.token';
   var K_DEVICE = 'carremote.deviceId';

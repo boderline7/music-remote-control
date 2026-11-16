@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 单端口 18765：普通 HTTP 请求返回 assets/remote.html；带 Upgrade: websocket 的走协议 v1。
+ * 单端口 18764（本包占这条；第三方网易云车机版占 18765）：普通 HTTP 请求返回 assets/remote.html；带 Upgrade: websocket 的走协议 v1。
  * 与第三方自研播放器的遥控协议完全兼容（手机端 / iOS / 浏览器壳不用改）。
  */
 final class Server {
@@ -38,7 +38,7 @@ final class Server {
     private ServerSocket ss;
     private ScheduledExecutorService timer;
     private ExecutorService writer;
-    /** 最近一次判定结果：18765 被第三方占用，本包已让位。UI 直接读它，不用反复探测端口。 */
+    /** 最近一次判定结果：18764 被占用（旧版单遥控包或第三方），本包已让位。UI 直接读它，不用反复探测端口。 */
     volatile boolean yielded;
     private Thread acceptThread;
     private byte[] page;
@@ -87,7 +87,7 @@ final class Server {
         return true;
     }
 
-    /** 探测 18765 是否已被别的进程监听。用 SO_REUSEADDR 试绑定：
+    /** 探测 18764 是否已被别的进程监听。用 SO_REUSEADDR 试绑定：
      *  能绑上说明只有上次的 TIME_WAIT 残留，算空闲；绑不上说明真有人在 listen。 */
     static boolean portTaken() {
         ServerSocket probe = null;

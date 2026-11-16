@@ -67,7 +67,7 @@ final class ModeSync {
             Log.i(Cfg.TAG, "mode sync <- " + (target == Mode.OFFICIAL ? "official" : "third_party"));
             Mode.save(c, target);
             // 按新模式启停本包服务：official 拉起来（这是对方主动要求，覆盖停服标记），
-            // third_party 则真停服让出 18765
+            // third_party 则真停服让出 18764
             if (target == Mode.OFFICIAL) {
                 Svc.startByUser(c);
             } else {

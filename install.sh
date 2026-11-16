@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # 推到车机并安装两个包。设备已 root，用 -d 允许同版本覆盖。
 #   1) 车机助手        18766 车控，常驻
-#   2) 汽水音乐桥接包  18765 音乐（官方网易云模式）+ 车控页入口
+#   2) 汽水音乐桥接包  18764 音乐（官方网易云模式）+ 车控页入口
 set -e
 cd "$(dirname "$0")"
 
 export PATH="C:/Users/Administrator/.workbuddy/tools/rev/platform-tools:$PATH"
 export MSYS_NO_PATHCONV=1
 
-NAVI="dist/车机助手_V18.62_bridge.apk"
-LUNA="dist/汽水音乐_桥接包_v2.10.7.apk"
+NAVI="dist/车机助手_V18.72_bridge.apk"
+LUNA="dist/汽水音乐_桥接包_v2.10.18.apk"
 
 for f in "$NAVI" "$LUNA"; do
   [ -f "$f" ] || { echo "缺少 $f"; exit 1; }
@@ -38,4 +38,4 @@ adb shell "su -c 'monkey -p com.navi.tool -c android.intent.category.LAUNCHER 1'
 echo
 echo "装完后："
 echo "  车机浏览器  http://127.0.0.1:18766/     车控页（常驻，不看音乐模式）"
-echo "  车机/手机   http://<车机IP>:18765/      音乐遥控 + 车图标/左滑进车控"
+echo "  车机/手机   http://<车机IP>:18764/      音乐遥控（桥接包）+ 顶部切换条进车控"

@@ -28,11 +28,11 @@ import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
 
-/** 常驻前台服务：绑定官方 App + 18765 遥控服务 + NSD 发现。 */
+/** 常驻前台服务：绑定官方 App + 18764 遥控服务 + NSD 发现。 */
 public class Svc extends Service {
     private static final String CHANNEL = "ncmremote";
     private static final int NOTIF_ID = 18765;
-    /** 本包当前是否真的在提供遥控服务（占着 18765）。让位给第三方时为 false。 */
+    /** 本包当前是否真的在提供遥控服务（占着 18764）。让位时为 false。 */
     private boolean active;
 
     /** 主动停服（切音源）标记：否则 onDestroy 会以为是「被杀」又用心跳把自己拉回来。 */
@@ -54,7 +54,7 @@ public class Svc extends Service {
     private static void setStopped(Context c, boolean v) {
         try {
             // 同步落盘：ACC 突然断电时 apply() 的异步写可能丢掉「用户已停服」标记，
-            // 开机广播照旧值判断就会把服务拉起来抢 18765。停服是低频操作，commit 可接受。
+            // 开机广播照旧值判断就会把服务拉起来抢 18764。停服是低频操作，commit 可接受。
             c.getSharedPreferences(SP, Context.MODE_PRIVATE).edit().putBoolean(K_STOPPED, v).commit();
         } catch (Throwable ignored) {}
     }
