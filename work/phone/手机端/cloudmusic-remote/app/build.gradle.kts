@@ -14,8 +14,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // 固定：以后改内容也重出同一个 2.1.0 / 20，覆盖安装才不会断
-        versionCode = 24
-        versionName = "2.2.2"
+        versionCode = 25
+        versionName = "3.0.0"
     }
 
     // 自有签名库：与车机端共用一份，debug / release 都用它

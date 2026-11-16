@@ -244,7 +244,7 @@
 <header>
   <span id="dot"></span>
   <span id="status">正在连接车机助手…</span>
-  <i class="ver">b17</i>
+  <i class="ver">b18</i>
   <button class="icon-btn" id="refresh" aria-label="刷新">
     <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
   </button>
@@ -282,8 +282,10 @@
         if (w) e.preventDefault();
       });
     }
-    // 被音乐页拿 iframe 嵌进来时，自己这条切换栏就不要了，省得套娃
-    if (location.search.indexOf('embed=1') >= 0) {
+    // 被音乐页 iframe 嵌进来、或被手机 App 的原生 tab 承载时，自己这条切换栏就收起来，
+    // 免得屏幕上出现两层切换（App 里那层是原生的，永远在上面）
+    var q = location.search;
+    if (q.indexOf('embed=1') >= 0 || q.indexOf('client=android') >= 0) {
       var sv = document.querySelector('.svc');
       if (sv) sv.style.display = 'none';
     }

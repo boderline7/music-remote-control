@@ -676,7 +676,7 @@
   <header>
     <span id="dot"></span>
     <span id="status">正在连接车机…</span>
-    <i class="ver">2.10.12</i>
+    <i class="ver">2.10.13</i>
     <button class="icon-btn" id="gear" aria-label="车机设置">
       <svg viewBox="0 0 24 24"><path d="M4 6h9M18 6h2M4 12h3M12 12h8M4 18h9M18 18h2"/><circle cx="15.5" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="15.5" cy="18" r="2"/></svg>
     </button>
@@ -704,13 +704,18 @@
       var h = location.hostname;
       var a = document.getElementById('goCar');
       if (a && h) a.href = 'http://' + h + ':18766/';
-      // 被车控页拿 iframe 嵌进来时，自己这条切换栏、入口图标、顶栏都收起来：
-      // 外面那层已经有状态栏了，别叠成两条
-      if (location.search.indexOf('embed=1') >= 0) {
+      // 被车控页 iframe 嵌进来、或被手机 App 的原生 tab 承载时：
+      // 自己的切换栏和入口图标都收起来（App 里切换由原生 tab 负责），
+      // 但顶栏留着 —— App 那层 tab 很薄，页面还是需要自己的标题栏
+      var q = location.search;
+      var inApp = q.indexOf('client=android') >= 0;
+      if (q.indexOf('embed=1') >= 0 || inApp) {
         var sv = document.querySelector('.svc');
         if (sv) sv.style.display = 'none';
         var ic = document.getElementById('openCar');
         if (ic) ic.style.display = 'none';
+      }
+      if (q.indexOf('embed=1') >= 0) {
         var hd = document.querySelector('body > header');
         if (hd) hd.style.display = 'none';
       }
