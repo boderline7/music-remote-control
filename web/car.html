@@ -143,6 +143,9 @@
   /* App 里（client=android）切换由原生 tab 负责，设置面板里那块就不显示了；
      被 iframe 嵌进来时同理。用 class 控制，脚本执行时设置面板可能还没解析出来。 */
   .in-app .set-nav{display:none}
+  /* 第三方 18765 可能拒绝被 iframe 嵌（框里一片白），这行字只在探到 18765 时出现 */
+  .nav-tip{margin:-6px 0 12px;font-size:11.5px;line-height:1.5;color:var(--dim)}
+  .in-app .nav-tip{display:none !important}
   /* 音乐端探活小圆点：绿=在跑，红=没起来 */
   .ndot{display:inline-block;width:5px;height:5px;border-radius:50%;
     background:#8e8e93;vertical-align:middle;transition:background .2s}
@@ -227,7 +230,7 @@
 <header>
   <span id="dot"></span>
   <span id="status">正在连接车机助手…</span>
-  <i class="ver">b19</i>
+  <i class="ver">b20</i>
   <button class="icon-btn" id="refresh" aria-label="刷新">
     <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
   </button>
@@ -294,6 +297,9 @@
       <button class="navbtn" id="navMusic">音乐控制<i class="ndot" id="musDot"></i></button>
       <a class="navopen" id="musOpen" href="http://{{HOST}}:18764/"
          title="音乐页单独打开">↗</a>
+    </div>
+    <div class="nav-tip" id="navTip" style="display:none">
+      18765 是网易云车机版自己的页面。框里要是空白或者不完整，点右上 ↗ 单独打开。
     </div>
 
     <div class="tabs" id="segTabs">
@@ -1136,8 +1142,15 @@
   function musicHost() { return location.hostname || '127.0.0.1'; }
 
   function paintMusDot() {
-    if (!musDot) return;
-    musDot.className = 'ndot' + (musOk === true ? ' on' : (musOk === false ? ' off' : ''));
+    if (musDot) {
+      musDot.className = 'ndot' + (musOk === true ? ' on' : (musOk === false ? ' off' : ''));
+    }
+    // 只有探到第三方 18765 才提示「可能嵌不进去」，官方模式不打扰
+    var tip = document.getElementById('navTip');
+    if (tip) {
+      var inApp = document.documentElement.className.indexOf('in-app') >= 0;
+      tip.style.display = (musOk === true && musPort === 18765 && !inApp) ? '' : 'none';
+    }
   }
 
   function syncNav(music) {
@@ -1195,6 +1208,8 @@
   function showMusic() {
     if (!musPane || !musFrame) return false;
     var port = musPort || MUSIC_PORTS[0];
+    /* 两个页面都是我们的（18764 桥接页 / 18765 网易云车机版），都认 embed=1，
+       嵌入时各自收掉顶栏，避免两条头叠在一起。 */
     var src = 'http://' + musicHost() + ':' + port + '/?embed=1';
     if (musFrame.getAttribute('src') !== src) musFrame.setAttribute('src', src);
     paneTop();

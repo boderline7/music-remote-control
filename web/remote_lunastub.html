@@ -676,7 +676,7 @@
   <header>
     <span id="dot"></span>
     <span id="status">正在连接车机…</span>
-    <i class="ver">2.10.14</i>
+    <i class="ver">2.10.15</i>
     <button class="icon-btn" id="gear" aria-label="车机设置">
       <svg viewBox="0 0 24 24"><path d="M4 6h9M18 6h2M4 12h3M12 12h8M4 18h9M18 18h2"/><circle cx="15.5" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="15.5" cy="18" r="2"/></svg>
     </button>
@@ -1799,7 +1799,7 @@
     api('/api/status', null, function (d, code) {
       if (!d || d.ok === false) {
         el.setupSub.textContent = '读不到设置（' + code + '）';
-        el.stMsg.textContent = '这台车机的 18765 可能由第三方自研播放器提供，或桥接 app 版本过旧。';
+        el.stMsg.textContent = '读不到本包状态：这台车机可能跑着第三方页（18765），或桥接包版本过旧。';
         if (cb) cb(false);
         return;
       }
@@ -1826,8 +1826,8 @@
     el.stMode.textContent = d.modeLabel || '—';
     el.stSvc.textContent = (d.running ? '运行中' : '未运行') + ' · ' + (d.clients || 0) + ' 台设备'
       + (d.bridge ? ' · 已连官方' : ' · 未连官方');
-    el.stHost.textContent = 'http://' + (d.ip || location.hostname) + ':' + (d.port || 18765);
-    el.stLogUrl.textContent = 'http://' + (d.ip || location.hostname) + ':' + (d.port || 18765) + '/api/logs';
+    el.stHost.textContent = 'http://' + (d.ip || location.hostname) + ':' + (d.port || 18764);
+    el.stLogUrl.textContent = 'http://' + (d.ip || location.hostname) + ':' + (d.port || 18764) + '/api/logs';
     el.stScreen.textContent = d.screen || '—';
     el.stVer.textContent = (d.version || '—') + (d.oldProbe ? ' · 有旧探针' : '');
     el.setupSub.textContent = d.both ? '两个音源都在，可切换' : '自动识别音源';
@@ -1847,7 +1847,7 @@
     }
 
     if (d.oldProbe) {
-      el.stMsg.textContent = '车上还留着旧版单遥控 APK（com.wb.ncmremote），和本包抢 18765，请卸掉。';
+      el.stMsg.textContent = '车上还留着旧版单遥控 APK（com.wb.ncmremote），它会占 18765；本包走 18764，建议卸掉旧版别跟第三方抢。';
     } else if (d.mode === 'third_party') {
       el.stMsg.textContent = '当前由第三方自研播放器放歌并提供 18765，本包只占包名；切到官方网易云才走桥接。';
     } else {
@@ -2002,7 +2002,7 @@
   foot.href = BASE + '/';
 
   // 从 127.0.0.1 / localhost 打开时 hostname 是回环，车控那边要的是真实网卡地址。
-  // 18766 只认得到本机，问一下 18765 自己是谁，再把 BASE 换过去。
+  // 18766 只认得到本机，先问一下本页自己（18764）的真实网卡地址，再把 BASE 换过去。
   if (!location.hostname || location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
     fetch('/api/where', { cache: 'no-store' }).then(function (r) {
       return r.json();

@@ -410,7 +410,13 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun pageUrl(port: Int): String = "http://$host:$port/?client=android&cv=$clientVersion"
+    /**
+     * 三个端口上的页面都是我们发的（18766 车控、18764 桥接、18765 网易云车机版），
+     * 统一带 client/cv：页面靠它认「我在 App 里」，把网页自己那套切换入口收掉，
+     * 切换交给原生 tab；车机侧也能从握手里看到是哪台设备连进来的。
+     */
+    private fun pageUrl(port: Int): String =
+        "http://$host:$port/?client=android&cv=$clientVersion"
 
     /** 两个都探：车控固定 18766，音乐先 18764（自己的桥接）再 18765（第三方） */
     private suspend fun probeAll(prefer: Int) = coroutineScope {

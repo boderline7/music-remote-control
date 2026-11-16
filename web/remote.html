@@ -714,6 +714,11 @@
     name: qs.get('client') || 'Safari',
     version: qs.get('cv') || '1.0.0'
   };
+  // 被车控页 iframe 嵌进来（embed=1）：自己这条顶栏收掉，外面那层已经有状态行了，别叠两层
+  var EMBED = qs.get('embed') === '1';
+  // 手机 App 里由原生 tab 承载（client=android）：机头那个「车机控制」入口和左滑手势都收掉，
+  // 否则会在这里再开一份内嵌车控页，跟原生那个 tab 重复
+  var IN_APP = qs.get('client') === 'android';
   var K_TOKEN = 'carremote.token';
   var K_DEVICE = 'carremote.deviceId';
   var PAGE_SIZE = 20;   // 与服务端 RemoteLibrary.PAGE_SIZE 对齐，仅用于「加载更多」文案
@@ -743,6 +748,16 @@
    'addToPlaylist', 'addPanel', 'addList', 'addClose', 'addTrack', 'likedPlay', 'cloudPlay',
    'offline', 'offlineSync', 'offlineRetry', 'offlineBar', 'offlineNow'
   ].forEach(function (id) { el[id] = document.getElementById(id); });
+
+  // 嵌入式（车控页 iframe）/ App 原生 tab 承载时，把这一层多余的壳收掉
+  if (EMBED) {
+    var embedHead = document.querySelector('body > header');
+    if (embedHead) embedHead.style.display = 'none';
+  }
+  if (IN_APP) {
+    var appCarBtn = document.getElementById('openCar');
+    if (appCarBtn) appCarBtn.style.display = 'none';
+  }
 
   var ws = null;
   var seq = 0;
@@ -2079,6 +2094,8 @@
   document.addEventListener('touchend', function (e) {
     if (!tracking) return;
     tracking = false;
+    // App 里和车控页嵌入里都不做左右滑：切换归原生 tab / 外层车控页管，这里再滑就是套娃
+    if (IN_APP || EMBED) return;
     var t = e.changedTouches[0];
     if (!t) return;
     var dx = t.clientX - sx;

@@ -6,7 +6,7 @@
 流程：
   1. 把 work/apk_decoded 复制到 ASCII 临时目录（apktool 在中文路径下编 res 会失败）
   2. 清单里加 provider 声明（幂等，已存在就跳过）
-  3. versionCode 固定写 19，versionName 固定 18.67-mod
+  3. versionCode 固定写 20，versionName 固定 18.68-mod
   4. apktool b
   5. 追加 classes3.dex（我们的桥接代码，不压缩）
   6. zipalign -f -p 4
@@ -28,7 +28,7 @@ SRC = ROOT / "work" / "apk_decoded"
 DEX = ROOT / "dex" / "classes.dex"
 DIST = ROOT / "dist"
 BUILD = Path("D:/cbwork/bridge_build")
-OUT_APK = DIST / "车机助手_V18.67_bridge.apk"
+OUT_APK = DIST / "车机助手_V18.68_bridge.apk"
 
 JB = Path("C:/Users/Administrator/.workbuddy/tools/rev/jdk-17.0.2/bin")
 BT = Path("C:/Users/Administrator/.workbuddy/tools/rev/android-14")
@@ -108,10 +108,10 @@ def main():
     # 3. 版本号
     y = BUILD / "apktool.yml"
     t = y.read_text(encoding="utf-8")
-    t = re.sub(r"versionCode:\s*\d+", "versionCode: 19", t)
-    t = re.sub(r"versionName:\s*\S+", "versionName: 18.67-mod", t)
+    t = re.sub(r"versionCode:\s*\d+", "versionCode: 20", t)
+    t = re.sub(r"versionName:\s*\S+", "versionName: 18.68-mod", t)
     y.write_text(t, encoding="utf-8")
-    print(">> versionCode=19 versionName=18.67-mod")
+    print(">> versionCode=20 versionName=18.68-mod")
 
     # 3.5 把车控页塞进 assets（改前端只改 web/car.html，重跑本脚本即可）
     page_src = ROOT / "web" / "car.html"
