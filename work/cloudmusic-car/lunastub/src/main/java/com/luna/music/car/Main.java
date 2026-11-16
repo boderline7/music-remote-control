@@ -312,7 +312,7 @@ public class Main extends Activity {
         } else if (stopped) {
             sb.append("服务：已停止（你手动停的）\n")
                     .append("心跳已撤销、18765 已关闭，不会自动拉起\n")
-                    .append("点「启动 / 重启服务」恢复桥接\n")
+                    .append("点「启动桥接」恢复桥接\n")
                     .append("地址：http://").append(addr).append(":").append(Cfg.PORT)
                     .append("（当前无人监听）");
         } else if (yielded) {
@@ -323,7 +323,7 @@ public class Main extends Activity {
         } else {
             sb.append("服务：未运行\n")
                     .append("地址：http://").append(addr).append(":").append(Cfg.PORT)
-                    .append("\n点「启动 / 重启服务」接管端口");
+                    .append("\n点「启动桥接」接管端口");
         }
         if (Mode.installed(this, OLD_PROBE)) {
             sb.append("\n⚠ 车上还装着旧版单遥控 APK（com.wb.ncmremote），")
@@ -692,14 +692,17 @@ final class CarPort {
             c.setUseCaches(false);
             int code = c.getResponseCode();
             java.io.InputStream in = code == 200 ? c.getInputStream() : c.getErrorStream();
+            StringBuilder body = new StringBuilder(128);
             if (in != null) {
-                byte[] buf = new byte[512];
-                while (in.read(buf) > 0) {
-                    // 丢弃
+                byte[] buf = new byte[256];
+                int n;
+                while ((n = in.read(buf)) > 0 && body.length() < 1024) {
+                    body.append(new String(buf, 0, n, "UTF-8"));
                 }
                 in.close();
             }
-            return code == 200;
+            // 只看 200 不够：/restart 里 helper 没绑上会回 ok:0，那种情况得去拉起车机助手
+            return code == 200 && body.indexOf("\"ok\":1") >= 0;
         } catch (Throwable t) {
             return false;
         } finally {
