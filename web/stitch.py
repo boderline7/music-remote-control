@@ -16,6 +16,7 @@
     <!--@shell:body-->   ... <!--@/shell:body-->     状态行 / 切换 / 设置面板
     <!--@shell:script--> ... <!--@/shell:script-->   外壳逻辑
 """
+import hashlib
 import re
 import sys
 from pathlib import Path
@@ -61,6 +62,14 @@ def replace_between(text, start, end, payload, where):
     return text[:i + len(start)] + "\n" + payload + text[j:]
 
 
+def build_stamp(*parts):
+    """外壳构建号：内容或版本一变就变，用来给 iframe 地址去缓存。"""
+    h = hashlib.md5()
+    for p in parts:
+        h.update(p.encode("utf-8"))
+    return h.hexdigest()[:8]
+
+
 def main():
     css = read(WEB / "_shell.css")
     boot = read(WEB / "_shell.boot.js")
@@ -87,9 +96,13 @@ def main():
         html = replace_between(html, "<!--@shell:body-->", "<!--@/shell:body-->",
                                body.replace("{{VER}}", v), page.name)
         html = replace_between(html, "<!--@shell:script-->", "<!--@/shell:script-->",
-                               BOOT_WRAP % js, page.name)
+                               BOOT_WRAP % js.replace("'@SHELL_BUILD@'",
+                                                      "'%s'" % build_stamp(css, boot, body, js, v)),
+                               page.name)
         page.write_text(html, encoding="utf-8")
-        print(">> %-24s v%-10s %5.1f KB" % (page.name, v, page.stat().st_size / 1024.0))
+        print(">> %-24s v%-10s %5.1f KB  b=%s"
+              % (page.name, v, page.stat().st_size / 1024.0,
+                 build_stamp(css, boot, body, js, v)))
 
 
 if __name__ == "__main__":

@@ -2,10 +2,14 @@ package com.carremote.client
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.ContentValues
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.MediaStore
 import android.text.InputType
 import android.view.Gravity
 import android.view.KeyEvent
@@ -34,6 +38,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.net.InetSocketAddress
 import java.net.Socket
 
@@ -281,8 +286,15 @@ class MainActivity : Activity() {
 
     // ---------- 页面 ----------
 
-    /** 页面自己带切换，App 不再往 URL 上塞控件开关，只留客户端标识给车机侧看 */
-    private fun pageUrl(): String = "http://$host:$port/?client=android&cv=$clientVersion"
+    /**
+     * 页面自己带切换，App 不再往 URL 上塞控件开关，只留客户端标识给车机侧看。
+     *
+     * 末尾的 t= 是去缓存用的：车机换包之后，WebView 里可能还留着上一次的旧文档
+     * （cacheMode = LOAD_NO_CACHE 在新版 WebView 上并不可靠），表现就是「装了新包
+     * 还是旧界面 / 连不上」。每次进页面换个时间戳，URL 一变缓存必然失配。
+     */
+    private fun pageUrl(): String =
+        "http://$host:$port/?client=android&cv=$clientVersion&t=${System.currentTimeMillis()}"
 
     private fun openPage() {
         placeholder.visibility = View.GONE
@@ -460,6 +472,45 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun onConnection(ok: Boolean, @Suppress("UNUSED_PARAMETER") text: String) {
             runOnUiThread { if (ok && host.isNotEmpty()) Prefs.lastHost = host }
+        }
+
+        /**
+         * 网页里的「下载」转成真正的存盘。WebView 自己没有下载器，页面里的 Blob
+         * 下载常被存成没有后缀的文件，所以这里接管：Android 10 以上直接写进
+         * 系统的「下载」目录，不用任何权限。返回 false 就让网页退回服务器下载。
+         */
+        @JavascriptInterface
+        fun saveText(name: String, text: String): Boolean {
+            val safe = name.replace(Regex("""[\\/:*?"<>|]"""), "_")
+                .ifBlank { "car-log.txt" }
+            return try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val values = ContentValues().apply {
+                        put(MediaStore.Downloads.DISPLAY_NAME, safe)
+                        put(MediaStore.Downloads.MIME_TYPE, "text/plain")
+                        put(MediaStore.Downloads.IS_PENDING, 1)
+                    }
+                    val resolver = contentResolver
+                    val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                        ?: return false
+                    resolver.openOutputStream(uri)?.use { out ->
+                        out.write(text.toByteArray(Charsets.UTF_8))
+                    } ?: return false
+                    values.clear()
+                    values.put(MediaStore.Downloads.IS_PENDING, 0)
+                    resolver.update(uri, values, null, null)
+                    true
+                } else {
+                    val dir = Environment.getExternalStoragePublicDirectory(
+                        Environment.DIRECTORY_DOWNLOADS
+                    )
+                    if (!dir.exists()) dir.mkdirs()
+                    File(dir, safe).writeText(text, Charsets.UTF_8)
+                    true
+                }
+            } catch (e: Throwable) {
+                false
+            }
         }
     }
 

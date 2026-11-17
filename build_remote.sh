@@ -13,6 +13,8 @@ PROJ="work/cloudmusic-car"
 echo ">> 同步网页"
 cp -f web/remote.html          "$PROJ/app/src/main/assets/remote.html"
 cp -f web/remote_lunastub.html "$PROJ/lunastub/src/main/assets/remote.html"
+# 行车记录仪独立页（18767 首页），跟音乐页分开，两个都不受影响
+cp -f web/dvr.html             "$PROJ/lunastub/src/main/assets/dvr.html"
 
 echo ">> 构建"
 cd "$PROJ"

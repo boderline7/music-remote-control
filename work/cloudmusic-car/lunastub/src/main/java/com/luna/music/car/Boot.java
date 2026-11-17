@@ -30,6 +30,7 @@ public class Boot extends BroadcastReceiver {
             Log.i(Cfg.TAG, "心跳到点，确认服务在场");
             // Svc.start 内部判断：用户手动停过 / 当前音源是第三方都不拉起
             Svc.start(context);
+            DvrSvc.start(context);
             return;
         }
         if (Intent.ACTION_BOOT_COMPLETED.equals(action)
@@ -38,6 +39,8 @@ public class Boot extends BroadcastReceiver {
                 || "android.intent.action.QUICKBOOT_POWERON".equals(action)) {
             Log.i(Cfg.TAG, "开机自启，音源=" + Mode.name(context));
             Svc.start(context);
+            // 行车记录仪独立服务：无条件拉起，跟音源无关
+            DvrSvc.start(context);
             // 开机同步模式给第三方 App（官方则让它停，第三方则让它把服务拉起来）
             ModeSync.notify(context, Mode.current(context));
             if (Svc.autoAllowed(context)) Alive.schedule(context);

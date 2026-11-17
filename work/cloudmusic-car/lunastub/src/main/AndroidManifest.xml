@@ -58,6 +58,12 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
+        <!-- 行车记录仪桥接：独立端口 18767，无条件常驻，与音乐音源无关 -->
+        <service
+            android:name=".DvrSvc"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
         <receiver
             android:name=".Boot"
             android:exported="true">

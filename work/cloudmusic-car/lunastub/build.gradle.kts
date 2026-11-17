@@ -28,8 +28,8 @@ android {
         targetSdk = 35
         // 与主应用区分版本线，避免车机助手把两个包的版本号混在一起看。
         // 固定了：以后改内容也重出同一个 2.10.7 / 50，覆盖安装才不会断。
-        versionCode = 61
-        versionName = "2.10.18"
+        versionCode = 72
+        versionName = "2.10.29"
     }
 
     val keystoreProps = Properties().apply {

@@ -5,6 +5,10 @@ dex/*.dex
 *.ipa
 *.idsig
 
+# ---- 本地临时：隔离待删 / 页面验证 ----
+_trash/
+_preview/
+
 # ---- 第三方副本 / 解包目录 ----
 # 从 D:/车机/车机助手_改版工程 复制而来，体积 76M，需要时重新复制即可
 work/apk_decoded/
@@ -30,6 +34,7 @@ Thumbs.db
 
 # ---- 构建时从 web/ 拷进来的副本（单一真相在 web/）----
 work/cloudmusic-car/lunastub/src/main/assets/remote.html
+work/cloudmusic-car/lunastub/src/main/assets/dvr.html
 work/cloudmusic-car/app/src/main/assets/remote.html
 
 # ---- 手机端工程 ----

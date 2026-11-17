@@ -22,6 +22,8 @@ public class App extends Application {
             LogCapture.logAlways("APP 启动，音源=" + Mode.name(this)
                     + "，官方=" + Mode.hasOfficial(this) + "，第三方=" + Mode.hasThirdParty(this));
             Svc.start(this);
+            // 行车记录仪独立服务：无条件拉起，跟音乐音源/停服标记完全无关
+            DvrSvc.start(this);
             // 开机 / 进程重建时把模式同步过去：官方则让第三方停，第三方则让它把服务拉起来
             ModeSync.notify(this, Mode.current(this));
             // 用户手动停服 / 音源是第三方时不再排心跳，否则 15 分钟后服务自己回来抢 18764
@@ -31,6 +33,7 @@ public class App extends Application {
             Log.w(Cfg.TAG, "app start failed（已兜底，不闪退）", t);
             LogCapture.logAlways("APP_START_FAILED " + t);
             try { Svc.start(this); } catch (Throwable ignored) {}
+            try { DvrSvc.start(this); } catch (Throwable ignored) {}
         }
     }
 

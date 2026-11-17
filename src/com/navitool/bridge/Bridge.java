@@ -49,20 +49,39 @@ final class Bridge {
 
     private static final List<String> LOG = new ArrayList<String>();
 
+    /** 进程日志是否继续记账。关掉之后不再写新行，已有的保留 —— 让人能停在现场看。 */
+    static volatile boolean logOn = true;
+
     private Bridge() {
     }
 
     // ---------------------------------------------------------------- log
 
-    static void note(String s) {
+    static int logCount() {
         synchronized (LOG) {
-            LOG.add(s);
-            if (LOG.size() > 80) {
-                LOG.remove(0);
+            return LOG.size();
+        }
+    }
+
+    static void clearLog() {
+        synchronized (LOG) {
+            LOG.clear();
+        }
+    }
+
+    static void note(String s) {
+        if (logOn) {
+            synchronized (LOG) {
+                LOG.add(s);
+                if (LOG.size() > 80) {
+                    LOG.remove(0);
+                }
             }
         }
         try {
-            android.util.Log.i(TAG, s);
+            if (logOn) {
+                android.util.Log.i(TAG, s);
+            }
         } catch (Throwable ignored) {
         }
     }

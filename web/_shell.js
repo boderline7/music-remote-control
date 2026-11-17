@@ -1,8 +1,9 @@
 /* ==========================================================================
-   统一外壳（18766 / 18765 / 18764 共用同一份）
-   - 顶上只有一条状态行 + 一行中文切换「车机控制 / 音乐控制」
-   - 车机控制在 18766，音乐控制是 18765（第三方）或 18764（桥接包）
-   - 自己这一端就能提供的直接显示；对端用 iframe 贴进来，不跳转、不闪
+   统一外壳（车机助手 18766 / 网易云车机版 18765 / 桥接包 18764 共用同一份）
+   - 顶上一条状态行 + 一行中文切换「车机控制 / 音乐控制 / 行车记录仪」
+   - 从 18766 进来是统一入口：三路全在本机，音乐/记录仪由网关转发，地址只记 18766
+   - 从 18765 / 18764 进来是老入口：本端自带的音乐 + iframe 车控 / 记录仪，tab 与网关入口完全一致
+   - 对端用 iframe 贴进来，不跳转、不闪
    ========================================================================== */
 (function () {
   'use strict';
@@ -12,26 +13,36 @@
 
   var HOST = location.hostname || '127.0.0.1';
   var CAR_PORT = 18766;
+  var DVR_PORT = 18767;
   var MUSIC_PORTS = [18765, 18764];
   var K_TAB = 'jb.tab';
   var K_MUS = 'jb.musPort';
 
   var CAR_BASE = 'http://' + HOST + ':' + CAR_PORT;
+  // 拼接时写进来的构建号：并进 iframe 地址，页面一改 URL 就变，
+  // 装新包后不用手动清缓存也一定拿到新页面；同一个包重复打开仍走缓存。
+  var BUILD = '@SHELL_BUILD@';
   // 哪个端口发下来的页，就自带哪一路，不用 iframe 套自己
   var NATIVE = String(location.port) === String(CAR_PORT) ? 'car' : 'music';
+  // 统一入口：从 18766 进来，三路都走本机 + 网关转发，地址只有一个
+  var GATEWAY = NATIVE === 'car';
 
   var el = {};
   ['shellRoot', 'sBar', 'sDot', 'sTxt', 'sSet', 'sReload', 'sTabCar', 'sTabMusic',
-   'sDotCar', 'sDotMusic', 'sPane', 'sFrame', 'sFail', 'sFailT', 'sFailS', 'sFailGo',
+   'sTabDvr', 'sDotCar', 'sDotMusic', 'sDotDvr', 'sPane', 'sFrame', 'sFail',
+   'sFailT', 'sFailS', 'sFailGo',
    'sMask', 'sSheet', 'sClose', 'sKv', 'sSegs', 'sGen', 'sCopy', 'sSave', 'sTxt2',
-   'sTip', 'sDump', 'sClear'
+   'sTip', 'sDump', 'sRec', 'sClear'
   ].forEach(function (id) { el[id] = document.getElementById(id); });
 
   var stored = localStorage.getItem(K_TAB);
-  var tab = stored === 'car' || stored === 'music' ? stored : 'music';
+  var tab = stored === 'car' || stored === 'music' || stored === 'dvr' ? stored : 'music';
   var musPort = parseInt(localStorage.getItem(K_MUS) || '0', 10) || 0;
   var carOk = null;      // null 还没探到 / true / false
   var musOk = null;
+  // 记录仪只在用户点「连接」后才连，外壳绝不主动碰 18767。
+  // 这里的状态由记录仪页 iframe 用 postMessage 报上来（on/off），null = 这一页还没说话。
+  var dvrOk = null;
 
   // ---------- 状态行 ----------
 
@@ -43,6 +54,8 @@
   function paintDots() {
     el.sDotCar.className = 'sn' + (carOk === true ? ' on' : (carOk === false ? ' off' : ''));
     el.sDotMusic.className = 'sn' + (musOk === true ? ' on' : (musOk === false ? ' off' : ''));
+    if (el.sDotDvr) el.sDotDvr.className = 'sn'
+      + (dvrOk === true ? ' on' : (dvrOk === false ? ' off' : ''));
   }
 
   function paintStatus() {
@@ -50,9 +63,13 @@
       if (carOk === null) setStatus('正在连接车机助手…');
       else if (carOk) setStatus('已连接 · 车机助手', 'on');
       else setStatus('车机助手未就绪 · 到车机上打开一次桌面助手', 'warn');
+    } else if (tab === 'dvr') {
+      if (dvrOk === null) setStatus('记录仪未连接 · 点「连接」手动读取');
+      else if (dvrOk) setStatus('记录仪已连接 · 18767', 'on');
+      else setStatus('记录仪已断开', 'warn');
     } else {
       if (musOk === null) setStatus('正在找音乐端…');
-      else if (musOk) setStatus('音乐端在跑 · ' + musPort, 'on');
+      else if (musOk) setStatus(GATEWAY ? '音乐端在跑' : '音乐端在跑 · ' + musPort, 'on');
       else setStatus('音乐端没响应 · 打开汽水音乐或桥接包', 'warn');
     }
   }
@@ -91,7 +108,11 @@
       .catch(function () { if (done) return; done = true; clearTimeout(t); cb(false); });
   }
 
+  /* 记录仪不探。18767 只在用户自己点开这一页、并且点了「连接」之后才有流量：
+     外壳不做任何后台探测/预连接，避免用户明明断了还被后台重新连上。 */
+
   function probeMusic(cb) {
+    if (GATEWAY) { probeGateway(cb); return; }
     var order = [];
     // 自己就是音乐服务端时，先认自己 —— 18764 的页不该报成 18765
     if (NATIVE === 'music' && location.port) order.push(location.port);
@@ -115,6 +136,24 @@
     })();
   }
 
+  /* 统一入口：问网关音乐后端在哪个端口。记录仪不在这里问 —— 网关一旦顺手探 18767，
+     用户在记录仪页点过「断开」之后又会被后台连上，那正是要避免的。 */
+  function probeGateway(cb) {
+    fetch('/gateway?_=' + Date.now(), withTimeout(2500))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        musOk = !!(d && d.music);
+        musPort = d && d.music ? d.music : 0;
+        if (cb) cb(musOk);
+        paintDots();
+      })
+      .catch(function () {
+        musOk = false;
+        if (cb) cb(false);
+        paintDots();
+      });
+  }
+
   // ---------- 切换 ----------
 
   function paneTop() {
@@ -126,15 +165,26 @@
   }
 
   function paneUrl(t) {
-    if (t === 'car') return 'http://' + HOST + ':' + CAR_PORT + '/?pane=car';
+    // 统一入口：三路都从 18766 出，相对路径由网关转发，地址栏永远只有一个端口
+    if (GATEWAY) {
+      if (t === 'music') return '/music/?pane=music';
+      if (t === 'dvr') return '/dvr?pane=dvr';
+      return '/?pane=car';
+    }
+    // 从 18765 / 18764 进来：三路都用绝对地址，端口各归各的，tab 表现和网关入口一致
+    if (t === 'car') return CAR_BASE + '/?pane=car';
+    if (t === 'dvr') return 'http://' + HOST + ':' + DVR_PORT + '/dvr?pane=dvr';
     return musPort ? 'http://' + HOST + ':' + musPort + '/?pane=music' : '';
   }
 
   function showFail(t) {
-    el.sFailT.textContent = t === 'car' ? '车机助手没响应' : '音乐端没响应';
+    el.sFailT.textContent = t === 'car' ? '车机助手没响应'
+      : (t === 'dvr' ? '行车记录仪没响应' : '音乐端没响应');
     el.sFailS.innerHTML = t === 'car'
       ? '到车机上确认「车机助手」在跑（18766），<br>再点右上角的刷新。'
-      : '车上跑的是第三方播放器就打开它（18765），<br>跑的是官方网易云就开桥接包（18764）。';
+      : (t === 'dvr'
+        ? '确认车机上的桥接包在跑（记录仪服务 18767），<br>再点右上角的刷新。'
+        : '车上跑的是第三方播放器就打开它（18765），<br>跑的是官方网易云就开桥接包（18764）。');
     el.sFail.className = 'sfail on';
   }
 
@@ -144,7 +194,8 @@
      外壳跟着当前这一路走，顶栏才跟下面的内容对得齐。 */
   function fitWidth(t) {
     var cs = getComputedStyle(D);
-    var v = cs.getPropertyValue(t === 'car' ? '--w-car' : '--w-music').trim();
+    var key = t === 'car' ? '--w-car' : (t === 'dvr' ? '--w-dvr' : '--w-music');
+    var v = cs.getPropertyValue(key).trim();
     D.style.setProperty('--shell-w', v || '560px');
   }
 
@@ -154,6 +205,7 @@
     fitWidth(t);
     el.sTabCar.className = 'stab' + (t === 'car' ? ' on' : '');
     el.sTabMusic.className = 'stab' + (t === 'music' ? ' on' : '');
+    if (el.sTabDvr) el.sTabDvr.className = 'stab' + (t === 'dvr' ? ' on' : '');
 
     if (t === NATIVE) {
       D.classList.remove('foreign');
@@ -163,7 +215,12 @@
     } else {
       D.classList.add('foreign');
       var url = paneUrl(t);
-      if (!url) {
+      // 已经确认这一路没在跑：别贴一个白框，直接给失败提示（和音乐那一路一致）。
+      // 记录仪不参与判断 —— 它没连是常态，页面自己会摆「点连接」。
+      var dead = (t === 'music' && GATEWAY && musOk === false);
+      if (!url || dead) {
+        // 清掉旧 src：等这一路恢复时可以重新拉一次，不会停在空白框上
+        if (el.sFrame.getAttribute('src')) el.sFrame.removeAttribute('src');
         el.sPane.className = 'spane on';
         paneTop();
         showFail(t);
@@ -191,21 +248,35 @@
     }
     apply('music');
   });
+  if (el.sTabDvr) el.sTabDvr.addEventListener('click', function () {
+    // 记录仪只贴页面，不探端口、不预连接：连不连由页面上的「连接 / 断开」说了算
+    apply('dvr');
+  });
 
   el.sFailGo.addEventListener('click', function () { apply('car'); });
 
   el.sReload.addEventListener('click', function () { location.reload(); });
 
+  /* 记录仪页自己报状态：只有它在页面上真的点了「连接」拿到数据，或者点了「断开」，
+     才把点亮成绿/灰。外壳全程不碰 18767，用户断开后就一直是断开。 */
+  window.addEventListener('message', function (ev) {
+    var d = ev.data;
+    if (!d || d.src !== 'dvr' || typeof d.connected !== 'boolean') return;
+    dvrOk = d.connected;
+    paintDots();
+    if (tab === 'dvr') paintStatus();
+  });
+
   // ---------- 设置 / 诊断（数据永远取 18766） ----------
 
   var SEGS = {
-    diag: { url: '/diag', file: '车机诊断', slow: 18000,
+    diag: { url: '/diag', dl: '/diag.txt', file: '车机诊断', slow: 18000,
       tip: '端口、引擎绑定、安装包版本、动作项数、进程日志和 logcat 摘要。' },
-    log: { url: '/acts.log', file: '操作记录', slow: 6000,
+    log: { url: '/acts.log', dl: '/acts.log.txt', file: '操作记录', slow: 6000,
       tip: '每次点按钮的结果和耗时，最新的在最上面。' },
-    cards: { url: '/cards.txt', file: '车况快照', slow: 6000,
+    cards: { url: '/cards.txt', dl: '/cards.txt', file: '车况快照', slow: 6000,
       tip: '每张卡、每一项的名字和值。' },
-    acts: { url: '/acts.txt', file: '动作表', slow: 6000,
+    acts: { url: '/acts.txt', dl: '/acts.txt', file: '动作表', slow: 6000,
       tip: '当前能执行的项和方法名。' }
   };
   var curSeg = 'diag';
@@ -222,6 +293,7 @@
         if (!d || d.ok !== 1) { el.sKv.textContent = '18766 没响应'; return; }
         el.sKv.textContent = '车控　' + CAR_BASE + '\n'
           + '音乐　' + (musPort ? ('http://' + HOST + ':' + musPort) : '未探到') + '\n'
+          + '记录仪　' + (dvrOk ? ('http://' + HOST + ':' + DVR_PORT) : '未连接（手动）') + '\n'
           + '服务　端口 ' + d.port + (d.bound ? ' 已绑定' : ' 未绑定') + ' · 接口 v' + d.v + '\n'
           + '引擎　' + (d.helper ? '已绑定' : '未绑定 ← 打开一次桌面助手')
           + ' · 界面 ' + (d.activity ? '已出现' : '未出现') + '\n'
@@ -230,6 +302,7 @@
           + (d.err ? '\n错误　' + d.err : '');
       })
       .catch(function () { el.sKv.textContent = '连不上 18766，诊断也取不到。'; });
+    refreshRec();
     pickSeg(curSeg);
   }
 
@@ -355,14 +428,68 @@
   });
   el.sSave.addEventListener('click', function () {
     if (!segCache[curSeg]) { toast('先点「生成」'); return; }
-    saveText(segCache[curSeg], SEGS[curSeg].file + '_' + stamp() + '.txt');
+    var name = SEGS[curSeg].file + '_' + stamp() + '.txt';
+    // 优先走 App 的存盘接口：WebView 里既没有下载器，Blob 也常常存成没后缀的文件
+    var N = window.CarRemoteNative;
+    if (N && typeof N.saveText === 'function') {
+      try {
+        if (N.saveText(name, segCache[curSeg]) !== false) {
+          toast('已存到手机下载目录：' + name);
+          return;
+        }
+      } catch (e) { /* 退回服务器下载 */ }
+    }
+    // 服务器直出 txt（Content-Disposition + UTF-8），浏览器会存成正经的 .txt
+    toast('开始下载 ' + name);
+    try { location.href = SEGS[curSeg].dl || SEGS[curSeg].url; }
+    catch (e) { saveText(segCache[curSeg], name); }
   });
   el.sDump.addEventListener('click', function () {
+    var name = '车机全量_' + stamp() + '.txt';
     toast('正在打包…');
     fetch(CAR_BASE + '/dump?_=' + Date.now(), withTimeout(25000))
       .then(function (r) { return r.text(); })
-      .then(function (t) { saveText(t, '车机全量_' + stamp() + '.txt'); })
+      .then(function (t) {
+        var N = window.CarRemoteNative;
+        if (N && typeof N.saveText === 'function') {
+          try {
+            if (N.saveText(name, t) !== false) {
+              toast('已存到手机下载目录：' + name);
+              return;
+            }
+          } catch (e) { /* 退回服务器下载 */ }
+        }
+        location.href = '/dump.txt';
+      })
       .catch(function () { toast('打包失败，先试单个「下载」'); });
+  });
+
+  /* 日志开关：停止之后 18766 不再往缓冲里写新行，已有的留着，
+     正好把出问题那一段钉住，不会被后面的正常日志冲掉。 */
+  function paintRec(on, lines) {
+    if (!el.sRec) return;
+    el.sRec.textContent = on ? '停止记录' : '开始记录';
+    if (typeof lines === 'number') el.sRec.setAttribute('data-lines', String(lines));
+  }
+
+  function refreshRec() {
+    fetch(CAR_BASE + '/log/rec?_=' + Date.now(), withTimeout(3000))
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (d && d.ok === 1) paintRec(d.rec === 1, d.lines); })
+      .catch(function () { if (el.sRec) el.sRec.textContent = '记录开关'; });
+  }
+
+  el.sRec.addEventListener('click', function () {
+    var turnOn = el.sRec.textContent.indexOf('停止') >= 0 ? false : true;
+    fetch(CAR_BASE + '/log/rec?on=' + (turnOn ? 1 : 0) + '&_=' + Date.now(),
+          withTimeout(3000))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || d.ok !== 1) { toast('开关失败'); return; }
+        paintRec(d.rec === 1, d.lines);
+        toast(d.rec === 1 ? '开始记录' : '已停止记录，现场保留 ' + d.lines + ' 行');
+      })
+      .catch(function () { toast('连不上 18766'); });
   });
   el.sClear.addEventListener('click', function () {
     fetch(CAR_BASE + '/log/clear', { cache: 'no-store' })
@@ -385,6 +512,7 @@
   probeCar(function () {
     paintDots();
     paintStatus();
+    // 记录仪不探：它连不连由记录仪页面上的按钮决定，外壳不代为连接
     // 第一次进来默认落音乐；音乐端没有就退回车控，别让人对着空框
     if (tab === 'music' && !stored) {
       probeMusic(function (ok) {
@@ -405,5 +533,7 @@
   setInterval(function () {
     if (document.hidden) return;
     probeCar(function () { paintDots(); paintStatus(); });
+    if (GATEWAY) probeGateway();   // 统一入口：只问音乐后端在哪个端口
+    // 老入口的音乐页自己探自己的端口；记录仪两路都不探
   }, 15000);
 })();

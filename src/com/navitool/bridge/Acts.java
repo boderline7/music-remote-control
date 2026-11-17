@@ -36,7 +36,6 @@ final class Acts {
             {"底盘", "actionSetSuspensionModeStandard", "悬架 标准", "-1"},
             {"底盘", "actionSetSuspensionModeSport", "悬架 运动", "-1"},
             {"底盘", "actionSetSuspensionLinkEnabled", "悬架联动 开", "1"},
-            {"底盘", "actionSetSuspensionLinkEnabled", "悬架联动 关", "0"},
             {"底盘", "actionSetBrakeFeelModeComfort", "刹车 舒适", "-1"},
             {"底盘", "actionSetBrakeFeelModeSport", "刹车 运动", "-1"},
     };

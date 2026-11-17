@@ -5,6 +5,8 @@
   /* 安卓 WebView 会按列宽自动放大文字（font boosting），
      一到窄屏就变成「大字 + 挤在一起」。这里钉死，字号只按 CSS 走。 */
   html{-webkit-text-size-adjust:100%;-moz-text-size-adjust:100%;text-size-adjust:100%}
+  /* 记录仪是单列清单：比车控窄、比音乐略宽，三 tab 切换时顶栏跟着变宽 */
+  :root{--w-dvr:640px}
 
   #shellRoot{
     flex:none;width:100%;max-width:var(--shell-w,560px);margin:0 auto;
@@ -34,10 +36,11 @@
 
   /* 中文切换：就放在最外面，不进设置 */
   .stabs{display:flex;gap:8px;margin:9px 0 11px}
-  .stab{flex:1;min-width:0;height:43px;border-radius:12px;padding:0 10px;
-    font-size:14.5px;letter-spacing:.02em;color:rgba(255,255,255,.58);
+  .stab{flex:1;min-width:0;height:43px;border-radius:12px;padding:0 6px;
+    font-size:13.5px;letter-spacing:0;color:rgba(255,255,255,.58);
     background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);
-    display:flex;align-items:center;justify-content:center;gap:6px}
+    display:flex;align-items:center;justify-content:center;gap:5px;
+    white-space:nowrap;overflow:hidden;-webkit-text-size-adjust:100%}
   .stab.on{color:#fff;font-weight:600;background:rgba(250,45,72,.2);
     border-color:rgba(250,45,72,.55)}
   .stab:active{background:rgba(250,45,72,.3)}

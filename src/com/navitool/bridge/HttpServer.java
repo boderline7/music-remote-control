@@ -108,7 +108,10 @@ final class HttpServer implements Runnable {
         try {
             s.setSoTimeout(8000);
             InputStream in = s.getInputStream();
-            String requestLine = readLine(in);
+
+            // 请求头原始字节一并缓存：网关要把它们原样重放给后端（含 WebSocket 握手头）
+            ByteArrayOutputStream rawBuf = new ByteArrayOutputStream(1024);
+            String requestLine = readLine(in, rawBuf);
             if (requestLine == null) {
                 return;
             }
@@ -116,14 +119,17 @@ final class HttpServer implements Runnable {
             String method = parts.length > 0 ? parts[0] : "GET";
             String path = parts.length > 1 ? parts[1] : "/";
             int q = path.indexOf('?');
+            String query = "";
             if (q >= 0) {
+                query = path.substring(q + 1);
                 path = path.substring(0, q);
             }
 
             int contentLength = 0;
             String host = "";
+            boolean upgrade = false;
             String line;
-            while ((line = readLine(in)) != null && line.length() > 0) {
+            while ((line = readLine(in, rawBuf)) != null && line.length() > 0) {
                 int c = line.indexOf(':');
                 if (c > 0) {
                     String k = line.substring(0, c).trim();
@@ -136,10 +142,17 @@ final class HttpServer implements Runnable {
                     } else if ("host".equalsIgnoreCase(k)) {
                         // 页面里的 @HOST@ 用它替换：手机/平板用局域网 IP 打开也能点到对端端口
                         host = v;
+                    } else if ("upgrade".equalsIgnoreCase(k)
+                            && "websocket".equalsIgnoreCase(v)) {
+                        upgrade = true;
                     }
                 }
             }
-            String body = "";
+            // 注意：readLine 已把每行（含结尾空行）的原始字节写进 rawBuf，
+            // 这里不能再补 CRLF —— 否则重放给后端时空行多一个，WS 首帧会被当成头污染。
+
+            // WS 握手没有 body，直接交给网关；普通请求读完 body 再判断
+            byte[] bodyBytes = new byte[0];
             if (contentLength > 0) {
                 byte[] buf = new byte[contentLength];
                 int off = 0;
@@ -150,8 +163,18 @@ final class HttpServer implements Runnable {
                     }
                     off += n;
                 }
-                body = new String(buf, 0, off, "UTF-8");
+                bodyBytes = new byte[off];
+                System.arraycopy(buf, 0, bodyBytes, 0, off);
+                rawBuf.write(bodyBytes, 0, off);
             }
+
+            // 统一入口：音乐 / 记录仪 / 所有 WebSocket 交给网关转发到对应后端。
+            // 车控仍是纯 HTTP，根路径和车控 API 全部留在本地。
+            if (Gateway.shouldHandle(path, upgrade)) {
+                Gateway.handle(s, path, upgrade, rawBuf.toByteArray());
+                return;
+            }
+            String body = new String(bodyBytes, "UTF-8");
 
             String out;
             String ct = "application/json; charset=utf-8";
@@ -161,6 +184,9 @@ final class HttpServer implements Runnable {
                 return;
             } else if ("/ping".equals(path)) {
                 out = pingJson();
+            } else if ("/gateway".equals(path)) {
+                // 统一外壳探活：音乐 / 记录仪后端在不在线
+                out = Gateway.statusJson();
             } else if ("/acts".equals(path)) {
                 out = Acts.json();
             } else if ("/act".equals(path)) {
@@ -265,8 +291,21 @@ final class HttpServer implements Runnable {
                 if ("/dump.txt".equals(path)) {
                     extra = "Content-Disposition: attachment; filename=\"car-dump.txt\"";
                 }
+            } else if ("/log/rec".equals(path)) {
+                // 日志开关：不带 on 就是只读状态；on=0 停止记账，on=1 继续。
+                // 停止后不再写新行，已有的留着 —— 用来把复现时的现场钉住。
+                String on = Json.pick(body, "on");
+                if (on == null) {
+                    on = qs(query, "on");
+                }
+                if (on != null) {
+                    Bridge.logOn = !"0".equals(on.trim()) && !"false".equalsIgnoreCase(on.trim());
+                }
+                out = "{\"ok\":1,\"rec\":" + (Bridge.logOn ? 1 : 0)
+                        + ",\"lines\":" + Bridge.logCount() + "}";
             } else if ("/log/clear".equals(path)) {
                 OpLog.clear();
+                Bridge.clearLog();
                 out = "{\"ok\":1}";
             } else if ("/restart".equals(path)) {
                 // 音频桥接包的「重启」按钮会打这里：车控不会自己发现引擎掉了，
@@ -333,10 +372,33 @@ final class HttpServer implements Runnable {
         }
     }
 
+    /** 从 query 里取一个参数；没有就返回 null。 */
+    private static String qs(String query, String key) {
+        if (query == null || query.length() == 0) {
+            return null;
+        }
+        for (String kv : query.split("&")) {
+            int e = kv.indexOf('=');
+            String k = e < 0 ? kv : kv.substring(0, e);
+            if (key.equals(k)) {
+                return e < 0 ? "" : kv.substring(e + 1);
+            }
+        }
+        return null;
+    }
+
     private static String readLine(InputStream in) throws IOException {
+        return readLine(in, null);
+    }
+
+    /** 逐字节读一行；raw 非空时把它读到的原始字节（含 CRLF）原样记下来供网关重放。 */
+    private static String readLine(InputStream in, ByteArrayOutputStream raw) throws IOException {
         ByteArrayOutputStream buf = new ByteArrayOutputStream(128);
         int c;
         while ((c = in.read()) != -1) {
+            if (raw != null) {
+                raw.write(c);
+            }
             if (c == '\n') {
                 break;
             }
