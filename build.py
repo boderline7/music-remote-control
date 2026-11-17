@@ -32,8 +32,9 @@ OUT_APK = DIST / "车机助手_V18.73_bridge.apk"
 
 JB = Path("C:/Users/Administrator/.workbuddy/tools/rev/jdk-17.0.2/bin")
 BT = Path("C:/Users/Administrator/.workbuddy/tools/rev/android-14")
-APKTOOL = Path("D:/车机/车机助手_改版工程/03_补丁与工具/apktool.jar")
-KEYSTORE = Path("D:/车机/车机助手_改版工程/03_补丁与工具/debug.keystore")
+TOOLS = ROOT / "tools"
+APKTOOL = TOOLS / "apktool.jar"
+KEYSTORE = TOOLS / "debug.keystore"
 
 PROVIDER = ('<provider android:authorities="com.navitool.bridge" '
             'android:exported="false" '

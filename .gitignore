@@ -5,6 +5,10 @@ dex/*.dex
 *.ipa
 *.idsig
 
+# ---- 工具 ----
+# apktool 是 24M 的第三方 jar，不入库；缺了从官方或 _工具链 拷一份进来
+tools/apktool.jar
+
 # ---- 本地临时：隔离待删 / 页面验证 ----
 _trash/
 _preview/

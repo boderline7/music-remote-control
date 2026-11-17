@@ -4,7 +4,7 @@
 
 **原则：车机助手的代码一个字节都不改。** 全部通过反射 + ContentProvider 启动钩子挂上去。
 
-原有两个工程（`车机助手_改版工程`、`车机遥控_工程`）全程只读，只引用了它们的 apktool / keystore / 解包目录副本。
+原有两个工程（`车机助手_改版工程`、`车机遥控_工程`）全程只读。**本工程已自包含**：apktool 和 debug 签名收在 `tools/`，解包目录是 `work/apk_decoded` 的副本，手机端工程是 `work/phone` 的副本，构建不再引用外部目录。
 
 ---
 
@@ -197,6 +197,8 @@ src/com/navitool/bridge/
   Page.java             18766 首页：读 assets/carbridge.html，读不到退回内置自检页
   Json.java             小工具
 
+tools/apktool.jar      打包用工具（24M，不入库；换成官方 apktool 亦可）
+tools/debug.keystore   车机助手的签名，**必须保持这一份**，换一份就覆盖安装不上
 dex/classes.dex         编译产物，打包时作为 classes3.dex 塞进 APK
 work/apk_decoded/       从改版工程复制来的解包目录（改这里，不动原目录）
 work/cloudmusic-car/    从遥控工程复制来的车机端工程（改这里，不动原目录）
