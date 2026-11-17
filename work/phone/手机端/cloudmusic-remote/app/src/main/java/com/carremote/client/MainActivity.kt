@@ -23,7 +23,6 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -207,7 +206,7 @@ class MainActivity : Activity() {
             typeface = Typeface.DEFAULT_BOLD
         })
         box.addView(TextView(this).apply {
-            text = "与车机连同一 WiFi / 热点即可自动发现 · 连上后页面顶部直接切车控和音乐"
+            text = "连同一 WiFi / 热点，自动连接"
             textSize = 13f
             setTextColor(Color.parseColor("#8E8E93"))
             setPadding(0, dp(8), 0, dp(26))
@@ -267,8 +266,7 @@ class MainActivity : Activity() {
         ).apply { topMargin = dp(10) })
 
         box.addView(TextView(this).apply {
-            text = "只用填 IP：App 依次试 18766（车机助手）、18765（第三方）、18764（桥接包），" +
-                "哪个在跑就进哪个，页面里再切。手动加的地址会一直留着，长按可删。"
+            text = "填 IP 即可，端口自动探测"
             textSize = 12f
             setTextColor(Color.parseColor("#6E6E76"))
             setPadding(0, dp(20), 0, 0)
@@ -301,18 +299,20 @@ class MainActivity : Activity() {
         openPage()
     }
 
-    /** 依次试三个端口；18766 优先，因为它本身就会去探音乐 */
-    private suspend fun pickPort(): Int {
-        for (p in Protocol.PORTS) {
-            if (reachable(host, p)) return p
+    /** 三个端口并行探，保持 18766 优先；总耗时从「3×超时」降到「1×超时」。 */
+    private suspend fun pickPort(): Int = coroutineScope {
+        val probes = Protocol.PORTS.map { p ->
+            async(Dispatchers.IO) { reachable(host, p) }
         }
-        return 0
+        probes.forEachIndexed { i, probe ->
+            if (probe.await()) return@coroutineScope Protocol.PORTS[i]
+        }
+        0
     }
 
     private fun connectTo(h: String) {
         host = h
         Prefs.lastHost = h
-        Prefs.addManual(h)
         webShown = true
         port = 0
         loaded = false
@@ -326,7 +326,9 @@ class MainActivity : Activity() {
         scope.launch {
             val p = pickPort()
             if (p <= 0) {
-                showConnect("$h 能连上，但 18766 / 18765 / 18764 都没响应 · 车机上确认页面在跑")
+                // 上次记的地址失效（换热点 / IP 变了）→ 直接自动重搜，不再把用户卡在错误页
+                showConnect("连不上 $h，正在重新搜索…")
+                discover(autoConnect = true)
                 return@launch
             }
             port = p
@@ -370,10 +372,6 @@ class MainActivity : Activity() {
         statusText.text = text
     }
 
-    private fun toast(text: String) {
-        Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
-    }
-
     // ---------- 发现与连接 ----------
 
     /** 只取主机名：`http://1.2.3.4:18766/x`、`1.2.3.4:18766`、`1.2.3.4` 都认 */
@@ -411,8 +409,9 @@ class MainActivity : Activity() {
                         renderCandidates()
                     }
             }
-            scanJob.await()
-            delay(1200)      // 给 NSD 的 resolve 留一点时间
+            val hits = scanJob.await()
+            // 扫描命中就直接走，不再干等 NSD；只有两边都没结果时才给 mDNS 一个短窗口
+            if (hits.isEmpty() && found.isEmpty()) delay(500)
             collectJob.cancel()
             Discovery.stop()
             renderCandidates()
@@ -420,53 +419,35 @@ class MainActivity : Activity() {
 
             val target = found.keys.firstOrNull { it == Prefs.lastHost }
                 ?: found.keys.singleOrNull()
-            if (found.isEmpty()) {
-                setStatus("没找到车机 · 确认在同一 WiFi / 热点后重试，或手动填 IP")
+                ?: hits.firstOrNull()?.first
+            if (found.isEmpty() && hits.isEmpty()) {
+                setStatus("没找到车机 · 连同一 WiFi 后再试，或直接填 IP")
             } else if (autoConnect && target != null) {
                 connectTo(target)
             } else {
-                setStatus("找到 ${found.size} 台车机，点一下连接")
+                setStatus("找到车机，点下方 IP 连接")
             }
         }
     }
 
+    /** 连接页只留一条记录：上次连过的 IP。发现/扫描只用于自动直连，不再铺成一长串候选。 */
     private fun renderCandidates() {
         candidateBox.removeAllViews()
-        val seen = mutableSetOf<String>()
-
-        // 手动加过的排最前：换过网络也能一键回去；长按删掉
-        Prefs.manualHosts.mapNotNull { parseHost(it) }.forEach { h ->
-            if (!seen.add(h)) return@forEach
-            val b = actionButton(if (h == Prefs.lastHost) "$h · 上次" else h)
-            b.setOnClickListener { connectTo(h) }
-            b.setOnLongClickListener {
-                Prefs.removeManual(h)
-                renderCandidates()
-                true
-            }
-            candidateBox.addView(b, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(8) })
-        }
-
-        found.forEach { (h, name) ->
-            if (!seen.add(h)) return@forEach
-            val label = if (name == "车机" || name.isBlank()) h else "$name · $h"
-            val b = actionButton(label)
-            b.setOnClickListener { connectTo(h) }
-            candidateBox.addView(b, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(8) })
-        }
+        val last = Prefs.lastHost
+        if (last.isEmpty()) return
+        val b = actionButton("$last · 上次连接", accent = true)
+        b.setOnClickListener { connectTo(last) }
+        candidateBox.addView(b, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = dp(8) })
     }
 
     private suspend fun reachable(h: String, p: Int): Boolean = withContext(Dispatchers.IO) {
         if (h.isEmpty()) return@withContext false
         runCatching {
             Socket().use {
-                it.connect(InetSocketAddress(h, p), 700)
+                it.connect(InetSocketAddress(h, p), 300)
                 true
             }
         }.getOrDefault(false)

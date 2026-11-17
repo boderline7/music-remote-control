@@ -48,7 +48,8 @@ object Scanner {
 
     suspend fun scan(
         ports: List<Int> = Protocol.PORTS,
-        timeoutMs: Int = 350,
+        timeoutMs: Int = 180,
+        stopOnFirst: Boolean = true,
     ): List<Pair<String, Int>> = withContext(Dispatchers.IO) {
         val prefixes = subnets()
         if (prefixes.isEmpty()) {
@@ -58,14 +59,16 @@ object Scanner {
         _scanning.value = true
         val hits = java.util.Collections.synchronizedList(mutableListOf<Pair<String, Int>>())
         try {
-            // 每批 64 个并发，超时内没开端口就算没有
-            prefixes.forEach { prefix ->
-                (1..254).chunked(64).forEach { chunk ->
+            // 一台车机就够，命中即停：整个 /24 不用扫完，冷启动从秒级压到几百毫秒。
+            // 每批 128 并发，超时内没开端口就算没有。
+            outer@ for (prefix in prefixes) {
+                val chunks = (1..254).chunked(128)
+                for (chunk in chunks) {
                     coroutineScope {
                         chunk.map { n ->
                             async {
                                 val ip = "$prefix.$n"
-                                ports.forEach { p ->
+                                for (p in ports) {
                                     if (reachable(ip, p, timeoutMs)) {
                                         hits.add(ip to p)
                                         Log.i(TAG, "hit $ip:$p")
@@ -74,6 +77,7 @@ object Scanner {
                             }
                         }.forEach { it.await() }
                     }
+                    if (stopOnFirst && hits.isNotEmpty()) break@outer
                 }
             }
         } finally {

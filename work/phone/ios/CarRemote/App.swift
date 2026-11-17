@@ -47,7 +47,7 @@ struct ScanHit: Identifiable, Hashable {
 
 /// 连接决策与安卓端 MainActivity / RemoteClient 对齐：
 /// 1. 启动即开始 `_cloudmusic-car._tcp` 服务发现；
-/// 2. 有上次成功地址就先直连（快），2.5 秒还没连上再扫当前 /24 网段；
+/// 2. 有上次成功地址就先直连（快），600ms 还没连上再扫当前 /24 网段；
 /// 3. 连上停发现、保存地址；断开/失败重新发现并自动重试；
 /// 4. 全程只拿 IPv4，不解析 `carremote.local` 之类的域名。
 @MainActor
@@ -55,8 +55,6 @@ final class CarLink: ObservableObject {
     @Published var phase: LinkPhase = .idle
     @Published var found: [BonjourFinder.Endpoint] = []
     @Published var scanned: [ScanHit] = []
-    /// 手动加过的地址，一条 "host:port"，新的在最前
-    @Published var saved: [String] = []
     @Published var scanning = false
     @Published var host: String = ""
     @Published var port: Int = 18765
@@ -64,7 +62,6 @@ final class CarLink: ObservableObject {
 
     private let kHost = "carRemoteHost"
     private let kPort = "carRemotePort"
-    private let kSaved = "carRemoteSaved"
     private let finder = BonjourFinder()
     private var started = false
     private var maintenance: Task<Void, Never>?
@@ -75,7 +72,6 @@ final class CarLink: ObservableObject {
         host = d.string(forKey: kHost) ?? ""
         let p = d.integer(forKey: kPort)
         port = (p > 0 && p < 65536) ? p : 18765
-        saved = d.stringArray(forKey: kSaved) ?? []
 
         finder.onFound = { [weak self] endpoint in
             Task { @MainActor in
@@ -109,9 +105,10 @@ final class CarLink: ObservableObject {
 
         if !host.isEmpty { connect(host, port) }
 
-        // 直连旧地址失败后再扫网段，避免两条连接同时开跑（安卓注释里的那个坑）
+        // 直连旧地址失败后再扫网段，避免两条连接同时开跑（安卓注释里的那个坑）。
+        // 600ms：只够上一次直连探测跑完；命中即停，冷启动不再干等 2.5 秒。
         Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            try? await Task.sleep(nanoseconds: 600_000_000)
             guard let self, !self.phase.isReady else { return }
             await self.scan()
         }
@@ -150,7 +147,6 @@ final class CarLink: ObservableObject {
         guard !s.isEmpty else { return }
 
         if explicit {
-            remember(s, p)
             connect(s, p)
             return
         }
@@ -168,29 +164,10 @@ final class CarLink: ObservableObject {
                 return
             }
             scanned = hits
-            hits.forEach { remember($0.host, $0.port) }
-            if hits.count == 1 {
-                connect(hits[0].host, hits[0].port)
-            } else {
-                phase = .failed("两个端口都在 · 点一个进：18766 车控 / 18765 音乐")
-            }
+            // 18766（车控）优先，命中即连，不再让用户从列表里点
+            let first = hits.first { $0.port == 18766 } ?? hits[0]
+            connect(first.host, first.port)
         }
-    }
-
-    /// 记住手动地址：新的排最前，最多 12 条
-    func remember(_ h: String, _ p: Int) {
-        let key = "\(h):\(p)"
-        var list = saved
-        if list.contains(key) { return }
-        list.insert(key, at: 0)
-        if list.count > 12 { list.removeLast(list.count - 12) }
-        saved = list
-        UserDefaults.standard.set(list, forKey: kSaved)
-    }
-
-    func removeSaved(_ key: String) {
-        saved = saved.filter { $0 != key }
-        UserDefaults.standard.set(saved, forKey: kSaved)
     }
 
     func rescan() {
@@ -240,7 +217,7 @@ final class CarLink: ObservableObject {
         }
         var req = URLRequest(url: u,
                              cachePolicy: .reloadIgnoringLocalAndRemoteCacheData,
-                             timeoutInterval: 1.5)
+                             timeoutInterval: 0.5)
         req.httpMethod = "GET"
         do {
             let (_, response) = try await URLSession.shared.data(for: req)
@@ -251,7 +228,6 @@ final class CarLink: ObservableObject {
                 port = p
                 UserDefaults.standard.set(h, forKey: kHost)
                 UserDefaults.standard.set(p, forKey: kPort)
-                remember(h, p)
                 phase = .ready
                 finder.stop()
                 if !wasReady { reloadID += 1 }

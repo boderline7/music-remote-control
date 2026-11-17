@@ -44,32 +44,6 @@ object Prefs {
         get() = sp.getString("carName", "").orEmpty()
         set(value) = sp.edit().putString("carName", value).apply()
 
-    /**
-     * 手动加过的地址，一条 "ip:port"，新的在最前。
-     * 车机 IP 会随热点/路由器变，但换回来的老地址照样留着，不用每次重输。
-     */
-    var manualHosts: List<String>
-        get() = sp.getString("manual", "").orEmpty()
-            .split('\n')
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-        set(value) = sp.edit()
-            .putString("manual", value.distinct().take(12).joinToString("\n"))
-            .apply()
-
-    fun addManual(entry: String) {
-        val e = entry.trim()
-        if (e.isEmpty()) return
-        val list = manualHosts.toMutableList()
-        if (list.contains(e)) return
-        list.add(0, e)
-        manualHosts = list
-    }
-
-    fun removeManual(entry: String) {
-        manualHosts = manualHosts.filterNot { it == entry }
-    }
-
     fun clearToken() {
         sp.edit().remove("token").apply()
     }
