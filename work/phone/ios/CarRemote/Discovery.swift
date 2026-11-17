@@ -108,9 +108,10 @@ enum LanScanner {
         let prefixes = subnets()
         guard !prefixes.isEmpty else { return [] }
         var hits: [(String, Int)] = []
-        for prefix in prefixes {
-            for start in stride(from: 1, through: 254, by: 64) {
-                let end = min(start + 63, 254)
+        // 一台车机就够，命中即停：整个 /24 不用扫完，冷启动从秒级压到几百毫秒。
+        outer: for prefix in prefixes {
+            for start in stride(from: 1, through: 254, by: 128) {
+                let end = min(start + 127, 254)
                 let batch: [(String, Int)] = await withTaskGroup(of: [(String, Int)].self) { group in
                     for n in start...end {
                         let ip = "\(prefix).\(n)"
@@ -131,6 +132,7 @@ enum LanScanner {
                     return acc
                 }
                 hits.append(contentsOf: batch)
+                if !hits.isEmpty { break outer }
             }
         }
         return hits.sorted { $0.0 == $1.0 ? $0.1 < $1.1 : $0.0 < $1.0 }
@@ -141,7 +143,7 @@ enum LanScanner {
         guard let url = URL(string: "http://\(ip):\(port)/") else { return false }
         var req = URLRequest(url: url,
                              cachePolicy: .reloadIgnoringLocalAndRemoteCacheData,
-                             timeoutInterval: 0.5)
+                             timeoutInterval: 0.25)
         req.httpMethod = "GET"
         do {
             let (_, response) = try await URLSession.shared.data(for: req)
