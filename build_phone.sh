@@ -10,7 +10,7 @@ cd "$(dirname "$0")"
 export JAVA_HOME="C:/Users/Administrator/.workbuddy/tools/rev/jdk-17.0.2"
 
 PROJ="work/phone/手机端/cloudmusic-remote"
-[ -d "$PROJ" ] || { echo "缺少 $PROJ（从 车机遥控_工程/手机端 拷一份）"; exit 1; }
+[ -d "$PROJ" ] || { echo "缺少 $PROJ（工程内副本丢了，从 git 恢复：git checkout -- work/phone）"; exit 1; }
 
 echo ">> 构建安卓手机端"
 cd "$PROJ"

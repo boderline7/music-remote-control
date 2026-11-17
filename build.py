@@ -13,8 +13,8 @@
   7. apksigner 签名（固定 debug.keystore）
   8. 产物落到 dist/
 
-原有两个工程全程只读。
-"""
+  构建只依赖本目录与 tools/；JDK、build-tools 在 ~/.workbuddy/tools/rev。
+  """
 import os
 import re
 import shutil
