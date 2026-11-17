@@ -435,12 +435,12 @@
 </head>
 <body>
 <!--@shell:body-->
-<div id="shellRoot" data-ver="2.5.2">
+<div id="shellRoot" data-ver="2.5.3">
   <div class="sbar" id="sBar">
    <div class="sbar-in">
     <span class="sdot" id="sDot"></span>
     <span class="stxt" id="sTxt">正在连接…</span>
-    <i class="sver">2.5.2</i>
+    <i class="sver">2.5.3</i>
     <button class="sbtn" id="sSet" aria-label="设置与诊断" title="设置与诊断">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9.1 19a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 4.8 15a1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.8 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 9.1 4.8 1.6 1.6 0 0 0 10 3.3V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
     </button>
@@ -1192,6 +1192,11 @@
         } else {
           library = null;
           el.libHint.textContent = data.message || '资料库读取失败';
+          // 车机账号 profile 异步加载：刚连上时 library 可能抢在登录就绪前失败。
+          // 延迟重试一次，避免「自建歌单之前有、现在空了」且不会自己恢复。
+          if (data.message && data.message.indexOf('登录') >= 0) {
+            setTimeout(function () { command('library'); }, 1200);
+          }
         }
         break;
 

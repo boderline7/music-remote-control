@@ -25,7 +25,7 @@ ROOT = WEB.parent
 PROJ = ROOT / "work" / "cloudmusic-car"
 
 TARGETS = [
-    (WEB / "car.html", "18.72"),
+    (WEB / "car.html", "18.73"),
     (WEB / "remote.html", None),
     (WEB / "remote_lunastub.html", None),
 ]

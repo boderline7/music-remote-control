@@ -51,9 +51,9 @@
 
 | 包 | 装在哪 | 提供什么 | 版本 |
 |---|---|---|---|
-| `dist/车机助手_V18.72_bridge.apk` | 车机 | 18766：卡片数据 / 动作表 / 动作执行 / 车控页 | vC 24 · 18.72-mod |
+| `dist/车机助手_V18.73_bridge.apk` | 车机 | 18766：卡片数据 / 动作表 / 动作执行 / 车控页 | vC 25 · 18.73-mod |
 | `dist/汽水音乐_桥接包_v2.10.18.apk` | 车机 | 桥接包：官方网易云模式下的 18764 + 车控页入口 + 入口页改版 | vC 61 · 2.10.18 |
-| `dist/网易云音乐车机版_v2.5.2.apk` | 车机 | 网易云车机版（`com.cloudmusic.car`）：18765 的音乐页 + 自带车控入口 | vC 54 · 2.5.2 |
+| `dist/网易云音乐车机版_v2.5.3.apk` | 车机 | 网易云车机版（`com.cloudmusic.car`）：18765 的音乐页 + 自带车控入口 | vC 55 · 2.5.3 |
 | `dist/车机遥控_手机端_v3.2.1.apk` | 手机（安卓） | 一个 WebView 加载车机页面，切换条在页面里 | vC 28 · 3.2.1 |
 | `dist/车机遥控_手机端_iOS_v2.1.1.ipa` | 手机（iOS） | 同上，未签名 IPA | 2.1.1 (21) |
 
@@ -175,7 +175,7 @@ work/cloudmusic-car/    从遥控工程复制来的车机端工程（改这里�
 work/phone/             手机端工程副本：安卓 cloudmusic-remote + ios（改这里，不动原目录）
 .github/workflows/      iOS 云构建：macOS runner 出未签名 IPA
 web/car.html            18766 独立车控页（构建时塞进 APK 的 assets）
-web/remote.html         网易云车机版 18765 的音乐页（构建进 v2.5.2 包）
+web/remote.html         网易云车机版 18765 的音乐页（构建进 v2.5.3 包）
 web/remote_lunastub.html 桥接包 18764 网页（含车控页 + 设置面板入口）
 _preview/mock.js        本地假数据，模拟 18765 / 18766 看网页效果
 dist/                   成品 APK
@@ -207,7 +207,7 @@ bash build_phone.sh   # 出安卓手机端
 
 | | 包名 | 版本 | 签名 |
 |---|---|---|---|
-| 车机助手 | `com.navi.tool` | 24 / 18.72-mod | `debug.keystore` |
+| 车机助手 | `com.navi.tool` | 25 / 18.73-mod | `debug.keystore` |
 | 桥接包 | `com.luna.music.car` | 61 / 2.10.18 | `keystore/carremote.jks` |
 | 手机端（安卓） | `com.carremote.client` | 28 / 3.2.1 | `keystore/carremote.jks` |
 | 网易云车机版 | `com.cloudmusic.car` | 54 / 2.5.2 | `keystore/carremote.jks` |
@@ -217,7 +217,7 @@ bash build_phone.sh   # 出安卓手机端
 ## 版本记录
 
 从 2026-11-16 起这个工程用 git 记录。**提交历史就是版本记录；tag 只到 v2.10.11 / phone-2.1.0，
-之后的 V18.72 / v2.5.2 / v2.10.18 / v3.2.1 / iOS 2.1.1 这几版没再打 tag**：
+之后的 V18.73 / v2.5.3 / v2.10.18 / v3.2.1 / iOS 2.1.1 这几版没再打 tag**：
 
 ```bash
 git log --oneline     # 改过什么

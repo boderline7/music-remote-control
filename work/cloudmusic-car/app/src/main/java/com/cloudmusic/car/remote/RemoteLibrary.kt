@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -189,10 +190,25 @@ object RemoteLibrary {
 
     private fun uid(): Long = AccountStore.profile.value?.userId ?: 0L
 
+    /**
+     * 账号 profile 是异步加载的（AccountStore.init）。手机一连上就发 library，
+     * 此刻 profile 可能还没就绪，uid()=0 会让 buildLibrary 直接报「车机还没登录网易云」，
+     * 表现就是「自建歌单之前有、现在空了」。这里最多等 1.5 秒再判定，等不到才当真的没登录。
+     */
+    private suspend fun awaitUid(): Long {
+        repeat(15) {
+            val id = uid()
+            if (id != 0L) return id
+            delay(100)
+        }
+        return 0L
+    }
+
     /** 资料库首页：喜欢的音乐、云盘、我创建的歌单。 */
     fun library(done: (JSONObject) -> Unit) {
         scope.launch {
             val out = try {
+                awaitUid()   // 给异步登录一个就绪窗口，失败也只等一次
                 cached("json:library", AGG_TTL_MS) { buildLibrary() }
             } catch (t: Throwable) {
                 Log.w(TAG, "library failed", t)
@@ -210,7 +226,11 @@ object RemoteLibrary {
         val cloudDeferred = async {
             runCatching { NeteaseApi.cloudDrive().tracks.size }.getOrDefault(0)
         }
-        val mine = playlistsDeferred.await().filter { it.creatorId == id }
+        val all = playlistsDeferred.await()
+        // /user/playlist 本来就按 uid 拉「该账号的歌单」，creatorId 只是用来剔除收藏的别人的歌单。
+        // 网易云偶发不返回 creator 字段（解析成 0），此时严格按 id 过滤会把自建歌单全滤掉，
+        // 表现就是「之前有、现在没了」。creatorId=0 无法判归属，按接口语义保留，宁可多列也别空。
+        val mine = all.filter { it.creatorId == id || it.creatorId == 0L }
         val liked = mine.firstOrNull { it.isLikedSongs }
         val array = JSONArray()
         mine.filterNot { it.isLikedSongs }.forEach { p ->
