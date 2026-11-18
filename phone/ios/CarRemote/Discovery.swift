@@ -73,10 +73,20 @@ final class BonjourFinder: NSObject, NetServiceBrowserDelegate, NetServiceDelega
     }
 }
 
-/// 与安卓端 Scanner.kt 对齐：枚举本机所有 site-local IPv4 的 /24，逐段探 18765。
+/// 端口契约，与安卓端 `Protocol.PORTS` 一一对应。
+/// 18766 是完整入口（车控 + 网关 + 外壳），另外两个只出音乐；三者都要探，
+/// 少任何一个都会让「按音源模式选端口」的那台车连不上。
+enum Ports {
+    static let car = 18766          // 车机助手：车控 + 网关 + 外壳
+    static let musicThird = 18765   // 第三方网易云车机版
+    static let musicBridge = 18764  // 桥接包（官方网易云模式）
+    static let all = [car, musicThird, musicBridge]
+}
+
+/// 与安卓端 Scanner.kt 对齐：枚举本机所有 site-local IPv4 的 /24，逐段探端口契约里的三路。
 /// 车机开热点时 IP 每次都可能变，网段扫描是「IP 变了也能自己找回来」的兜底。
 enum LanScanner {
-    static let defaultPort = 18765
+    static let defaultPort = Ports.car
 
     static func subnets() -> [String] {
         var head: UnsafeMutablePointer<ifaddrs>?
@@ -102,9 +112,9 @@ enum LanScanner {
         return Array(Set(result)).sorted()
     }
 
-    /// 两个端口一起扫：18766（车控）/ 18765（音乐）。
-    /// 一台车机通常两个都开，所以结果按 host + port 成对给，不折叠成 IP。
-    static func scan(ports: [Int] = [18766, 18765]) async -> [(String, Int)] {
+    /// 三个端口一起扫：18766（车控 + 网关）/ 18765 / 18764（音乐）。
+    /// 一台车机通常开一个车控口 + 一个音乐口，所以结果按 host + port 成对给，不折叠成 IP。
+    static func scan(ports: [Int] = Ports.all) async -> [(String, Int)] {
         let prefixes = subnets()
         guard !prefixes.isEmpty else { return [] }
         var hits: [(String, Int)] = []

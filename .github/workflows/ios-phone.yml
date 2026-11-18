@@ -3,7 +3,7 @@ name: iOS IPA (车机遥控 手机端)
 on:
   push:
     paths:
-      - 'work/phone/ios/**'
+      - 'phone/ios/**'
       - '.github/workflows/ios-phone.yml'
   workflow_dispatch:
     inputs:
@@ -37,7 +37,7 @@ jobs:
           xcodegen --version
 
       - name: Generate Xcode project
-        working-directory: work/phone/ios
+        working-directory: phone/ios
         run: |
           # XcodeGen 会把 info.path 指向的 Info.plist 覆写成它自己生成的版本
           # （实测只剩 CFBundle* 几个键），所以先在生成工程之前留一份权威副本。
@@ -48,7 +48,7 @@ jobs:
           grep -c NSBonjourServices CarRemote/Info.plist || true
 
       - name: Show Info.plist settings
-        working-directory: work/phone/ios
+        working-directory: phone/ios
         run: |
           xcodebuild -project CarRemote.xcodeproj -scheme CarRemote \
             -configuration Release -sdk iphoneos \
@@ -56,7 +56,7 @@ jobs:
             | grep -E 'GENERATE_INFOPLIST_FILE|INFOPLIST_FILE|MARKETING_VERSION' || true
 
       - name: Archive (no code signing)
-        working-directory: work/phone/ios
+        working-directory: phone/ios
         run: |
           set -euo pipefail
           xcodebuild \
@@ -102,7 +102,7 @@ jobs:
               print("OK", key, "=", dst[key])
           PY
           plutil -lint "$APP/Info.plist"
-          OUT="$GITHUB_WORKSPACE/work/phone/ios/out"
+          OUT="$GITHUB_WORKSPACE/phone/ios/out"
           rm -rf "$OUT"
           mkdir -p "$OUT/Payload"
           cp -R "$APP" "$OUT/Payload/"
@@ -119,9 +119,9 @@ jobs:
         with:
           name: CarRemote-unsigned-ipa
           path: |
-            work/phone/ios/out/CarRemote-unsigned.ipa
-            work/phone/ios/out/CarRemote-unsigned.ipa.sha256
-            work/phone/ios/out/build-info.txt
+            phone/ios/out/CarRemote-unsigned.ipa
+            phone/ios/out/CarRemote-unsigned.ipa.sha256
+            phone/ios/out/build-info.txt
           retention-days: 90
 
       - name: Publish to Release (optional)
@@ -133,17 +133,17 @@ jobs:
           set -euo pipefail
           NOTES="GitHub Actions 云构建的 iOS 遥控客户端（未签名 IPA）。
           发现逻辑与安卓 App 一致：Bonjour 搜 _cloudmusic-car._tcp + 扫本机 /24 网段，18766（车控）与 18765（音乐）一起探，拿到纯 IPv4 直连。
-          安装方式见 work/phone/ios/README.md：Sideloadly / AltStore 用本机 Apple ID 签名，或自有开发者证书签名。"
+          安装方式见 phone/ios/README.md：Sideloadly / AltStore 用本机 Apple ID 签名，或自有开发者证书签名。"
           if gh release create "$TAG" \
-              work/phone/ios/out/CarRemote-unsigned.ipa \
-              work/phone/ios/out/CarRemote-unsigned.ipa.sha256 \
-              work/phone/ios/out/build-info.txt \
+              phone/ios/out/CarRemote-unsigned.ipa \
+              phone/ios/out/CarRemote-unsigned.ipa.sha256 \
+              phone/ios/out/build-info.txt \
               --title "iOS 遥控 $TAG" --notes "$NOTES"; then
             echo "release created: $TAG"
           else
             gh release upload "$TAG" \
-              work/phone/ios/out/CarRemote-unsigned.ipa \
-              work/phone/ios/out/CarRemote-unsigned.ipa.sha256 \
-              work/phone/ios/out/build-info.txt --clobber
+              phone/ios/out/CarRemote-unsigned.ipa \
+              phone/ios/out/CarRemote-unsigned.ipa.sha256 \
+              phone/ios/out/build-info.txt --clobber
             echo "assets replaced: $TAG"
           fi

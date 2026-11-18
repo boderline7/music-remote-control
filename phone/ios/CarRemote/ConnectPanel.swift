@@ -36,7 +36,7 @@ struct ConnectPanel: View {
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
                     .disableAutocorrection(true)
-                TextField("端口（留空则两个都试）", text: $portText)
+                TextField("端口（留空则自动探测）", text: $portText)
                     .keyboardType(.numberPad)
                 Button("连接") {
                     link.apply(address: address, port: portText)

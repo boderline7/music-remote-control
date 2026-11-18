@@ -38,7 +38,7 @@ enum LinkPhase {
     }
 }
 
-/// 扫到的一条入口：同一台车机可能同时开着 18766 和 18765
+/// 扫到的一条入口：同一台车机可能同时开着 18766 和一条音乐口
 struct ScanHit: Identifiable, Hashable {
     let host: String
     let port: Int
@@ -57,7 +57,7 @@ final class CarLink: ObservableObject {
     @Published var scanned: [ScanHit] = []
     @Published var scanning = false
     @Published var host: String = ""
-    @Published var port: Int = 18765
+    @Published var port: Int = Ports.car
     @Published var reloadID = 0
 
     private let kHost = "carRemoteHost"
@@ -71,7 +71,7 @@ final class CarLink: ObservableObject {
         let d = UserDefaults.standard
         host = d.string(forKey: kHost) ?? ""
         let p = d.integer(forKey: kPort)
-        port = (p > 0 && p < 65536) ? p : 18765
+        port = (p > 0 && p < 65536) ? p : Ports.car
 
         finder.onFound = { [weak self] endpoint in
             Task { @MainActor in
@@ -123,14 +123,14 @@ final class CarLink: ObservableObject {
         }
     }
 
-    func connect(_ h: String, _ p: Int = 18765) {
+    func connect(_ h: String, _ p: Int = Ports.car) {
         guard !h.isEmpty else { return }
         phase = .connecting("正在连接 \(h):\(p)…")
         Task { await probe(h, p) }
     }
 
-    /// 手动连接，允许直接粘 `http://192.168.1.23:18765/` 这种整串。
-    /// 只填 IP 时两个端口都试：18766 进车控，18765 进音乐。
+    /// 手动连接，允许直接粘 `http://192.168.1.23:18766/` 这种整串。
+    /// 只填 IP 时三个端口都试：18766 是完整入口，18765 / 18764 只出音乐。
     func apply(address raw: String, port rawPort: String) {
         var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if let r = s.range(of: "://") { s = String(s[r.upperBound...]) }
@@ -152,20 +152,20 @@ final class CarLink: ObservableObject {
         }
 
         Task { @MainActor in
-            phase = .connecting("正在试 \(s) 的 18766 / 18765…")
+            phase = .connecting("正在试 \(s) 的 18766 / 18765 / 18764…")
             var hits: [ScanHit] = []
-            for probePort in [18766, 18765] {
+            for probePort in Ports.all {
                 if await reachable(s, probePort) {
                     hits.append(ScanHit(host: s, port: probePort))
                 }
             }
             guard !hits.isEmpty else {
-                phase = .failed("\(s) 两个端口都不通 · 确认车机上的服务在跑")
+                phase = .failed("\(s) 三个端口都不通 · 确认车机上的服务在跑")
                 return
             }
             scanned = hits
-            // 18766（车控）优先，命中即连，不再让用户从列表里点
-            let first = hits.first { $0.port == 18766 } ?? hits[0]
+            // 18766（完整入口）优先，命中即连，不再让用户从列表里点
+            let first = hits.first { $0.port == Ports.car } ?? hits[0]
             connect(first.host, first.port)
         }
     }
@@ -182,10 +182,13 @@ final class CarLink: ObservableObject {
     func scan() async {
         guard !scanning else { return }
         scanning = true
-        let hits = await LanScanner.scan(ports: [18766, 18765])
+        let hits = await LanScanner.scan()
         scanning = false
         scanned = hits.map { ScanHit(host: $0.0, port: $0.1) }
-        if !phase.isReady, let first = scanned.first {
+        // 扫描结果按端口升序，直接用 first 会连到音乐口（18764 最小），
+        // 车控就没了。这里显式优先完整入口。
+        if !phase.isReady,
+           let first = scanned.first(where: { $0.port == Ports.car }) ?? scanned.first {
             connect(first.host, first.port)
         }
     }
@@ -239,7 +242,7 @@ final class CarLink: ObservableObject {
         }
     }
 
-    /// 只探 /ping，不改 phase —— 手动输入只填 IP 时用它把两个端口都试一遍
+    /// 只探 /ping，不改 phase —— 手动输入只填 IP 时用它把三个端口都试一遍
     private func reachable(_ h: String, _ p: Int) async -> Bool {
         guard let u = URL(string: "http://\(h):\(p)/ping") else { return false }
         var req = URLRequest(url: u,

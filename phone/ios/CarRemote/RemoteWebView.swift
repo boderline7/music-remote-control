@@ -24,7 +24,7 @@ enum WebViewBridge {
     }
 }
 
-/// 直接加载车机端的 remote.html，WebSocket 由页面自己按 location.host 连到同一个 IP:18765。
+/// 直接加载车机端下发的那一页，WebSocket 由页面自己按 location.host 连当前端口。
 /// 这里不做协议翻译、不注入 JS：网页端有什么功能，App 里就有什么功能。
 struct RemoteWebView: UIViewRepresentable {
     let url: URL
