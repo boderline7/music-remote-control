@@ -22,6 +22,7 @@ build/
 /docs/
 /analysis/
 /archive/
+/README.local.md
 
 # ---- 本地配置 ----
 # 本机路径覆盖（JDK / build-tools / android.jar / ASCII 构建目录）
