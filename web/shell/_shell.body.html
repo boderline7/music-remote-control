@@ -1,0 +1,64 @@
+<div id="shellRoot" data-ver="{{VER}}">
+  <div class="sbar" id="sBar">
+   <div class="sbar-in">
+    <span class="sdot" id="sDot"></span>
+    <span class="stxt" id="sTxt">正在连接…</span>
+    <i class="sver">{{VER}}</i>
+    <button class="sbtn" id="sSet" aria-label="设置与诊断" title="设置与诊断">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9.1 19a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 4.8 15a1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.8 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 9.1 4.8 1.6 1.6 0 0 0 10 3.3V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+    </button>
+    <button class="sbtn" id="sReload" aria-label="刷新" title="刷新">
+      <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+    </button>
+   </div>
+  </div>
+  <div class="stabs">
+    <button class="stab" id="sTabCar" data-tab="car">车机控制<i class="sn" id="sDotCar"></i></button>
+    <button class="stab" id="sTabMusic" data-tab="music">音乐控制<i class="sn" id="sDotMusic"></i></button>
+    <button class="stab" id="sTabDvr" data-tab="dvr">行车记录仪<i class="sn" id="sDotDvr"></i></button>
+  </div>
+</div>
+
+<div class="spane" id="sPane">
+  <iframe id="sFrame" title="内容"></iframe>
+  <div class="sfail" id="sFail">
+    <b id="sFailT">这一路没起来</b>
+    <div id="sFailS">—</div>
+    <button id="sFailGo">切到车机控制</button>
+  </div>
+</div>
+
+<div class="smask" id="sMask"></div>
+<div class="ssheet" id="sSheet">
+  <div class="sshead">
+    <h3>设置 · 诊断</h3>
+    <button class="ssx" id="sClose" aria-label="关闭">✕</button>
+  </div>
+  <div class="ssbody">
+    <div class="sskv" id="sKv">—</div>
+    <div class="sstabs" id="sSegs">
+      <button class="sstab on" data-seg="diag">诊断</button>
+      <button class="sstab" data-seg="log">操作记录</button>
+      <button class="sstab" data-seg="cards">车况</button>
+      <button class="sstab" data-seg="acts">动作表</button>
+    </div>
+    <div class="ssrow">
+      <button class="primary" id="sGen">生成</button>
+      <button id="sCopy">复制</button>
+      <button id="sSave">下载</button>
+    </div>
+    <pre class="sstxt" id="sTxt2">点「生成」，取当前这一段的文本。</pre>
+    <div class="sstip" id="sTip"></div>
+    <div class="ssrow" style="margin-top:16px">
+      <button id="sDump">全部导出</button>
+      <button id="sRec">停止记录</button>
+      <button id="sClear">清空记录</button>
+    </div>
+    <div class="sstip">
+      诊断里是端口、引擎绑定、安装包版本、动作项数和最近日志。<br>
+      「下载」给的是服务器直出的 txt（UTF-8），文件名带时间，不再走浏览器临时文件。<br>
+      「停止记录」之后不再写新行，已有的留着，方便把现场钉在出问题那一段。<br>
+      下载没反应时点「复制」，或长按上面的文本全选。
+    </div>
+  </div>
+</div>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.CarRemote" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#000000</item>
+        <item name="android:statusBarColor">#000000</item>
+        <item name="android:navigationBarColor">#000000</item>
+    </style>
+    <!-- 与 iOS AppIcon.png 的底色一致（约 #1A1A21） -->
+    <color name="ic_launcher_background">#1A1A21</color>
+</resources>

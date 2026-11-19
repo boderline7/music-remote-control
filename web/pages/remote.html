@@ -1,0 +1,2108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="车机遥控">
+<meta name="theme-color" content="#0b0b0d">
+<link rel="apple-touch-icon" href="/icon.png">
+<title>车机遥控</title>
+<style>
+  :root {
+    --red: #fa2d48;
+    --fg: #ffffff;
+    --dim: rgba(255,255,255,.55);
+    --faint: rgba(255,255,255,.32);
+    --line: rgba(255,255,255,.12);
+    --card: rgba(255,255,255,.06);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: radial-gradient(120% 60% at 50% 0%, #1b1b22 0%, #0b0b0d 62%) fixed;
+    color: var(--fg);
+    font-family: -apple-system, system-ui, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  button { border: 0; background: none; color: var(--fg); padding: 0; cursor: pointer; font: inherit; }
+  button:active { opacity: .55; }
+  /* 手机 WebView 里默认那条白色滚动条非常扎眼，三端统一隐藏（内容照样能滚） */
+  * { scrollbar-width: none; -ms-overflow-style: none; }
+  *::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+  /* 宽屏浏览器 / 平板也保持手机版式居中，不然标题和右侧按钮会被拉到屏幕两头 */
+  header, main { width: 100%; max-width: 560px; margin-left: auto; margin-right: auto; }
+  header {
+    flex: none;
+    display: flex; align-items: center; gap: 8px;
+    padding: calc(10px + env(safe-area-inset-top)) 20px 6px;
+    font-size: 13px; color: var(--dim);
+  }
+  #dot { width: 8px; height: 8px; border-radius: 50%; background: #8e8e93; flex: none; transition: background .2s; }
+  #dot.on { background: #34c759; }
+  #dot.warn { background: #ff9f0a; }
+  #status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .icon-btn {
+    flex: none; width: 38px; height: 38px; border-radius: 50%;
+    background: var(--card); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .icon-btn svg { width: 19px; height: 19px; fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .icon-btn:active { background: var(--red); }
+  .icon-btn.spin svg { animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  main {
+    flex: 1;
+    overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    padding: 4px 20px calc(22px + env(safe-area-inset-bottom));
+  }
+
+  /* ---------- 正在播放 ---------- */
+  /* 标题和歌手要在同一列紧挨着：以前 #artist 在 head-row 外面，
+     被右侧竖排按钮撑出一大片空白，看上去像两截不相关的东西 */
+  .head-row { display: flex; align-items: center; gap: 12px; }
+  .head-text { flex: 1; min-width: 0; }
+  #title {
+    margin: 0; font-size: 26px; font-weight: 700; line-height: 1.25;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  /* 右侧横排：爱心与「添加到歌单」并排，两个圆钮完全同尺寸 */
+  .side-actions { flex: none; display: flex; flex-direction: row; align-items: center; gap: 8px; }
+  .side-btn {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: var(--card); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .side-btn:disabled { opacity: .35; }
+  .side-btn svg { width: 21px; height: 21px; fill: none; stroke: rgba(255,255,255,.8); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  #like.on svg { fill: var(--red); stroke: var(--red); }
+  /* 只留一点淡红描边区分功能，尺寸与爱心保持一致 */
+  #addToPlaylist:not(:disabled) { border-color: rgba(250,45,72,.42); }
+  #artist { margin: 3px 0 0; font-size: 14px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .progress { margin-top: 16px; }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 6px; border-radius: 3px; outline: none; margin: 0;
+    background: linear-gradient(to right, var(--red) var(--p, 0%), var(--line) var(--p, 0%));
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,.55);
+  }
+  input[type=range]:disabled { opacity: .35; }
+  .times { display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+  /* 三键在整页正中：绝对居中，不受标题和随机钮的宽度影响 */
+  .controls {
+    display: flex; align-items: center; justify-content: center;
+    margin: 20px 0 4px;
+  }
+  .ctl-core { display: flex; align-items: center; gap: 44px; }
+  .mode-btn { flex: none; }
+  .mode-btn svg { width: 19px; height: 19px; fill: none; stroke: var(--dim); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .mode-btn.on svg { stroke: var(--red); }
+  .mode-btn:active { background: rgba(250,45,72,.2); border-color: rgba(250,45,72,.5); }
+  .skip svg { width: 32px; height: 32px; fill: rgba(255,255,255,.9); }
+  .main { width: 70px; height: 70px; border-radius: 50%; background: var(--red); box-shadow: 0 10px 24px rgba(250,45,72,.32); }
+  .main svg { width: 30px; height: 30px; fill: #fff; }
+
+  .volume { display: flex; align-items: center; gap: 10px; margin-top: 16px; }
+  /* 音量加减只是微调，不该比播放键还抢眼：收成和右上刷新钮同一套低调小圆钮 */
+  .round {
+    flex: none; width: 38px; height: 38px; border-radius: 50%;
+    background: var(--card); border: 1px solid var(--line);
+    font-size: 21px; line-height: 1; color: var(--dim); font-weight: 400;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .round:active { background: rgba(250,45,72,.2); border-color: rgba(250,45,72,.5); color: #fff; }
+  .volume input[type=range] { flex: 1; height: 4px; }
+  .volume input[type=range]::-webkit-slider-thumb { width: 15px; height: 15px; }
+  #volVal { min-width: 24px; flex: none; text-align: right; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .hidden { display: none !important; }
+
+  /* 资料库卡片：彩色渐变大方框，图标 + 播放钮在框内同一行，不再悬空 */
+  .tile {
+    position: relative; min-height: 108px; padding: 14px;
+    border-radius: 18px; border: 1px solid rgba(255,255,255,.16);
+    display: flex; flex-direction: column; justify-content: space-between;
+    text-align: left; overflow: hidden;
+  }
+  .tile.liked { background: linear-gradient(135deg, #7d1e30 0%, #3a1119 100%); }
+  .tile.cloud { background: linear-gradient(135deg, #294672 0%, #141d33 100%); }
+  .tile .tile-top { display: flex; align-items: center; justify-content: space-between; }
+  .tile .ico {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: rgba(255,255,255,.16);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .tile .ico svg { width: 18px; height: 18px; fill: #fff; }
+  .tile .tilePlay {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: rgba(255,255,255,.94); color: #1a1a1f;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .tile .tilePlay svg { width: 16px; height: 16px; fill: currentColor; }
+  .tile .tilePlay:active { background: var(--red); color: #fff; }
+
+  .lyric-line.on .tr { color: rgba(255,255,255,.62); }
+
+  /* 添加到歌单选择面板 */
+  .overlay {
+    position: fixed; inset: 0; z-index: 15; background: rgba(0,0,0,.62);
+    display: flex; align-items: flex-end;
+  }
+  .overlay .panel {
+    width: 100%; max-height: 70vh; overflow-y: auto;
+    background: #16161a; border-radius: 20px 20px 0 0;
+    padding: 18px 16px calc(24px + env(safe-area-inset-bottom));
+  }
+  .overlay .panel-head { display: flex; align-items: center; margin-bottom: 14px; }
+  .overlay .panel-head h3 { flex: 1; margin: 0; font-size: 17px; }
+  .overlay .panel-head button { color: var(--dim); font-size: 14px; }
+  .overlay .panel-sub { margin: -8px 0 12px; font-size: 12px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .overlay .plrow {
+    width: 100%; display: flex; align-items: center; gap: 10px;
+    padding: 14px 4px; border-bottom: 1px solid var(--line);
+    text-align: left; color: #fff;
+  }
+  .overlay .plrow .n { flex: 1; font-size: 15px; }
+  .overlay .plrow .c { font-size: 12px; color: var(--faint); }
+
+  /* ---------- 搜索 ---------- */
+  .search { display: flex; align-items: center; gap: 8px; margin-top: 22px; }
+  .field {
+    flex: 1; display: flex; align-items: center; gap: 8px;
+    background: var(--card); border-radius: 14px; padding: 0 4px 0 14px;
+  }
+  #q {
+    flex: 1; min-width: 0; background: none; border: 0; outline: none;
+    color: #fff; font-size: 16px; padding: 12px 0;
+  }
+  #q::placeholder { color: var(--faint); }
+  /* type=search 在部分 WebView 里自带清除叉 / 装饰，和右侧红色搜索钮重复 */
+  #q::-webkit-search-cancel-button,
+  #q::-webkit-search-decoration { -webkit-appearance: none; appearance: none; display: none; }
+  #go { width: 46px; height: 40px; border-radius: 11px; background: var(--red); display: flex; align-items: center; justify-content: center; }
+  #go svg { width: 20px; height: 20px; fill: none; stroke: #fff; stroke-width: 2.2; }
+
+  /* ---------- 区块 ---------- */
+  .sec { margin-top: 26px; display: flex; align-items: baseline; gap: 8px; }
+  .sec h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .sec .hint { font-size: 12px; color: var(--faint); flex: 1; }
+
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+  .tile .n { display: block; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile .c { display: block; margin-top: 4px; font-size: 12px; color: rgba(255,255,255,.68); }
+
+  .rows { margin-top: 12px; }
+  .row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 13px 14px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 8px; text-align: left; }
+  .row .n { flex: 1; min-width: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .c { font-size: 12px; color: var(--faint); flex: none; }
+  .row .chev { color: var(--faint); font-size: 17px; flex: none; }
+  /* 行内「顺序播放」：整行是入口，这个小圆钮不进去，直接从头播整列 */
+  .row .pl { flex: none; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #1a1a1f; background: rgba(255,255,255,.94); }
+  .row .pl svg { width: 16px; height: 16px; fill: currentColor; }
+  .row .pl:active { background: var(--red); color: #fff; }
+  /* 带副标题的行（每日推荐 / 心动模式）：主标题在上，说明在下 */
+  .row .t { flex: 1; min-width: 0; }
+  .row .sub { margin-top: 3px; font-size: 12px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 折叠时末尾那个「展开全部 / 收起」 */
+  .row.more { justify-content: center; padding: 11px 14px; }
+  .row.more .n { flex: none; font-size: 13px; color: var(--dim); }
+  .empty { font-size: 13px; color: var(--faint); padding: 4px 2px; }
+
+  /* 页面整体禁选中防误触，但地址要能长按复制 */
+  footer { margin: 26px 0 0; font-size: 11px; color: var(--faint); text-align: center;
+           user-select: text; -webkit-user-select: text; }
+  footer b { color: var(--dim); font-weight: 500; }
+
+  /* ---------- 曲目面板 ---------- */
+  .sheet {
+    position: fixed; inset: 0; z-index: 9; background: #0d0d10;
+    display: flex; flex-direction: column;
+    transform: translateY(100%); transition: transform .26s cubic-bezier(.32,.72,0,1);
+    will-change: transform;
+  }
+  .sheet.open { transform: translateY(0); }
+  .sheet-head {
+    flex: none; display: flex; align-items: center; gap: 10px;
+    padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .sheet-head .t { flex: 1; min-width: 0; }
+  .sheet-head h2 { margin: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sheet-head .s { margin-top: 3px; font-size: 12px; color: var(--faint); }
+  #back { flex: none; width: 40px; height: 40px; font-size: 26px; line-height: 1; color: var(--dim); }
+  .sheet-body {
+    flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    padding: 6px 16px calc(20px + env(safe-area-inset-bottom));
+  }
+  .track { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 4px; border-bottom: 1px solid rgba(255,255,255,.06); text-align: left; }
+  .track .idx { width: 22px; flex: none; text-align: right; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .track .t { flex: 1; min-width: 0; }
+  .track .nm { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .track .ar { margin-top: 3px; font-size: 12px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .track .dur { flex: none; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .track.off { opacity: .38; }
+  #more { width: 100%; margin-top: 14px; padding: 13px; border-radius: 14px; background: var(--card); color: var(--dim); font-size: 14px; }
+  #toast {
+    position: fixed; left: 50%; bottom: calc(28px + env(safe-area-inset-bottom));
+    transform: translate(-50%, 12px); opacity: 0; pointer-events: none;
+    background: rgba(30,30,36,.96); color: #fff; font-size: 13px;
+    padding: 10px 18px; border-radius: 999px; transition: opacity .18s, transform .18s; z-index: 60;
+    max-width: 80vw; text-align: center;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  /* 断线遮罩：断连后旧 state 不可信，盖住整页并禁用控件，别让人误以为车机还在执行 */
+  #offline {
+    position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px; background: rgba(11,11,13,.94);
+  }
+  #offline .box {
+    width: 100%; max-width: 340px; text-align: center;
+    padding: 30px 24px 24px; border-radius: 20px;
+    background: #1b1b22; border: 1px solid var(--line);
+    box-shadow: 0 24px 60px rgba(0,0,0,.55);
+  }
+  #offline .mark {
+    width: 46px; height: 46px; margin: 0 auto 16px; border-radius: 50%;
+    background: rgba(255,159,10,.14); border: 1px solid rgba(255,159,10,.45);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #offline .mark::after { content: ''; width: 10px; height: 10px; border-radius: 50%; background: #ff9f0a; }
+  #offline h2 { margin: 0 0 8px; font-size: 19px; font-weight: 700; }
+  #offline .sub { margin: 0 0 20px; font-size: 13px; line-height: 1.6; color: var(--dim); }
+  #offline .kv {
+    display: flex; justify-content: space-between;
+    font-size: 13px; padding: 7px 0; color: var(--dim);
+  }
+  #offline .kv b { color: var(--fg); font-weight: 500; }
+  #offline .bar { height: 3px; margin: 12px 0 18px; border-radius: 2px; background: var(--line); overflow: hidden; }
+  #offline .bar span { display: block; height: 100%; width: 0; background: var(--red); transition: width .2s linear; }
+  #offline .retry {
+    width: 100%; padding: 12px; border-radius: 12px;
+    background: var(--red); color: #fff; font-size: 14px; font-weight: 600;
+  }
+  #offline .tip { margin: 14px 0 0; font-size: 12px; color: var(--faint); }
+
+
+  #openCar .bade.on { background: #34c759; }
+</style>
+<!--@shell:head-->
+<style>
+  /* ==================================================================
+     统一外壳：状态行 + 「车机控制 / 音乐控制」 + 内容区
+     三个端口（18766 / 18765 / 18764）下发的是同一份，改这里三个一起变。
+     ================================================================== */
+  /* 安卓 WebView 会按列宽自动放大文字（font boosting），
+     一到窄屏就变成「大字 + 挤在一起」。这里钉死，字号只按 CSS 走。 */
+  html{-webkit-text-size-adjust:100%;-moz-text-size-adjust:100%;text-size-adjust:100%}
+  /* 记录仪是单列清单：比车控窄、比音乐略宽，三 tab 切换时顶栏跟着变宽 */
+  :root{--w-dvr:640px}
+
+  #shellRoot{
+    flex:none;width:100%;max-width:var(--shell-w,560px);margin:0 auto;
+    padding:calc(9px + env(safe-area-inset-top)) 16px 0;
+  }
+  /* 状态行放最下面：车机上这块是常驻信息，不跟切换按钮抢顶部 */
+  .sbar{position:fixed;left:0;right:0;bottom:0;z-index:121;
+    background:rgba(11,11,13,.96);border-top:1px solid rgba(255,255,255,.1);
+    padding:7px 0 calc(7px + env(safe-area-inset-bottom))}
+  .sbar-in{display:flex;align-items:center;gap:8px;min-height:34px;
+    width:100%;max-width:var(--shell-w,560px);margin:0 auto;padding:0 16px;
+    font-size:13px;color:rgba(255,255,255,.55)}
+  .sdot{flex:none;width:8px;height:8px;border-radius:50%;background:#8e8e93;
+    transition:background .2s}
+  .sdot.on{background:#34c759}
+  .sdot.warn{background:#ff9f0a}
+  .sdot.off{background:#ff453a}
+  .stxt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:8px}
+  .sver{flex:none;font-style:normal;font-size:10px;letter-spacing:.3px;
+    color:rgba(255,255,255,.3)}
+  .sbtn{flex:none;width:34px;height:34px;border-radius:50%;padding:0;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
+    display:flex;align-items:center;justify-content:center}
+  .sbtn svg{width:17px;height:17px;fill:none;stroke:#fff;stroke-width:2;
+    stroke-linecap:round;stroke-linejoin:round}
+  .sbtn:active{background:rgba(255,255,255,.14)}
+
+  /* 中文切换：就放在最外面，不进设置 */
+  .stabs{display:flex;gap:8px;margin:9px 0 11px}
+  .stab{flex:1;min-width:0;height:43px;border-radius:12px;padding:0 6px;
+    font-size:13.5px;letter-spacing:0;color:rgba(255,255,255,.58);
+    background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);
+    display:flex;align-items:center;justify-content:center;gap:5px;
+    white-space:nowrap;overflow:hidden;-webkit-text-size-adjust:100%}
+  .stab.on{color:#fff;font-weight:600;background:rgba(250,45,72,.2);
+    border-color:rgba(250,45,72,.55)}
+  .stab:active{background:rgba(250,45,72,.3)}
+  .sn{width:5px;height:5px;border-radius:50%;background:#8e8e93;
+    transition:background .2s;flex:none}
+  .sn.on{background:#34c759}
+  .sn.off{background:#ff453a}
+  .stab.on .sn{background:rgba(255,255,255,.75)}
+  .stab.on .sn.on{background:#34c759}
+  .stab.on .sn.off{background:#ff453a}
+
+  /* 内容区：外包负责的那一页贴在下面，不跳转、不闪 */
+  .spane{position:fixed;left:0;right:0;bottom:var(--sbar-h,56px);z-index:120;
+    display:none;background:#0b0b0d}
+  .spane.on{display:block}
+  .spane iframe{display:block;width:100%;height:100%;border:0;background:#0b0b0d}
+  .sfail{position:absolute;inset:0;display:none;flex-direction:column;
+    align-items:center;justify-content:center;gap:14px;padding:28px;
+    text-align:center;font-size:13.5px;line-height:1.8;
+    color:rgba(255,255,255,.55);background:#0b0b0d}
+  .sfail.on{display:flex}
+  .sfail b{color:#fff;font-weight:600;font-size:15px}
+  .sfail button{min-width:150px;height:42px;border-radius:11px;font-size:14px;
+    color:#fff;background:rgba(250,45,72,.2);border:1px solid rgba(250,45,72,.5)}
+
+  /* ---- 模式：内容页（被 iframe 进来）把外壳全部收掉 ---- */
+  html.pane #shellRoot,
+  html.pane .spane,
+  html.pane .smask,
+  html.pane .ssheet{display:none !important}
+
+  /* ---- 模式：外壳。没 ready 之前先别把内容闪出来 ---- */
+  html.shell:not(.ready) body > *:not(#shellRoot):not(.spane):not(.smask):not(.ssheet),
+  html.shell.foreign body > *:not(#shellRoot):not(.spane):not(.smask):not(.ssheet){
+    display:none !important;
+  }
+
+  /* ---- 设置 / 诊断（三个端口共用一套，数据取 18766） ---- */
+  .smask{position:fixed;inset:0;background:rgba(0,0,0,.6);opacity:0;
+    pointer-events:none;transition:opacity .2s;z-index:129}
+  .smask.show{opacity:1;pointer-events:auto}
+  .ssheet{position:fixed;left:0;right:0;bottom:0;z-index:130;max-height:88vh;
+    transform:translateY(103%);transition:transform .26s cubic-bezier(.3,.8,.3,1);
+    background:#141417;border-top:1px solid rgba(255,255,255,.12);
+    border-radius:18px 18px 0 0;display:flex;flex-direction:column;
+    box-shadow:0 -12px 40px rgba(0,0,0,.5)}
+  .ssheet.show{transform:translateY(0)}
+  .sshead{flex:none;display:flex;align-items:center;gap:10px;
+    padding:15px 18px 12px;border-bottom:1px solid rgba(255,255,255,.12)}
+  .sshead h3{margin:0;font-size:16px;font-weight:600;flex:1;color:#fff}
+  .ssx{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.12);display:flex;align-items:center;
+    justify-content:center;font-size:15px;color:rgba(255,255,255,.55)}
+  .ssbody{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    padding:14px 16px calc(20px + env(safe-area-inset-bottom))}
+  .sskv{font-size:12px;line-height:1.95;color:rgba(255,255,255,.55);
+    margin:0 2px 12px;white-space:pre-wrap;word-break:break-all}
+  .ssrow{display:flex;gap:8px;margin-bottom:12px}
+  .ssrow button{flex:1;min-height:42px;border-radius:11px;color:#fff;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
+    font-size:13.5px}
+  .ssrow button:active{background:rgba(255,255,255,.12)}
+  .ssrow button.primary{background:rgba(250,45,72,.18);
+    border-color:rgba(250,45,72,.45)}
+  .sstabs{display:flex;gap:6px;margin:0 0 10px;overflow-x:auto}
+  .sstab{flex:1 0 auto;min-height:34px;padding:0 12px;border-radius:9px;
+    background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);
+    font-size:12.5px;color:rgba(255,255,255,.55);white-space:nowrap}
+  .sstab.on{background:rgba(250,45,72,.2);border-color:rgba(250,45,72,.5);
+    color:#fff}
+  .sstxt{margin:0;padding:12px;border-radius:12px;
+    background:rgba(0,0,0,.38);border:1px solid rgba(255,255,255,.12);
+    font:11px/1.65 ui-monospace,Consolas,monospace;
+    color:rgba(255,255,255,.74);white-space:pre-wrap;word-break:break-all;
+    min-height:120px;max-height:36vh;overflow:auto;
+    user-select:text;-webkit-user-select:text}
+  .sstip{font-size:11.5px;line-height:1.75;color:rgba(255,255,255,.32);
+    margin:10px 2px 0}
+
+</style>
+<script>
+  /* 外壳启动：在 <head> 里就定好这一页是「壳」还是「内容页」，
+     免得内容先闪一下再被外壳盖住。?pane=car / ?pane=music 都是内容页。 */
+  (function () {
+    var d = document.documentElement;
+    d.className = (d.className ? d.className + ' ' : '')
+      + (location.search.indexOf('pane=') >= 0 ? 'pane' : 'shell');
+  })();
+
+</script>
+<!--@/shell:head-->
+</head>
+<body>
+<!--@shell:body-->
+<div id="shellRoot" data-ver="2.5.3">
+  <div class="sbar" id="sBar">
+   <div class="sbar-in">
+    <span class="sdot" id="sDot"></span>
+    <span class="stxt" id="sTxt">正在连接…</span>
+    <i class="sver">2.5.3</i>
+    <button class="sbtn" id="sSet" aria-label="设置与诊断" title="设置与诊断">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9.1 19a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 4.8 15a1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.8 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 9.1 4.8 1.6 1.6 0 0 0 10 3.3V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+    </button>
+    <button class="sbtn" id="sReload" aria-label="刷新" title="刷新">
+      <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+    </button>
+   </div>
+  </div>
+  <div class="stabs">
+    <button class="stab" id="sTabCar" data-tab="car">车机控制<i class="sn" id="sDotCar"></i></button>
+    <button class="stab" id="sTabMusic" data-tab="music">音乐控制<i class="sn" id="sDotMusic"></i></button>
+    <button class="stab" id="sTabDvr" data-tab="dvr">行车记录仪<i class="sn" id="sDotDvr"></i></button>
+  </div>
+</div>
+
+<div class="spane" id="sPane">
+  <iframe id="sFrame" title="内容"></iframe>
+  <div class="sfail" id="sFail">
+    <b id="sFailT">这一路没起来</b>
+    <div id="sFailS">—</div>
+    <button id="sFailGo">切到车机控制</button>
+  </div>
+</div>
+
+<div class="smask" id="sMask"></div>
+<div class="ssheet" id="sSheet">
+  <div class="sshead">
+    <h3>设置 · 诊断</h3>
+    <button class="ssx" id="sClose" aria-label="关闭">✕</button>
+  </div>
+  <div class="ssbody">
+    <div class="sskv" id="sKv">—</div>
+    <div class="sstabs" id="sSegs">
+      <button class="sstab on" data-seg="diag">诊断</button>
+      <button class="sstab" data-seg="log">操作记录</button>
+      <button class="sstab" data-seg="cards">车况</button>
+      <button class="sstab" data-seg="acts">动作表</button>
+    </div>
+    <div class="ssrow">
+      <button class="primary" id="sGen">生成</button>
+      <button id="sCopy">复制</button>
+      <button id="sSave">下载</button>
+    </div>
+    <pre class="sstxt" id="sTxt2">点「生成」，取当前这一段的文本。</pre>
+    <div class="sstip" id="sTip"></div>
+    <div class="ssrow" style="margin-top:16px">
+      <button id="sDump">全部导出</button>
+      <button id="sRec">停止记录</button>
+      <button id="sClear">清空记录</button>
+    </div>
+    <div class="sstip">
+      诊断里是端口、引擎绑定、安装包版本、动作项数和最近日志。<br>
+      「下载」给的是服务器直出的 txt（UTF-8），文件名带时间，不再走浏览器临时文件。<br>
+      「停止记录」之后不再写新行，已有的留着，方便把现场钉在出问题那一段。<br>
+      下载没反应时点「复制」，或长按上面的文本全选。
+    </div>
+  </div>
+</div>
+<!--@/shell:body-->
+  <main id="scroll">
+    <div class="head-row">
+      <div class="head-text">
+        <h1 id="title">未在播放</h1>
+        <p id="artist">—</p>
+      </div>
+      <div class="side-actions">
+        <button class="side-btn" id="like" aria-label="喜欢">
+          <svg viewBox="0 0 24 24"><path d="M12 20.5s-7.6-4.7-9.2-9C1.6 7.9 3.6 4.8 6.8 4.8c2 0 3.4 1.1 4.2 2.3.3.4.9.4 1.2 0 .8-1.2 2.2-2.3 4.2-2.3 3.2 0 5.2 3.1 4 6.7-1.6 4.3-9.2 9-9.2 9z"/></svg>
+        </button>
+        <button class="side-btn mode-btn hidden" id="mode" aria-label="播放模式">
+          <svg id="modeIcon" viewBox="0 0 24 24"></svg>
+        </button>
+        <button class="side-btn" id="addToPlaylist" aria-label="添加到歌单" disabled>
+          <svg viewBox="0 0 24 24"><path d="M4 6h9M4 11h9M4 16h5"/><path d="M16 13v7M12.5 16.5h7"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="progress">
+      <input id="prog" type="range" min="0" max="1000" value="0" disabled aria-label="进度">
+      <div class="times"><span id="cur">0:00</span><span id="dur">0:00</span></div>
+    </div>
+
+    <div class="controls">
+      <div class="ctl-core">
+        <button class="skip" id="prev" aria-label="上一首">
+          <svg viewBox="0 0 24 24"><path d="M6 6h2.4v12H6zm3.6 6L18 6v12z"/></svg>
+        </button>
+        <button class="main" id="play" aria-label="播放/暂停">
+          <svg id="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+        <button class="skip" id="next" aria-label="下一首">
+          <svg viewBox="0 0 24 24"><path d="M15.6 6H18v12h-2.4zM6 6l8.4 6L6 18z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="volume hidden" id="volumeRow">
+      <button class="round" id="volDown" aria-label="音量减">−</button>
+      <input id="vol" type="range" min="0" max="30" value="0" aria-label="音量">
+      <span id="volVal">0</span>
+      <button class="round" id="volUp" aria-label="音量加">+</button>
+    </div>
+
+    <div class="search">
+      <div class="field">
+        <input id="q" type="search" placeholder="搜索歌曲、歌手" enterkeyhint="search" autocomplete="off" autocorrect="off" spellcheck="false">
+        <button id="go" aria-label="搜索">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>资料库</h2>
+      <span class="hint" id="libHint"></span>
+    </div>
+    <div class="tiles">
+      <button class="tile liked" id="tileLiked">
+        <span class="tile-top">
+          <span class="ico"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.6-4.7-9.2-9C1.6 7.9 3.6 4.8 6.8 4.8c2 0 3.4 1.1 4.2 2.3.3.4.9.4 1.2 0 .8-1.2 2.2-2.3 4.2-2.3 3.2 0 5.2 3.1 4 6.7-1.6 4.3-9.2 9-9.2 9z"/></svg></span>
+          <span class="pl tilePlay" id="likedPlay" role="button" aria-label="顺序播放我喜欢的音乐"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+        </span>
+        <span class="n" id="likedName">我喜欢的音乐</span>
+        <span class="c" id="likedCount">—</span>
+      </button>
+      <button class="tile cloud" id="tileCloud">
+        <span class="tile-top">
+          <span class="ico"><svg viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 .4-8A6 6 0 0 0 6 9.2 4.4 4.4 0 0 0 7 18z"/></svg></span>
+          <span class="pl tilePlay" id="cloudPlay" role="button" aria-label="顺序播放音乐云盘"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+        </span>
+        <span class="n" id="cloudName">音乐云盘</span>
+        <span class="c" id="cloudCount">—</span>
+      </button>
+    </div>
+
+    <div class="sec"><h2>为你推荐</h2></div>
+    <div class="rows" id="quick">
+      <button class="row" id="dailyRow">
+        <div class="t"><div class="n">每日推荐</div><div class="sub">根据你的口味 · 每天 6:00 更新</div></div>
+        <span class="pl" id="dailyPlay" role="button" aria-label="顺序播放每日推荐"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+        <span class="chev">›</span>
+      </button>
+      <button class="row" id="hbRow">
+        <div class="t"><div class="n">心动模式</div><div class="sub">根据红心推荐 · 边放边续</div></div>
+        <span class="pl" id="hbPlay" role="button" aria-label="顺序播放心动模式"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+        <span class="chev">›</span>
+      </button>
+    </div>
+
+    <div class="sec"><h2>我创建的歌单</h2><span class="hint" id="plHint"></span></div>
+    <div class="rows" id="playlists"></div>
+
+    <div class="sec"><h2>排行榜</h2><span class="hint" id="topHint"></span></div>
+    <div class="rows" id="tops"></div>
+
+    <div class="sec"><h2>推荐歌单</h2><span class="hint" id="recHint"></span></div>
+    <div class="rows" id="recs"></div>
+
+    <footer>当前 IP 地址 <b id="host">—</b></footer>
+  </main>
+
+  <div class="overlay hidden" id="addPanel">
+    <div class="panel">
+      <div class="panel-head"><h3>添加到歌单</h3><button id="addClose">关闭</button></div>
+      <div class="panel-sub" id="addTrack"></div>
+      <div id="addList"></div>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheet">
+    <div class="sheet-head">
+      <button id="back" aria-label="返回">‹</button>
+      <div class="t">
+        <h2 id="sheetTitle">列表</h2>
+        <div class="s" id="sheetSub"></div>
+      </div>
+    </div>
+    <div class="sheet-body" id="sheetBody"></div>
+  </div>
+
+  <div id="toast"></div>
+  <!-- 断线时盖住整页；hidden 由 setOffline() 切换 -->
+  <div id="offline" class="hidden">
+    <div class="box">
+      <div class="mark"></div>
+      <h2>与车机断开连接</h2>
+      <p class="sub">页面状态已冻结，操作不会被车机执行</p>
+      <div class="kv"><span>最后同步</span><b id="offlineSync">—</b></div>
+      <div class="kv"><span>自动重连</span><b id="offlineRetry">—</b></div>
+      <div class="bar"><span id="offlineBar"></span></div>
+      <button class="retry" id="offlineNow">立即重试</button>
+      <p class="tip">连上后会自动拉取车机的最新状态</p>
+    </div>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+
+  var PROTO_VERSION = 1;
+  // 壳层（安卓 WebView / iOS WKWebView）在 URL 上带客户端标识，车机侧能看到是谁连进来了；
+  // 浏览器直接打开时没有这两个参数，走默认值。
+  var qs = new URLSearchParams(location.search);
+  var CLIENT = {
+    name: qs.get('client') || 'Safari',
+    version: qs.get('cv') || '1.0.0'
+  };
+  // 被车控页 iframe 嵌进来（embed=1）：自己这条顶栏收掉，外面那层已经有状态行了，别叠两层
+  var EMBED = qs.get('embed') === '1';
+  // client=android / client=ios 只是告诉车机侧谁连进来了（握手上报 CLIENT 时已用）。
+  // 3.2 起切换条由页面自己画，App 不再有原生 tab，这个标志不再控制任何 UI。
+  var IN_APP = qs.get('client') === 'android';
+  var K_TOKEN = 'carremote.token';
+  var K_DEVICE = 'carremote.deviceId';
+  var PAGE_SIZE = 20;   // 与服务端 RemoteLibrary.PAGE_SIZE 对齐，仅用于「加载更多」文案
+
+  var ICON_PLAY = '<path d="M8 5v14l11-7z"/>';
+  var ICON_PAUSE = '<path d="M6.5 5h4v14h-4zm7 0h4v14h-4z"/>';
+
+  // 与车机 PlayModes 对齐：0 顺序 / 1 单曲循环 / 2 随机
+  var MODE_NAMES = ['顺序播放', '单曲循环', '随机播放'];
+  var MODE_REPEAT = '<path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/>' +
+                    '<path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/>';
+  var MODE_ICONS = [
+    MODE_REPEAT,
+    MODE_REPEAT + '<path d="M11 10l1-1v6"/>',
+    '<path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/>' +
+      '<path d="M15 15l6 6"/><path d="M4 4l5 5"/>'
+  ];
+
+  var el = {};
+  ['dot', 'status', 'title', 'artist', 'like', 'prog', 'cur', 'dur', 'play', 'playIcon', 'prev', 'next',
+   'mode', 'modeIcon',
+   'volumeRow', 'vol', 'volVal', 'volUp', 'volDown', 'q', 'go', 'likedName', 'likedCount',
+   'cloudName', 'cloudCount', 'playlists', 'tops', 'recs', 'libHint', 'plHint', 'topHint', 'recHint',
+   'sheet', 'sheetTitle', 'sheetSub', 'sheetBody', 'back', 'toast', 'host', 'tileLiked', 'tileCloud', 'scroll',
+   'dailyRow', 'hbRow', 'dailyPlay', 'hbPlay',
+   'refresh', 'lyricBox',
+   'addToPlaylist', 'addPanel', 'addList', 'addClose', 'addTrack', 'likedPlay', 'cloudPlay',
+   'offline', 'offlineSync', 'offlineRetry', 'offlineBar', 'offlineNow'
+  ].forEach(function (id) { el[id] = document.getElementById(id); });
+
+  // 顶上的状态行和「车机控制 / 音乐控制」由外壳负责（web/_shell.*），
+  // 这一页只画音乐本身，不再自己留一份入口
+
+  var ws = null;
+  var seq = 0;
+  var state = {};
+  var lastSeq = -1;
+  var stateAt = 0;
+  var draggingSeek = false;
+  var pendingSeek = 0;
+  var reconnectDelay = 1000;
+  var reconnectTimer = null;
+  var connectFails = 0;
+  var MAX_AUTO = 8;             // 自动重连上限：8 次约 13 秒，再不行就停下来等用户
+  var autoStopped = false;      // 已经放弃自动重连
+  var closeCode = '';           // 最近一次断开码，直接摆在遮罩上，省得去翻日志
+  var toastTimer = null;
+
+  // 断连 fail-safe：断线后旧 state 不可信，遮罩覆盖期间所有控件都不可点
+  var offline = false;
+  var offlineControls = [];
+  var offlineTick = null;
+  var nextRetryAt = 0;
+  var retrySpan = 0;
+
+  var lyricLines = [];               // [{ t, text, trans }]
+  var lyricActive = -1;
+  var lyricTrackId = '';             // 这份歌词属于哪首歌
+  var lyricFresh = false;            // 刚换歌词：第一次定位必须钉在第一句
+  var lastLyricTitle = '';           // 上一次 state 的「歌名|歌手」，用来识别换歌
+  var lastLyricPos = -1;             // 上一次 state 的播放位置，用来识别进度回退
+
+  var library = null;                // { liked, cloud, playlists[] }
+  var catalog = null;                // { top[], recommend[] }
+  var list = null;                   // { id, title, total, items[], loading, error }
+
+  // 歌单默认只铺 5 个。自建歌单可能有几十个，全铺出来会把下面的榜单、底部的地址全顶出屏，
+  // 手机上要划半天才到头；默认收着，想看全的点「展开全部」。
+  var COLLAPSE_MAX = 5;
+  var plExpanded = false;
+  var recExpanded = false;
+  var topExpanded = false;
+
+  el.host.textContent = location.hostname;
+
+  // ---------- 基础 ----------
+
+  function deviceId() {
+    var v = localStorage.getItem(K_DEVICE);
+    if (!v) {
+      v = 'web-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      localStorage.setItem(K_DEVICE, v);
+    }
+    return v;
+  }
+
+  function setStatus(text, kind) {
+    // 顶栏交给外壳（web/_shell.*）之后，这一页里已经没有 #status / #dot 了。
+    // 这里不加保护的话，connect() 第一行就抛 TypeError，WebSocket 根本建不起来，
+    // 表现为一打开就停在「与车机断开连接」。下面每处 el.xxx 同理。
+    if (el.status) el.status.textContent = text;
+    if (el.dot) el.dot.className = kind || '';
+    // 主动把连接状态告诉原生壳：安卓据此决定是否拦截硬件音量键、记住成功的地址。
+    // iOS 壳没有注入这个对象，可选调用直接跳过；浏览器打开也安全。
+    try {
+      if (window.CarRemoteNative && window.CarRemoteNative.onConnection) {
+        window.CarRemoteNative.onConnection(kind === 'on', text);
+      }
+    } catch (e) {}
+  }
+
+  function toast(text) {
+    el.toast.textContent = text;
+    el.toast.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.toast.classList.remove('show'); }, 1800);
+  }
+
+  /** 刷新遮罩上的「最后同步」与重连倒计时；只在断线期间每 250ms 跑一次。 */
+  function updateOffline() {
+    if (!offline) return;
+    var sec = stateAt ? Math.max(0, Math.floor((Date.now() - stateAt) / 1000)) : -1;
+    el.offlineSync.textContent = sec < 0 ? '尚未同步' : (sec < 60 ? sec + ' 秒前' : Math.floor(sec / 60) + ' 分钟前');
+    var left = Math.max(0, nextRetryAt - Date.now());
+    el.offlineRetry.textContent = autoStopped
+      ? ('已停止' + (closeCode ? '（断开码 ' + closeCode + '）' : ''))
+      : (left > 0 ? Math.ceil(left / 1000) + ' 秒后' : '正在连接…');
+    el.offlineBar.style.width = (retrySpan > 0 ? Math.max(0, Math.min(100, (1 - left / retrySpan) * 100)) : 0).toFixed(1) + '%';
+  }
+
+  /**
+   * 断线时盖住整页并禁用所有控件（只留「立即重试」一个出口），
+   * 收到服务端 state 才解除 —— 认证成功时已经发出 getState / getLyrics / loadAll。
+   */
+  function setOffline(on) {
+    if (on === offline) return;
+    offline = on;
+    if (on) el.offline.classList.remove('hidden'); else el.offline.classList.add('hidden');
+    if (on) {
+      offlineControls = [];
+      var nodes = document.querySelectorAll ? document.querySelectorAll('button, input, select, textarea') : [];
+      for (var i = 0; i < nodes.length; i++) {
+        var n = nodes[i];
+        if (n.disabled || n.id === 'offlineNow') continue;
+        // 外壳（顶部切换条、设置面板）走的是另外几路，跟音乐这条 WebSocket 不是一条线：
+        // 音乐断了也必须能切到车机控制 / 记录仪，不能被一起冻住
+        if (n.closest && n.closest('#shellRoot')) continue;
+        n.disabled = true;
+        n.setAttribute('data-offline-off', '1');
+        offlineControls.push(n);
+      }
+      updateOffline();
+      if (!offlineTick) offlineTick = setInterval(updateOffline, 250);
+    } else {
+      if (offlineTick) { clearInterval(offlineTick); offlineTick = null; }
+      for (var j = 0; j < offlineControls.length; j++) {
+        var c = offlineControls[j];
+        if (c.getAttribute('data-offline-off')) {
+          c.disabled = false;
+          c.setAttribute('data-offline-off', '');
+        }
+      }
+      offlineControls = [];
+      paintNow();   // 按真实状态还原，别把本来该置灰的按钮放开
+    }
+  }
+
+  function send(type, data) {
+    if (!ws || ws.readyState !== 1) {
+      // 不再静默丢指令：断线时的任何一次点击都把遮罩立起来
+      setOffline(true);
+      return;
+    }
+
+    seq += 1;
+    ws.send(JSON.stringify({
+      v: PROTO_VERSION, type: type, id: 'w' + seq, ts: Date.now(), data: data || {}
+    }));
+  }
+
+  function command(action, args) {
+    var payload = { action: action };
+    if (args) payload.args = args;
+    send('command', payload);
+  }
+
+  function fmt(ms) {
+    if (!ms || ms < 0) ms = 0;
+    var total = Math.floor(ms / 1000);
+    var m = Math.floor(total / 60);
+    var s = total % 60;
+    return m + ':' + (s < 10 ? '0' + s : s);
+  }
+
+  function setBar(input, ratio) {
+    input.style.setProperty('--p', (Math.max(0, Math.min(1, ratio)) * 100).toFixed(2) + '%');
+  }
+
+  /** 清空一个容器。不用 replaceChildren，老 Safari 没有。 */
+  function clear(node) {
+    while (node.firstChild) node.removeChild(node.firstChild);
+  }
+
+  function el_(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  /**
+   * 一个入口行：点整行进列表看曲目，点右边的小圆钮直接从头顺序播。
+   * 圆钮用 span 不用 button —— button 里套 button 是非法结构，浏览器会把内层拆出去。
+   */
+  function row(name, count, onClick, onPlay) {
+    var b = el_('button', 'row');
+    b.appendChild(el_('span', 'n', name));
+    if (count != null) b.appendChild(el_('span', 'c', count + ' 首'));
+    if (onPlay) b.appendChild(playBtn('顺序播放 ' + name, onPlay));
+    b.appendChild(el_('span', 'chev', '›'));
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  function playBtn(label, onPlay) {
+    var s = el_('span', 'pl');
+    s.setAttribute('role', 'button');
+    s.setAttribute('aria-label', label);
+    s.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+    s.addEventListener('click', function (e) {
+      e.stopPropagation();   // 别让整行的 click 把列表也打开了
+      onPlay();
+    });
+    return s;
+  }
+
+  // ---------- 渲染：正在播放 ----------
+
+  function paintNow() {
+    el.addToPlaylist.disabled = !state.title;
+    el.title.textContent = state.title || '未在播放';
+    el.artist.textContent = state.artist || '—';
+    el.playIcon.innerHTML = state.playing ? ICON_PAUSE : ICON_PLAY;
+    paintLike();
+    paintMode();
+
+    var dur = state.durationMs || 0;
+    el.dur.textContent = fmt(dur);
+    if (!draggingSeek) {
+      var pos = Math.min(dur || 0, state.positionMs || 0);
+      el.prog.max = dur || 1000;
+      el.prog.value = pos;
+      el.cur.textContent = fmt(pos);
+      setBar(el.prog, dur ? pos / dur : 0);
+    }
+    el.prog.disabled = !dur;
+
+    var max = state.volumeMax || 0;
+    if (max > 0 && typeof state.volume === 'number' && state.volume >= 0) {
+      el.volumeRow.classList.remove('hidden');
+      el.vol.max = max;
+      if (document.activeElement !== el.vol) {
+        el.vol.value = state.volume;
+        setBar(el.vol, state.volume / max);
+        el.volVal.textContent = state.volume;
+      }
+    } else {
+      el.volumeRow.classList.add('hidden');
+    }
+  }
+
+  function paintLike() {
+    if (state.liked) el.like.classList.add('on');
+    else el.like.classList.remove('on');
+  }
+
+  /** 旧版车机不推 playMode，整个按钮藏起来，免得点了没反应。 */
+  function paintMode() {
+    var has = typeof state.playMode === 'number' && state.playMode >= 0 && state.playMode <= 2;
+    if (has) el.mode.classList.remove('hidden'); else el.mode.classList.add('hidden');
+    if (!has) return;
+    el.modeIcon.innerHTML = MODE_ICONS[state.playMode];
+    el.mode.setAttribute('aria-label', MODE_NAMES[state.playMode]);
+    if (state.playMode === 2) el.mode.classList.add('on'); else el.mode.classList.remove('on');
+  }
+
+  // 进度条自己走：车机每秒推一次 tick，中间靠本地插值补齐
+  setInterval(function () {
+    // 断线后别再用本地时间把进度条往前推，那样看着像车机还在播
+    if (!ws || ws.readyState !== 1 || draggingSeek || !state.playing || !state.durationMs) return;
+    var pos = Math.min(state.durationMs, (state.positionMs || 0) + (Date.now() - stateAt));
+    el.prog.value = pos;
+    el.cur.textContent = fmt(pos);
+    setBar(el.prog, pos / state.durationMs);
+  }, 250);
+
+  // ---------- 渲染：资料库 / 榜单 ----------
+
+  function paintLibrary() {
+    var lib = library;
+    if (!lib) {
+      el.libHint.textContent = '读取中…';
+      return;
+    }
+    el.libHint.textContent = '';
+    el.likedName.textContent = lib.liked.name || '我喜欢的音乐';
+    el.likedCount.textContent = lib.liked.count + ' 首';
+    el.cloudName.textContent = lib.cloud.name || '音乐云盘';
+    el.cloudCount.textContent = lib.cloud.count + ' 首';
+
+    var items = lib.playlists || [];
+    el.plHint.textContent = items.length ? items.length + ' 个' : '';
+    paintPlaylists(items);
+  }
+
+  /** 自建歌单单独抽出来，是因为「展开 / 收起」要就地重画这一块，不能整页重来。 */
+  function paintPlaylists(items) {
+    fillEntries(el.playlists, items, plExpanded, function () {
+      plExpanded = !plExpanded;
+      paintPlaylists(items);
+    }, '还没有自建歌单');
+  }
+
+  function paintCatalog() {
+    var cat = catalog;
+    if (!cat) {
+      el.topHint.textContent = '读取中…';
+      el.recHint.textContent = '读取中…';
+      return;
+    }
+    var tops = cat.top || [];
+    el.topHint.textContent = tops.length ? tops.length + ' 个' : '';
+    fillEntries(el.tops, tops, topExpanded, function () {
+      topExpanded = !topExpanded;
+      paintCatalog();
+    }, '榜单读取失败');
+
+    var recs = cat.recommend || [];
+    el.recHint.textContent = recs.length ? recs.length + ' 个' : '';
+    fillEntries(el.recs, recs, recExpanded, function () {
+      recExpanded = !recExpanded;
+      paintCatalog();
+    }, '暂无推荐');
+  }
+
+  /**
+   * 铺一列可折叠的入口：超过 COLLAPSE_MAX 个就只铺前 5 个，末尾挂一行「展开全部／收起」。
+   * 展开状态由调用方持有，刷新、重连之后保持用户刚才的选择。
+   * 每行右侧都有播放钮：不进去，直接把整列从头放。
+   */
+  function fillEntries(box, items, expanded, onToggle, emptyText) {
+    clear(box);
+    items = items || [];
+    if (!items.length) {
+      box.appendChild(el_('div', 'empty', emptyText));
+      return;
+    }
+    var shown = expanded ? items : items.slice(0, COLLAPSE_MAX);
+    shown.forEach(function (p) {
+      box.appendChild(row(
+        p.name, p.count,
+        function () { openList(p.id, p.name); },
+        function () { playList(p.id, p.name); }
+      ));
+    });
+    if (items.length > COLLAPSE_MAX) {
+      var more = el_('button', 'row more');
+      more.appendChild(el_('span', 'n', expanded ? '收起' : '展开全部（' + items.length + ' 个）'));
+      more.addEventListener('click', onToggle);
+      box.appendChild(more);
+    }
+  }
+
+  // ---------- 曲目面板 ----------
+
+  function openSheet() {
+    el.sheet.classList.add('open');
+  }
+
+  function closeSheet() {
+    el.sheet.classList.remove('open');
+    list = null;
+  }
+
+  /**
+   * 不打开列表，直接从头顺序播放整列。
+   * 车机端 playTracks 会自己 load(id) 把整张歌单塞进队列，index 只是起点，
+   * 所以这里不必先 getTracks，省一次往返。
+   */
+  function playList(id, title) {
+    command('playTracks', { id: id, index: 0 });
+    toast('正在播放：' + title);
+    el.scroll.scrollTop = 0;
+  }
+
+  function openList(id, title) {
+    list = { id: id, title: title, total: 0, items: [], loading: true, error: null };
+    el.sheetTitle.textContent = title;
+    el.sheetSub.textContent = '读取中…';
+    paintList();
+    openSheet();
+    command('getTracks', { id: id, offset: 0 });
+  }
+
+  function openSearch(keyword) {
+    var q = (keyword || '').trim();
+    if (!q) return;
+    list = { id: 'search:' + q, title: '搜索：' + q, total: 0, items: [], loading: true, error: null };
+    el.sheetTitle.textContent = list.title;
+    el.sheetSub.textContent = '搜索中…';
+    paintList();
+    openSheet();
+    command('search', { q: q });
+  }
+
+  function paintList() {
+    if (!list) return;
+    clear(el.sheetBody);
+
+    if (list.error) {
+      el.sheetSub.textContent = '';
+      el.sheetBody.appendChild(el_('div', 'empty', list.error));
+      var again = el_('button', 'row');
+      again.appendChild(el_('span', 'n', '重试'));
+      again.addEventListener('click', function () { requestMore(true); });
+      el.sheetBody.appendChild(again);
+      return;
+    }
+
+    el.sheetSub.textContent = list.loading && !list.items.length
+      ? '读取中…'
+      : (list.total ? list.items.length + ' / ' + list.total + ' 首' : list.items.length + ' 首');
+
+    list.items.forEach(function (t) {
+      var b = el_('button', 'track' + (t.playable === false ? ' off' : ''));
+      b.appendChild(el_('span', 'idx', String(t.index + 1)));
+      var box = el_('div', 't');
+      box.appendChild(el_('div', 'nm', t.name));
+      box.appendChild(el_('div', 'ar', t.artist || '未知歌手'));
+      b.appendChild(box);
+      b.appendChild(el_('span', 'dur', fmt(t.durationMs)));
+      b.addEventListener('click', function () { playTrack(t); });
+      el.sheetBody.appendChild(b);
+    });
+
+    if (list.loading) {
+      el.sheetBody.appendChild(el_('div', 'empty', '加载中…'));
+    } else if (!list.items.length) {
+      el.sheetBody.appendChild(el_('div', 'empty', '这里没有歌'));
+    } else if (list.items.length < list.total) {
+      var more = el_('button');
+      more.id = 'more';
+      more.textContent = '加载更多（' + list.items.length + '/' + list.total + '）';
+      more.addEventListener('click', function () { requestMore(false); });
+      el.sheetBody.appendChild(more);
+    }
+  }
+
+  function requestMore(reset) {
+    if (!list) return;
+    list.loading = true;
+    list.error = null;
+    var offset = reset ? 0 : list.items.length;
+    if (reset) list.items = [];
+    paintList();
+    command('getTracks', { id: list.id, offset: offset });
+  }
+
+  function playTrack(t) {
+    if (!list) return;
+    if (t.playable === false) { toast('这首歌在车机上不可播放'); return; }
+    command('playTracks', { id: list.id, index: t.index });
+    toast('正在播放：' + t.name);
+    closeSheet();
+    el.scroll.scrollTop = 0;
+  }
+
+  // ---------- 消息 ----------
+
+  function handle(type, data) {
+    switch (type) {
+      case 'pair_result':
+        if (data.ok) {
+          localStorage.setItem(K_TOKEN, data.token || '');
+          setStatus('已连接 · ' + (data.carName || '车机'), 'on');
+          command('getState');
+          command('getLyrics');
+          loadAll();
+        } else {
+          setStatus(data.message || '配对失败', 'warn');
+        }
+        break;
+
+      case 'auth_result':
+        if (data.ok) {
+          setStatus('已连接 · ' + (data.carName || '车机'), 'on');
+          command('getState');
+          command('getLyrics');
+          loadAll();
+        } else {
+          localStorage.removeItem(K_TOKEN);
+          setStatus('授权失效，重新配对…', 'warn');
+          send('pair', { pin: '', deviceId: deviceId(), deviceName: CLIENT.name, clientVersion: CLIENT.version });
+        }
+        break;
+
+      case 'state':
+        if (typeof data.seq === 'number') {
+          if (data.seq <= lastSeq) return;
+          lastSeq = data.seq;
+        }
+        // 松手 seek 后车机要过一会儿才推到新位置，这期间别让进度条跳回旧值
+        if (pendingSeek && Math.abs((data.positionMs || 0) - pendingSeek) < 2500) {
+          pendingSeek = 0;
+          draggingSeek = false;
+        }
+        state = data;
+        stateAt = Date.now();
+        setOffline(false);   // 拿到车机的真实状态才算恢复
+        // 换歌 / 进度回退（切上一首、拖回首）时把歌词锁回第一句。
+        // 车机端换歌是先推「空歌词」再推「新歌词」，中间那几帧 state 还是上一首的
+        // positionMs（可能已经两三分钟），不锁住就会先甩到歌词中段再弹回来，看着像乱跑。
+        var titleKey = (data.title || '') + '|' + (data.artist || '');
+        var pos = data.positionMs || 0;
+        if (titleKey !== lastLyricTitle || (lastLyricPos >= 0 && pos < lastLyricPos - 1500)) {
+          lockFirstLyric();
+        }
+        lastLyricTitle = titleKey;
+        lastLyricPos = pos;
+        paintNow();
+        highlightLyric();
+        break;
+
+      case 'lyrics':
+        var lines = (data.lines || []).slice().sort(function (a, b) { return (a.t || 0) - (b.t || 0); });
+        var hadLines = lyricLines.length > 0;
+        var tid = data.trackId || '';
+        var swapped = tid !== lyricTrackId || (!hadLines && lines.length > 0) || !lines.length;
+        lyricTrackId = tid;
+        lyricLines = lines;
+        renderLyrics();
+        // 换歌 / 歌词刚异步到位：一律从第一句起步，不拿旧的 state 位置去乱定位
+        if (swapped) lockFirstLyric();
+        // 只有真正换歌/歌词才钉第一句；同一首歌补推译文之类不打断正在跟随的位置
+        lyricFresh = swapped && lyricLines.length > 0;
+        highlightLyric();
+        break;
+
+      case 'library':
+        if (data.ok) {
+          library = {
+            liked: data.liked || { name: '我喜欢的音乐', count: 0 },
+            cloud: data.cloud || { name: '音乐云盘', count: 0 },
+            playlists: data.playlists || []
+          };
+          paintLibrary();
+        } else {
+          library = null;
+          el.libHint.textContent = data.message || '资料库读取失败';
+          // 车机账号 profile 异步加载：刚连上时 library 可能抢在登录就绪前失败。
+          // 延迟重试一次，避免「自建歌单之前有、现在空了」且不会自己恢复。
+          if (data.message && data.message.indexOf('登录') >= 0) {
+            setTimeout(function () { command('library'); }, 1200);
+          }
+        }
+        break;
+
+      case 'catalog':
+        if (data.ok) {
+          catalog = { top: data.top || [], recommend: data.recommend || [] };
+          paintCatalog();
+        } else {
+          catalog = { top: [], recommend: [] };
+          el.topHint.textContent = data.message || '榜单读取失败';
+        }
+        break;
+
+      case 'tracks':
+        if (!list || data.id !== list.id) return;   // 迟到的上一份列表，丢掉
+        if (data.ok) {
+          var page = data.tracks || [];
+          // 车机按字节预算裁页，条数不固定，所以偏移一律用「已收到的条数」
+          if (!data.offset) list.items = page;
+          else list.items = list.items.concat(page);
+          list.total = data.total || list.items.length;
+          list.error = null;
+        } else {
+          list.error = data.message || '读取失败';
+        }
+        list.loading = false;
+        paintList();
+        break;
+
+      case 'ack':
+        if (data.ok === false) toast('指令失败：' + (data.message || data.error || ''));
+        else if (data.action === 'addToPlaylist') {
+          closeAddPanel(); toast('已添加到歌单');
+          command('library');   // 车机已清 library 缓存，重拉一次让歌单数立刻更新
+        } else if (data.action === 'refresh') {
+          if (el.refresh) el.refresh.classList.remove('spin');
+          toast('已刷新');
+        }
+        break;
+
+      case 'error':
+        toast(data.message || ('错误 ' + data.error));
+        break;
+
+      case 'revoked':
+        localStorage.removeItem(K_TOKEN);
+        send('pair', { pin: '', deviceId: deviceId(), deviceName: CLIENT.name, clientVersion: CLIENT.version });
+        break;
+    }
+  }
+
+  function loadAll() {
+    library = null;
+    catalog = null;
+    el.libHint.textContent = '';
+    paintLibrary();
+    paintCatalog();
+    command('library');
+    command('catalog');
+  }
+
+  /** 真正的刷新：走服务端 refresh 清缓存并重推资料库/榜单/状态/歌词；断线时改为重载页面。 */
+  var refreshTimer = null;
+  function refreshAll(silent) {
+    if (!ws || ws.readyState > 1) {
+      if (!silent) toast('连接已断开，正在重新加载…');
+      location.reload();
+      return;
+    }
+    if (!silent) toast('正在刷新…');
+    if (el.refresh) el.refresh.classList.add('spin');
+    if (refreshTimer) clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(function () { if (el.refresh) el.refresh.classList.remove('spin'); }, 8000);
+    library = null;
+    catalog = null;
+    lyricLines = [];
+    lyricActive = -1;
+    lyricTrackId = '';
+    lyricFresh = false;
+    lastLyricTitle = '';
+    lastLyricPos = -1;
+    renderLyrics();
+    paintLibrary();
+    paintCatalog();
+    command('refresh');
+  }
+
+  // ---------- 连接 ----------
+
+  function connect() {
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    // 车机侧的 seq 在服务重启后从 1 重新数；页面若沿用断线前的值，
+    // 新连接的每条 state 都会被「seq <= lastSeq」判成过期丢掉，表现为页面卡在旧歌不动。
+    lastSeq = -1;
+    setStatus('正在连接车机…', '');
+    var scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(scheme + '://' + location.host + '/');
+
+    ws.onopen = function () {
+      reconnectDelay = 1000;
+      connectFails = 0;
+      autoStopped = false;
+      closeCode = '';
+      var token = localStorage.getItem(K_TOKEN) || '';
+      if (token) {
+        send('auth', { token: token, deviceId: deviceId(), clientVersion: CLIENT.version });
+        setStatus('正在认证…', '');
+      } else {
+        send('pair', { pin: '', deviceId: deviceId(), deviceName: CLIENT.name, clientVersion: CLIENT.version });
+        setStatus('正在配对…', '');
+      }
+    };
+
+    ws.onmessage = function (ev) {
+      var msg;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      handle(msg.type, msg.data || {});
+    };
+
+    ws.onclose = function (ev) {
+      ws = null;
+      connectFails++;
+      closeCode = (ev && ev.code) ? String(ev.code) : '';
+      // 自动重连有上限：退避到 2 秒、连满 8 次（约 13 秒）还不行就停下来。
+      // 一直闷头重连只会让页面永远停在「重连中」，还把 WS 握手当永不停止的流量打到车机上。
+      if (connectFails > MAX_AUTO) {
+        autoStopped = true;
+        retrySpan = 0;
+        nextRetryAt = 0;
+        if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+        setStatus('连不上车机 · 已停止自动重连', 'warn');
+        setOffline(true);
+        return;
+      }
+      // 车机热点重启后 IP 会变，而浏览器对域名的解析结果有自己的缓存。所以这里
+      // 不能一直闷头重试：连几次还不上就明确让用户刷新/手动重试。
+      if (connectFails >= 4) {
+        setStatus('连不上车机 · 点右上角刷新或下拉重试', 'warn');
+      } else {
+        setStatus('已断开，重连中…', 'warn');
+      }
+      retrySpan = reconnectDelay;
+      nextRetryAt = Date.now() + reconnectDelay;
+      setOffline(true);
+      reconnectTimer = setTimeout(connect, reconnectDelay);
+      // 服务切换/重启后要尽快回到连上状态，退避封顶 2 秒
+      reconnectDelay = Math.min(reconnectDelay * 2, 2000);
+    };
+
+    ws.onerror = function () { /* onclose 会跟着来，这里不重复处理 */ };
+  }
+
+  // 心跳：协议要求 20 秒一次，车机 90 秒没收到任何帧就断
+  setInterval(function () { send('ping', {}); }, 20000);
+
+  // 从后台切回来时立刻重连，不用等退避
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && (!ws || ws.readyState > 1)) {
+      reconnectDelay = 1000;
+      connectFails = 0;
+      autoStopped = false;
+      connect();
+    }
+  });
+
+  // ---------- 歌单 / 歌词 双页 ----------
+
+  // 歌词栏已去掉：顶部那块让给「车机控制 / 音乐控制」。
+  // 车机还在推歌词（lyricLines 照旧收着），这里不再画，留两个空函数给旧调用点。
+  function renderLyrics() { }
+  function lockFirstLyric() { }
+  function highlightLyric() { }
+
+  // 下拉刷新：只在页面已经滚到顶、且不是拖输入框/滑杆时接管。三端共用这一份手势。
+  (function bindPullRefresh() {
+    // iOS 壳用 WKWebView 的 UIRefreshControl（有 spinner 反馈），这里别重复触发刷新
+    if (CLIENT.name === 'ios') return;
+    var y0 = 0, tracking = false;
+    el.scroll.addEventListener('touchstart', function (e) {
+      var tag = (e.target.tagName || '').toLowerCase();
+      tracking = (e.touches.length === 1 && el.scroll.scrollTop <= 0
+                  && tag !== 'input' && tag !== 'textarea');
+      if (tracking) y0 = e.touches[0].clientY;
+    }, { passive: true });
+    el.scroll.addEventListener('touchend', function (e) {
+      if (!tracking || !e.changedTouches.length) return;
+      tracking = false;
+      if (e.changedTouches[0].clientY - y0 > 75) refreshAll(false);
+    }, { passive: true });
+  })();
+
+  // ---------- 添加到歌单 ----------
+
+  function openAddPanel() {
+    el.addTrack.textContent = state.title
+      ? '当前曲目：' + state.title + (state.artist ? ' · ' + state.artist : '')
+      : '当前没有播放';
+    var items = (library && library.playlists) || [];
+    el.addList.textContent = '';
+    if (!items.length) {
+      var empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = '还没有自建歌单';
+      el.addList.appendChild(empty);
+    } else {
+      items.forEach(function (p) {
+        var b = document.createElement('button');
+        b.className = 'plrow';
+        var n = document.createElement('span'); n.className = 'n'; n.textContent = p.name || '未命名歌单';
+        var c = document.createElement('span'); c.className = 'c'; c.textContent = (p.count || 0) + ' 首';
+        b.appendChild(n); b.appendChild(c);
+        b.addEventListener('click', function () {
+          command('addToPlaylist', { playlistId: String(p.id) });
+        });
+        el.addList.appendChild(b);
+      });
+    }
+    el.addPanel.classList.remove('hidden');
+  }
+
+  function closeAddPanel() { el.addPanel.classList.add('hidden'); }
+
+  // 原生层（安卓 onKeyDown / iOS VolumeKeyWatcher）拦到硬件音量键后调它；dir 为 +1 / -1。
+  // iOS 壳在 documentStart 注入了一个「先排队」的同名函数，页面没加载完时按下的音量键
+  // 不会丢；这里换成真实现后把队列补放一遍（安卓 / 浏览器没有注入脚本，队列为空）。
+  var stepVolumeImpl = function (dir) { stepVolume(dir); };
+  window.carRemoteStepVolume = stepVolumeImpl;
+  (window.__carRemoteVolumeQueue || []).forEach(stepVolumeImpl);
+  window.__carRemoteVolumeQueue = [];
+  // 原生层从后台切回、或需要主动刷新时调用
+  window.carRemoteRefresh = function () { refreshAll(true); };
+
+  // ---------- 操作 ----------
+
+  el.play.addEventListener('click', function () {
+    command(state.playing ? 'pause' : 'play');
+  });
+  /* 车机在暂停状态下切歌不会自己开播，页面就一直停在暂停。
+     所以切歌前先记住是不是暂停，是的话补一条 play。 */
+  function skipTo(action) {
+    var wasPaused = !state.playing;
+    command(action);
+    if (wasPaused) {
+      setTimeout(function () { command('play'); }, 150);
+    }
+  }
+
+  el.prev.addEventListener('click', function () { skipTo('prev'); });
+  el.next.addEventListener('click', function () { skipTo('next'); });
+
+  // 一键在「顺序 ↔ 随机」之间切；车机若停在单曲循环，点一下先回顺序
+  el.mode.addEventListener('click', function () {
+    var cur = typeof state.playMode === 'number' ? state.playMode : 0;
+    var next = cur === 0 ? 2 : 0;
+    state.playMode = next;
+    paintMode();
+    command('setPlayMode', { mode: next });
+    toast(MODE_NAMES[next]);
+  });
+
+  el.like.addEventListener('click', function () {
+    if (!state.title) { toast('当前没有播放'); return; }
+    // 先按预期翻一下，车机随即会推一次 state 覆盖成真值（失败也会被纠正回来）
+    state.liked = !state.liked;
+    paintLike();
+    command('like');
+    toast(state.liked ? '已加入我喜欢的音乐' : '已取消喜欢');
+  });
+
+  el.prog.addEventListener('input', function () {
+    draggingSeek = true;
+    el.cur.textContent = fmt(+el.prog.value);
+    setBar(el.prog, state.durationMs ? (+el.prog.value) / state.durationMs : 0);
+  });
+  el.prog.addEventListener('change', function () {
+    pendingSeek = +el.prog.value;
+    command('seek', { positionMs: Math.round(pendingSeek) });
+    // 兜底：车机没回新位置（不支持 seek 之类）也要把拖动状态放掉
+    setTimeout(function () {
+      pendingSeek = 0;
+      draggingSeek = false;
+    }, 1500);
+  });
+
+  function pushVolume(v) {
+    var max = state.volumeMax || 0;
+    if (!max) return;
+    command('setVolume', { volume: Math.max(0, Math.min(max, Math.round(v))) });
+  }
+
+  el.vol.addEventListener('input', function () {
+    el.volVal.textContent = el.vol.value;
+    setBar(el.vol, (+el.vol.value) / (state.volumeMax || 1));
+  });
+  el.vol.addEventListener('change', function () { pushVolume(+el.vol.value); });
+
+  function stepVolume(dir) {
+    var max = state.volumeMax || 0;
+    if (!max) return;
+    var cur = state.volume >= 0 ? state.volume : Math.round(max / 2);
+    var step = Math.max(1, Math.round(max / 15));
+    pushVolume(cur + dir * step);
+  }
+  el.volUp.addEventListener('click', function () { stepVolume(1); });
+  el.volDown.addEventListener('click', function () { stepVolume(-1); });
+
+  el.go.addEventListener('click', function () { openSearch(el.q.value); });
+  el.q.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.keyCode === 13) {
+      e.preventDefault();
+      el.q.blur();
+      openSearch(el.q.value);
+    }
+  });
+
+  el.addToPlaylist.addEventListener('click', openAddPanel);
+  el.addClose.addEventListener('click', closeAddPanel);
+  el.addPanel.addEventListener('click', function (e) { if (e.target === el.addPanel) closeAddPanel(); });
+  el.likedPlay.addEventListener('click', function (e) { e.stopPropagation(); playList('liked', '我喜欢的音乐'); });
+  el.cloudPlay.addEventListener('click', function (e) { e.stopPropagation(); playList('cloud', '音乐云盘'); });
+  if (el.refresh) el.refresh.addEventListener('click', function () { refreshAll(false); });
+
+  // 断线遮罩上唯一的出口：跳过退避立刻再试一次
+  el.offlineNow.addEventListener('click', function () {
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    connectFails = 0;
+    autoStopped = false;
+    reconnectDelay = 500;
+    connect();
+  });
+  el.tileLiked.addEventListener('click', function () { openList('liked', '我喜欢的音乐'); });
+  el.tileCloud.addEventListener('click', function () { openList('cloud', '音乐云盘'); });
+  // daily / heartbeat 是车机端的两个虚拟列表 id，和歌单一样先看列表再点歌
+  el.dailyRow.addEventListener('click', function () { openList('daily', '每日推荐'); });
+  el.hbRow.addEventListener('click', function () { openList('heartbeat', '心动模式'); });
+  el.dailyPlay.addEventListener('click', function (e) { e.stopPropagation(); playList('daily', '每日推荐'); });
+  el.hbPlay.addEventListener('click', function (e) { e.stopPropagation(); playList('heartbeat', '心动模式'); });
+  el.back.addEventListener('click', function () { closeSheet(); });
+
+  connect();
+})();
+</script>
+
+<!--@shell:script-->
+<script>
+/* ==========================================================================
+   统一外壳（车机助手 18766 / 网易云车机版 18765 / 桥接包 18764 共用同一份）
+   - 顶上一条状态行 + 一行中文切换「车机控制 / 音乐控制 / 行车记录仪」
+   - 从 18766 进来是统一入口：三路全在本机，音乐/记录仪由网关转发，地址只记 18766
+   - 从 18765 / 18764 进来是老入口：本端自带的音乐 + iframe 车控 / 记录仪，tab 与网关入口完全一致
+   - 对端用 iframe 贴进来，不跳转、不闪
+   ========================================================================== */
+(function () {
+  'use strict';
+
+  var D = document.documentElement;
+  if (D.className.indexOf('pane') >= 0) return;   // 内容页：外壳不参与
+
+  var HOST = location.hostname || '127.0.0.1';
+  var CAR_PORT = 18766;
+  var DVR_PORT = 18767;
+  var MUSIC_PORTS = [18765, 18764];
+  var K_TAB = 'jb.tab';
+  var K_MUS = 'jb.musPort';
+
+  var CAR_BASE = 'http://' + HOST + ':' + CAR_PORT;
+  // 拼接时写进来的构建号：并进 iframe 地址，页面一改 URL 就变，
+  // 装新包后不用手动清缓存也一定拿到新页面；同一个包重复打开仍走缓存。
+  var BUILD = 'd222dbe4';
+  // 哪个端口发下来的页，就自带哪一路，不用 iframe 套自己
+  var NATIVE = String(location.port) === String(CAR_PORT) ? 'car' : 'music';
+  // 统一入口：从 18766 进来，三路都走本机 + 网关转发，地址只有一个
+  var GATEWAY = NATIVE === 'car';
+
+  var el = {};
+  ['shellRoot', 'sBar', 'sDot', 'sTxt', 'sSet', 'sReload', 'sTabCar', 'sTabMusic',
+   'sTabDvr', 'sDotCar', 'sDotMusic', 'sDotDvr', 'sPane', 'sFrame', 'sFail',
+   'sFailT', 'sFailS', 'sFailGo',
+   'sMask', 'sSheet', 'sClose', 'sKv', 'sSegs', 'sGen', 'sCopy', 'sSave', 'sTxt2',
+   'sTip', 'sDump', 'sRec', 'sClear'
+  ].forEach(function (id) { el[id] = document.getElementById(id); });
+
+  var stored = localStorage.getItem(K_TAB);
+  var tab = stored === 'car' || stored === 'music' || stored === 'dvr' ? stored : 'music';
+  var musPort = parseInt(localStorage.getItem(K_MUS) || '0', 10) || 0;
+  var carOk = null;      // null 还没探到 / true / false
+  var musOk = null;
+  // 记录仪只在用户点「连接」后才连，外壳绝不主动碰 18767。
+  // 这里的状态由记录仪页 iframe 用 postMessage 报上来（on/off），null = 这一页还没说话。
+  var dvrOk = null;
+
+  // ---------- 状态行 ----------
+
+  function setStatus(text, kind) {
+    el.sTxt.textContent = text;
+    el.sDot.className = 'sdot' + (kind ? ' ' + kind : '');
+  }
+
+  function paintDots() {
+    el.sDotCar.className = 'sn' + (carOk === true ? ' on' : (carOk === false ? ' off' : ''));
+    el.sDotMusic.className = 'sn' + (musOk === true ? ' on' : (musOk === false ? ' off' : ''));
+    if (el.sDotDvr) el.sDotDvr.className = 'sn'
+      + (dvrOk === true ? ' on' : (dvrOk === false ? ' off' : ''));
+  }
+
+  function paintStatus() {
+    if (tab === 'car') {
+      if (carOk === null) setStatus('正在连接车机助手…');
+      else if (carOk) setStatus('已连接 · 车机助手', 'on');
+      else setStatus('车机助手未就绪 · 到车机上打开一次桌面助手', 'warn');
+    } else if (tab === 'dvr') {
+      if (dvrOk === null) setStatus('记录仪未连接 · 点「连接」手动读取');
+      else if (dvrOk) setStatus('记录仪已连接 · 18767', 'on');
+      else setStatus('记录仪已断开', 'warn');
+    } else {
+      if (musOk === null) setStatus('正在找音乐端…');
+      else if (musOk) setStatus(GATEWAY ? '音乐端在跑' : '音乐端在跑 · ' + musPort, 'on');
+      else setStatus('音乐端没响应 · 打开汽水音乐或桥接包', 'warn');
+    }
+  }
+
+  // ---------- 探活 ----------
+
+  function withTimeout(ms) {
+    var ctl = window.AbortController ? new AbortController() : null;
+    var o = { cache: 'no-store' };
+    if (ctl) { o.signal = ctl.signal; setTimeout(function () { ctl.abort(); }, ms); }
+    return o;
+  }
+
+  function probeCar(cb) {
+    var done = false;
+    var t = setTimeout(function () { if (!done) { done = true; carOk = false; cb(false); } }, 2500);
+    fetch(CAR_BASE + '/ping?_=' + Date.now(), withTimeout(2500))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (done) return; done = true; clearTimeout(t);
+        carOk = !!(d && d.ok === 1); cb(carOk);
+      })
+      .catch(function () {
+        if (done) return; done = true; clearTimeout(t);
+        carOk = false; cb(false);
+      });
+  }
+
+  /* no-cors 只关心「连不连得上」：音乐端可能是别人的页，没有 /ping 也无所谓 */
+  function probeOne(port, cb) {
+    var done = false;
+    var t = setTimeout(function () { if (!done) { done = true; cb(false); } }, 1400);
+    fetch('http://' + HOST + ':' + port + '/?_=' + Date.now(),
+          { mode: 'no-cors', cache: 'no-store' })
+      .then(function () { if (done) return; done = true; clearTimeout(t); cb(true); })
+      .catch(function () { if (done) return; done = true; clearTimeout(t); cb(false); });
+  }
+
+  /* 记录仪不探。18767 只在用户自己点开这一页、并且点了「连接」之后才有流量：
+     外壳不做任何后台探测/预连接，避免用户明明断了还被后台重新连上。 */
+
+  function probeMusic(cb) {
+    if (GATEWAY) { probeGateway(cb); return; }
+    var order = [];
+    // 自己就是音乐服务端时，先认自己 —— 18764 的页不该报成 18765
+    if (NATIVE === 'music' && location.port) order.push(location.port);
+    if (musPort) order.push(musPort);
+    MUSIC_PORTS.forEach(function (p) { if (order.indexOf(p) < 0) order.push(p); });
+    var i = 0;
+    (function step() {
+      if (i >= order.length) {
+        musOk = false; musPort = 0;
+        localStorage.removeItem(K_MUS);
+        cb(false);
+        return;
+      }
+      var p = order[i++];
+      probeOne(p, function (ok) {
+        if (!ok) { step(); return; }
+        musOk = true; musPort = p;
+        localStorage.setItem(K_MUS, String(p));
+        cb(true);
+      });
+    })();
+  }
+
+  /* 统一入口：问网关音乐后端在哪个端口。记录仪不在这里问 —— 网关一旦顺手探 18767，
+     用户在记录仪页点过「断开」之后又会被后台连上，那正是要避免的。 */
+  function probeGateway(cb) {
+    fetch('/gateway?_=' + Date.now(), withTimeout(2500))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        musOk = !!(d && d.music);
+        musPort = d && d.music ? d.music : 0;
+        if (cb) cb(musOk);
+        paintDots();
+      })
+      .catch(function () {
+        musOk = false;
+        if (cb) cb(false);
+        paintDots();
+      });
+  }
+
+  // ---------- 切换 ----------
+
+  function paneTop() {
+    if (!el.sPane) return;
+    var r = el.shellRoot ? el.shellRoot.getBoundingClientRect() : null;
+    el.sPane.style.top = Math.max(0, Math.round(r ? r.bottom + 1 : 0)) + 'px';
+    // 状态行固定在底部，内容区要按它的实际高度让位（含安全区）
+    if (el.sBar) D.style.setProperty('--sbar-h', el.sBar.offsetHeight + 'px');
+  }
+
+  function paneUrl(t) {
+    // 音乐直连音乐端自己的端口，不走 /music 反代。
+    // 反代能取到页面，但 WebSocket 会被网关接管：实测车上表现为
+    // 「握手成功 → 立刻断开 → 两秒后重连」，一直是「与车机断开连接」。
+    // 直连 18765/18764 是验证过正常的那条路，WS 不经过任何中转。
+    if (GATEWAY) {
+      if (t === 'music') {
+        var mp = musPort || MUSIC_PORTS[0];
+        return 'http://' + HOST + ':' + mp + '/?pane=music';
+      }
+      if (t === 'dvr') return '/dvr?pane=dvr';
+      return '/?pane=car';
+    }
+    // 从 18765 / 18764 进来：三路都用绝对地址，端口各归各的，tab 表现和网关入口一致
+    if (t === 'car') return CAR_BASE + '/?pane=car';
+    if (t === 'dvr') return 'http://' + HOST + ':' + DVR_PORT + '/dvr?pane=dvr';
+    return musPort ? 'http://' + HOST + ':' + musPort + '/?pane=music' : '';
+  }
+
+  function showFail(t) {
+    el.sFailT.textContent = t === 'car' ? '车机助手没响应'
+      : (t === 'dvr' ? '行车记录仪没响应' : '音乐端没响应');
+    el.sFailS.innerHTML = t === 'car'
+      ? '到车机上确认「车机助手」在跑（18766），<br>再点右上角的刷新。'
+      : (t === 'dvr'
+        ? '确认车机上的桥接包在跑（记录仪服务 18767），<br>再点右上角的刷新。'
+        : '车上跑的是第三方播放器就打开它（18765），<br>跑的是官方网易云就开桥接包（18764）。');
+    el.sFail.className = 'sfail on';
+  }
+
+  function hideFail() { el.sFail.className = 'sfail'; }
+
+  /* 两条路的宽度不一样（车控宽屏是两列、音乐是单列），
+     外壳跟着当前这一路走，顶栏才跟下面的内容对得齐。 */
+  function fitWidth(t) {
+    var cs = getComputedStyle(D);
+    var key = t === 'car' ? '--w-car' : (t === 'dvr' ? '--w-dvr' : '--w-music');
+    var v = cs.getPropertyValue(key).trim();
+    D.style.setProperty('--shell-w', v || '560px');
+  }
+
+  function apply(t, silent) {
+    tab = t;
+    localStorage.setItem(K_TAB, t);
+    fitWidth(t);
+    el.sTabCar.className = 'stab' + (t === 'car' ? ' on' : '');
+    el.sTabMusic.className = 'stab' + (t === 'music' ? ' on' : '');
+    if (el.sTabDvr) el.sTabDvr.className = 'stab' + (t === 'dvr' ? ' on' : '');
+
+    if (t === NATIVE) {
+      D.classList.remove('foreign');
+      el.sPane.className = 'spane';
+      el.sPane.style.top = '';
+      hideFail();
+    } else {
+      D.classList.add('foreign');
+      var url = paneUrl(t);
+      // 已经确认这一路没在跑：别贴一个白框，直接给失败提示（和音乐那一路一致）。
+      // 记录仪不参与判断 —— 它没连是常态，页面自己会摆「点连接」。
+      var dead = (t === 'music' && GATEWAY && musOk === false);
+      if (!url || dead) {
+        // 清掉旧 src：等这一路恢复时可以重新拉一次，不会停在空白框上
+        if (el.sFrame.getAttribute('src')) el.sFrame.removeAttribute('src');
+        el.sPane.className = 'spane on';
+        paneTop();
+        showFail(t);
+      } else {
+        if (el.sFrame.getAttribute('src') !== url) el.sFrame.setAttribute('src', url);
+        el.sPane.className = 'spane on';
+        hideFail();
+        paneTop();
+      }
+    }
+    paintStatus();
+    if (!silent) closeSheet();
+  }
+
+  el.sTabCar.addEventListener('click', function () { apply('car'); });
+  el.sTabMusic.addEventListener('click', function () {
+    if (musOk === false) {
+      apply('music');            // 先把失败提示摆出来，别点了像没反应
+      probeMusic(function (ok) {
+        paintDots();
+        if (ok) apply('music');
+        else paintStatus();
+      });
+      return;
+    }
+    apply('music');
+  });
+  if (el.sTabDvr) el.sTabDvr.addEventListener('click', function () {
+    // 记录仪只贴页面，不探端口、不预连接：连不连由页面上的「连接 / 断开」说了算
+    apply('dvr');
+  });
+
+  el.sFailGo.addEventListener('click', function () { apply('car'); });
+
+  el.sReload.addEventListener('click', function () { location.reload(); });
+
+  /* 记录仪页自己报状态：只有它在页面上真的点了「连接」拿到数据，或者点了「断开」，
+     才把点亮成绿/灰。外壳全程不碰 18767，用户断开后就一直是断开。 */
+  window.addEventListener('message', function (ev) {
+    var d = ev.data;
+    if (!d || d.src !== 'dvr' || typeof d.connected !== 'boolean') return;
+    dvrOk = d.connected;
+    paintDots();
+    if (tab === 'dvr') paintStatus();
+  });
+
+  // ---------- 设置 / 诊断（数据永远取 18766） ----------
+
+  var SEGS = {
+    diag: { url: '/diag', dl: '/diag.txt', file: '车机诊断', slow: 18000,
+      tip: '端口、引擎绑定、安装包版本、动作项数、进程日志和 logcat 摘要。' },
+    log: { url: '/acts.log', dl: '/acts.log.txt', file: '操作记录', slow: 6000,
+      tip: '每次点按钮的结果和耗时，最新的在最上面。' },
+    cards: { url: '/cards.txt', dl: '/cards.txt', file: '车况快照', slow: 6000,
+      tip: '每张卡、每一项的名字和值。' },
+    acts: { url: '/acts.txt', dl: '/acts.txt', file: '动作表', slow: 6000,
+      tip: '当前能执行的项和方法名。' }
+  };
+  var curSeg = 'diag';
+  var segCache = {};
+  var segBusy = false;
+
+  function openSheet() {
+    el.sSheet.className = 'ssheet show';
+    el.sMask.className = 'smask show';
+    el.sKv.textContent = '读取中…';
+    fetch(CAR_BASE + '/ping?_=' + Date.now(), withTimeout(3500))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || d.ok !== 1) { el.sKv.textContent = '18766 没响应'; return; }
+        el.sKv.textContent = '车控　' + CAR_BASE + '\n'
+          + '音乐　' + (musPort ? ('http://' + HOST + ':' + musPort) : '未探到') + '\n'
+          + '记录仪　' + (dvrOk ? ('http://' + HOST + ':' + DVR_PORT) : '未连接（手动）') + '\n'
+          + '服务　端口 ' + d.port + (d.bound ? ' 已绑定' : ' 未绑定') + ' · 接口 v' + d.v + '\n'
+          + '引擎　' + (d.helper ? '已绑定' : '未绑定 ← 打开一次桌面助手')
+          + ' · 界面 ' + (d.activity ? '已出现' : '未出现') + '\n'
+          + '操作　' + (d.ops == null ? 0 : d.ops) + ' 次调用'
+          + (d.opsFail ? ' · 失败 ' + d.opsFail : '')
+          + (d.err ? '\n错误　' + d.err : '');
+      })
+      .catch(function () { el.sKv.textContent = '连不上 18766，诊断也取不到。'; });
+    refreshRec();
+    pickSeg(curSeg);
+  }
+
+  function closeSheet() {
+    el.sSheet.className = 'ssheet';
+    el.sMask.className = 'smask';
+  }
+
+  function pickSeg(seg) {
+    if (!SEGS[seg]) return;
+    curSeg = seg;
+    Array.prototype.forEach.call(el.sSegs.children, function (b) {
+      b.classList.toggle('on', b.getAttribute('data-seg') === seg);
+    });
+    el.sTip.textContent = SEGS[seg].tip;
+    el.sTxt2.textContent = segCache[seg] || ('点「生成」取' + SEGS[seg].file + '。');
+    el.sTxt2.scrollTop = 0;
+    if (!segCache[seg] && !segBusy) loadSeg();
+  }
+
+  function loadSeg() {
+    if (segBusy) return;
+    var seg = curSeg;
+    var cfg = SEGS[seg];
+    segBusy = true;
+    el.sTxt2.textContent = '读取中…';
+    fetch(CAR_BASE + cfg.url + '?_=' + Date.now(), withTimeout(cfg.slow))
+      .then(function (r) { return r.text(); })
+      .then(function (t) {
+        segBusy = false; segCache[seg] = t;
+        if (curSeg === seg) { el.sTxt2.textContent = t; el.sTxt2.scrollTop = 0; }
+      })
+      .catch(function () {
+        segBusy = false;
+        if (curSeg === seg) {
+          el.sTxt2.textContent = '取不到：18766 没响应。\n'
+            + '浏览器里直接打开 ' + CAR_BASE + cfg.url + ' 看看。';
+        }
+      });
+  }
+
+  function toast(text) {
+    var t = document.getElementById('stoast');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'stoast';
+      t.style.cssText = 'position:fixed;left:50%;bottom:34px;transform:translate(-50%,10px);'
+        + 'max-width:80%;padding:10px 18px;border-radius:999px;z-index:200;'
+        + 'background:rgba(28,28,30,.96);border:1px solid rgba(255,255,255,.12);'
+        + 'font-size:13px;color:#fff;opacity:0;pointer-events:none;'
+        + 'transition:opacity .18s,transform .18s;font-family:inherit';
+      document.body.appendChild(t);
+    }
+    t.textContent = text;
+    t.style.opacity = '1';
+    t.style.transform = 'translate(-50%,0)';
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () {
+      t.style.opacity = '0';
+      t.style.transform = 'translate(-50%,10px)';
+    }, 1600);
+  }
+
+  function copyText(text) {
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;left:-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      toast(ok ? '已复制' : '复制被拦，长按文本全选');
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { toast('已复制'); }, fallback);
+    } else {
+      fallback();
+    }
+  }
+
+  function stamp() {
+    var d = new Date();
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate())
+      + '-' + p(d.getHours()) + p(d.getMinutes());
+  }
+
+  function saveText(text, name) {
+    try {
+      var blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () {
+        if (a.parentNode) a.parentNode.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 1500);
+      toast('已保存 ' + name);
+    } catch (e) {
+      toast('下载不支持，长按文本复制');
+    }
+  }
+
+  el.sSet.addEventListener('click', openSheet);
+  el.sClose.addEventListener('click', closeSheet);
+  el.sMask.addEventListener('click', closeSheet);
+  el.sSegs.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('.sstab') : null;
+    if (b) pickSeg(b.getAttribute('data-seg'));
+  });
+  el.sGen.addEventListener('click', loadSeg);
+  el.sCopy.addEventListener('click', function () {
+    if (!segCache[curSeg]) { toast('先点「生成」'); return; }
+    copyText(segCache[curSeg]);
+  });
+  el.sSave.addEventListener('click', function () {
+    if (!segCache[curSeg]) { toast('先点「生成」'); return; }
+    var name = SEGS[curSeg].file + '_' + stamp() + '.txt';
+    // 优先走 App 的存盘接口：WebView 里既没有下载器，Blob 也常常存成没后缀的文件
+    var N = window.CarRemoteNative;
+    if (N && typeof N.saveText === 'function') {
+      try {
+        if (N.saveText(name, segCache[curSeg]) !== false) {
+          toast('已存到手机下载目录：' + name);
+          return;
+        }
+      } catch (e) { /* 退回服务器下载 */ }
+    }
+    // 服务器直出 txt（Content-Disposition + UTF-8），浏览器会存成正经的 .txt
+    toast('开始下载 ' + name);
+    try { location.href = SEGS[curSeg].dl || SEGS[curSeg].url; }
+    catch (e) { saveText(segCache[curSeg], name); }
+  });
+  el.sDump.addEventListener('click', function () {
+    var name = '车机全量_' + stamp() + '.txt';
+    toast('正在打包…');
+    fetch(CAR_BASE + '/dump?_=' + Date.now(), withTimeout(25000))
+      .then(function (r) { return r.text(); })
+      .then(function (t) {
+        var N = window.CarRemoteNative;
+        if (N && typeof N.saveText === 'function') {
+          try {
+            if (N.saveText(name, t) !== false) {
+              toast('已存到手机下载目录：' + name);
+              return;
+            }
+          } catch (e) { /* 退回服务器下载 */ }
+        }
+        location.href = '/dump.txt';
+      })
+      .catch(function () { toast('打包失败，先试单个「下载」'); });
+  });
+
+  /* 日志开关：停止之后 18766 不再往缓冲里写新行，已有的留着，
+     正好把出问题那一段钉住，不会被后面的正常日志冲掉。 */
+  function paintRec(on, lines) {
+    if (!el.sRec) return;
+    el.sRec.textContent = on ? '停止记录' : '开始记录';
+    if (typeof lines === 'number') el.sRec.setAttribute('data-lines', String(lines));
+  }
+
+  function refreshRec() {
+    fetch(CAR_BASE + '/log/rec?_=' + Date.now(), withTimeout(3000))
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (d && d.ok === 1) paintRec(d.rec === 1, d.lines); })
+      .catch(function () { if (el.sRec) el.sRec.textContent = '记录开关'; });
+  }
+
+  el.sRec.addEventListener('click', function () {
+    var turnOn = el.sRec.textContent.indexOf('停止') >= 0 ? false : true;
+    fetch(CAR_BASE + '/log/rec?on=' + (turnOn ? 1 : 0) + '&_=' + Date.now(),
+          withTimeout(3000))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || d.ok !== 1) { toast('开关失败'); return; }
+        paintRec(d.rec === 1, d.lines);
+        toast(d.rec === 1 ? '开始记录' : '已停止记录，现场保留 ' + d.lines + ' 行');
+      })
+      .catch(function () { toast('连不上 18766'); });
+  });
+  el.sClear.addEventListener('click', function () {
+    fetch(CAR_BASE + '/log/clear', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (r && r.ok === 1) { delete segCache.log; toast('操作记录已清空'); }
+        else toast('清空失败');
+      })
+      .catch(function () { toast('连不上桥接服务'); });
+  });
+
+  // ---------- 起 ----------
+
+  window.addEventListener('resize', paneTop);
+
+  apply(tab, true);
+  D.classList.add('ready');
+  paneTop();
+
+  probeCar(function () {
+    paintDots();
+    paintStatus();
+    // 记录仪不探：它连不连由记录仪页面上的按钮决定，外壳不代为连接
+    // 第一次进来默认落音乐；音乐端没有就退回车控，别让人对着空框
+    if (tab === 'music' && !stored) {
+      probeMusic(function (ok) {
+        paintDots();
+        if (!ok) apply('car');
+        else apply('music', true);   // 探到了就把框补上，别停在「没响应」上
+      });
+      return;
+    }
+    probeMusic(function (ok) {
+      paintDots();
+      paintStatus();
+      // 开局那次 apply 可能还没探到端口，补一次
+      if (ok && tab !== NATIVE) apply(tab, true);
+    });
+  });
+
+  setInterval(function () {
+    if (document.hidden) return;
+    probeCar(function () { paintDots(); paintStatus(); });
+    if (GATEWAY) probeGateway();   // 统一入口：只问音乐后端在哪个端口
+    // 老入口的音乐页自己探自己的端口；记录仪两路都不探
+  }, 15000);
+})();
+
+</script>
+<!--@/shell:script-->
+</body>
+</html>

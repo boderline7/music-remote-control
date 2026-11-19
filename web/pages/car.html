@@ -1,0 +1,1605 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#0b0b0d">
+<title>车机控制</title>
+<style>
+  :root{
+    --fg:#fff;
+    --dim:rgba(255,255,255,.55);
+    --faint:rgba(255,255,255,.32);
+    --line:rgba(255,255,255,.12);
+    --card:rgba(255,255,255,.06);
+    --red:#fa2d48;
+    --w-car:560px;          /* 外壳宽度跟着当前这一路的内容走 */
+    --w-music:560px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    margin:0;color:var(--fg);overflow:hidden;display:flex;flex-direction:column;
+    background:radial-gradient(120% 60% at 50% 0%,#1b1b22 0%,#0b0b0d 62%) fixed;
+    font-family:-apple-system,system-ui,"PingFang SC","Helvetica Neue",Arial,sans-serif;
+    user-select:none;-webkit-user-select:none;
+  }
+  button{border:0;background:none;color:var(--fg);padding:0;cursor:pointer;font:inherit}
+  button:active{opacity:.55}
+  *{scrollbar-width:none;-ms-overflow-style:none}
+  *::-webkit-scrollbar{width:0;height:0;display:none}
+
+  header{
+    flex:none;display:flex;align-items:center;gap:8px;
+    width:100%;max-width:560px;margin:0 auto;
+    padding:calc(12px + env(safe-area-inset-top)) 18px 8px;
+    font-size:13px;color:var(--dim);
+  }
+  #dot{width:8px;height:8px;border-radius:50%;background:#8e8e93;flex:none;transition:background .2s}
+  #dot.on{background:#34c759}
+  #dot.warn{background:#ff9f0a}
+  #dot.off{background:#ff453a}
+  #status{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ver{flex:none;font-style:normal;font-size:10px;color:var(--faint);letter-spacing:.3px}
+  .icon-btn{
+    flex:none;width:38px;height:38px;border-radius:50%;
+    background:var(--card);border:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center;
+  }
+  .icon-btn svg{width:19px;height:19px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+  #scroll{
+    flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    width:100%;max-width:560px;margin:0 auto;
+    padding:2px 0 calc(24px + env(safe-area-inset-bottom));
+    /* 这一行是「右滑回音乐」能不能生效的关键：不留 pan-y 的话，
+       WebView 把横滑交给合成器，touchmove 根本不上报给 JS */
+    touch-action:pan-y;
+  }
+
+
+  .sec{display:flex;align-items:baseline;gap:8px;padding:14px 18px 8px}
+  .sec h2{margin:0;font-size:15px;font-weight:600}
+  .sec .hint{font-size:12px;color:var(--faint)}
+  .capgrp{margin:12px 16px 6px;font-size:12px;letter-spacing:.06em;color:rgba(255,255,255,.42)}
+  .caps{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 16px}
+  .cap{
+    display:flex;align-items:center;gap:8px;min-height:46px;
+    padding:12px;border-radius:12px;background:var(--card);border:1px solid var(--line);
+    font-size:14px;text-align:left;line-height:1.2;
+  }
+  .cap:active{background:rgba(250,45,72,.28);border-color:rgba(250,45,72,.5)}
+  .cap .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  /* 连续量（温度 / 风量）统一成一只「滑块 + 加减」的卡片：
+     滑块给手感，两边的键给准头 —— 车机屏上手糙，单靠拖容易拖过。 */
+  .ctlrow{margin:8px 16px 0;padding:12px 14px 10px;border-radius:14px;
+    background:var(--card);border:1px solid var(--line)}
+  .ctlrow+.ctlrow{margin-top:8px}
+  .ctl-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:2px}
+  .ctl-name{font-size:12.5px;color:var(--dim)}
+  .ctl-val{font-size:19px;font-weight:600;color:#fff;font-variant-numeric:tabular-nums}
+  /* 温度：两侧大按钮，数字居中 */
+  .trow{display:flex;align-items:center;gap:10px;padding:14px}
+  .trow .tfb{flex:none;width:64px;height:64px;border-radius:16px;font-size:26px;line-height:1;
+    color:#fff;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.13)}
+  .trow .tfb:active{background:rgba(250,45,72,.3);border-color:rgba(250,45,72,.55)}
+  .trow .tfb:disabled{opacity:.28}
+  .tmid{flex:1;display:flex;align-items:center;justify-content:center;min-width:0}
+  .tnum{font-size:40px;font-weight:600;letter-spacing:-1px;color:#fff;
+    font-variant-numeric:tabular-nums;line-height:1}
+  .ctl-body{display:flex;align-items:center;gap:12px}
+  .ctl-body input[type=range]{-webkit-appearance:none;appearance:none;flex:1;min-width:0;
+    height:34px;margin:0;background:transparent}
+  .ctl-body input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;
+    background:rgba(255,255,255,.14)}
+  .ctl-body input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;
+    margin-top:-9px;border-radius:50%;background:#fa2d48;border:0;
+    box-shadow:0 2px 8px rgba(250,45,72,.45)}
+  .ctl-body input[type=range]:disabled{opacity:.45}
+  .fb{flex:none;width:44px;height:40px;border-radius:11px;font-size:20px;line-height:1;
+    color:#fff;background:rgba(255,255,255,.07);border:1px solid var(--line)}
+  .fb:active{background:rgba(250,45,72,.3);border-color:rgba(250,45,72,.5)}
+  .fb:disabled{opacity:.3}
+
+  /* 前后排风量：只用一档，摆两张大卡片太占地方，整体压薄一圈。
+     数字和滑块一起缩，比例保持一致，不显得头重脚轻。 */
+  .ctlrow.fan{margin-top:6px;padding:8px 12px 7px;border-radius:12px}
+  .ctlrow.fan .ctl-head{margin-bottom:0}
+  .ctlrow.fan .ctl-name{font-size:11.5px}
+  .ctlrow.fan .ctl-val{font-size:16px}
+  .ctlrow.fan .ctl-body{gap:8px}
+  .ctlrow.fan .ctl-body input[type=range]{height:26px}
+  .ctlrow.fan .ctl-body input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:3px}
+  .ctlrow.fan .ctl-body input[type=range]::-webkit-slider-thumb{width:17px;height:17px;
+    margin-top:-6px;box-shadow:0 2px 6px rgba(250,45,72,.4)}
+  .ctlrow.fan .fb{width:38px;height:32px;border-radius:10px;font-size:17px}
+  /* 座椅：一个座位一行，右边三个按钮（关 / 1 档 / 3 档），不再挤成两列小字 */
+  #seat{margin:8px 16px 0;display:flex;flex-direction:column;gap:10px}
+  .seatcard{padding:12px 14px 6px;border-radius:14px;background:var(--card);border:1px solid var(--line)}
+  .scap{font-size:12.5px;color:var(--faint);margin-bottom:4px;letter-spacing:.02em}
+  .srow{display:flex;align-items:center;gap:10px;padding:9px 0}
+  .srow+.srow{border-top:1px solid rgba(255,255,255,.07)}
+  .sname{flex:none;width:52px;font-size:14px;color:#fff;letter-spacing:.5px}
+  .srow.na .sname{color:rgba(255,255,255,.38)}
+  .srow.na .seg button{opacity:.32}
+  .seg{flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;min-width:0}
+  .seg.seg2{grid-template-columns:repeat(2,1fr)}
+  .seg button{height:42px;border-radius:10px;font-size:14.5px;color:rgba(255,255,255,.72);
+    background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);
+    font-variant-numeric:tabular-nums}
+  .seg button:active{background:rgba(250,45,72,.35);border-color:rgba(250,45,72,.6)}
+  .seg button.on{color:#fff;font-weight:500;background:rgba(250,45,72,.22);
+    border-color:rgba(250,45,72,.62)}
+  /* 「关」是常态，别用红底抢注意力 */
+  .seg button.on[data-lv="0"]{background:rgba(255,255,255,.14);
+    border-color:rgba(255,255,255,.28)}
+
+  /* 内置音量 */
+  .volcard{margin:8px 16px 0;padding:10px 14px 12px;border-radius:14px;
+    background:var(--card);border:1px solid var(--line)}
+  .volrow{display:flex;align-items:center;gap:12px}
+  .volrow .vname{flex:none;width:52px;font-size:14px;color:#fff}
+  .volrow input[type=range]{flex:1;height:28px;accent-color:var(--accent,#fa2d48)}
+  .volrow .vval{flex:none;width:38px;text-align:right;font-size:15px;color:#fff;
+    font-variant-numeric:tabular-nums}
+  .voltip{margin-top:2px;font-size:11.5px;line-height:1.5;color:var(--faint)}
+
+  .empty{margin:8px 16px 0;padding:18px 16px;background:rgba(255,255,255,.04);
+    border:1px dashed var(--line);border-radius:12px;font-size:13px;line-height:1.7;color:var(--dim)}
+  .empty b{color:#fff;font-weight:600}
+  .log{margin:12px 16px 0;padding:12px;background:rgba(255,255,255,.04);border:1px solid var(--line);
+    border-radius:12px;font:11px/1.6 ui-monospace,Consolas,monospace;color:rgba(255,255,255,.55);
+    white-space:pre-wrap;word-break:break-all;max-height:200px;overflow:auto}
+  .hidden{display:none}
+  footer{text-align:center;font-size:11px;color:var(--faint);padding:18px 12px 6px;line-height:1.7}
+  footer a{color:var(--faint)}
+
+  #toast{
+    position:fixed;left:50%;bottom:32px;transform:translate(-50%,10px);
+    max-width:80%;padding:10px 18px;border-radius:999px;
+    background:rgba(28,28,30,.96);border:1px solid var(--line);
+    font-size:13px;opacity:0;pointer-events:none;transition:opacity .18s,transform .18s;z-index:40;
+  }
+  #toast.show{opacity:1;transform:translate(-50%,0)}
+
+  /* 宽屏也只排一列：车控是几条连续量，两列并排反而看不清主次 */
+  @media (min-width:1000px){
+    :root{--w-car:720px}
+    header,#scroll{max-width:720px}
+    .caps{grid-template-columns:repeat(3,minmax(0,1fr))}
+  }
+
+  /* 这一页只是内容：顶上的状态行和切换由外壳负责（web/_shell.*）。
+     内容页被 iframe 进来时（?pane=car）外壳自己收掉，这里不用管。 */
+</style>
+<!--@shell:head-->
+<style>
+  /* ==================================================================
+     统一外壳：状态行 + 「车机控制 / 音乐控制」 + 内容区
+     三个端口（18766 / 18765 / 18764）下发的是同一份，改这里三个一起变。
+     ================================================================== */
+  /* 安卓 WebView 会按列宽自动放大文字（font boosting），
+     一到窄屏就变成「大字 + 挤在一起」。这里钉死，字号只按 CSS 走。 */
+  html{-webkit-text-size-adjust:100%;-moz-text-size-adjust:100%;text-size-adjust:100%}
+  /* 记录仪是单列清单：比车控窄、比音乐略宽，三 tab 切换时顶栏跟着变宽 */
+  :root{--w-dvr:640px}
+
+  #shellRoot{
+    flex:none;width:100%;max-width:var(--shell-w,560px);margin:0 auto;
+    padding:calc(9px + env(safe-area-inset-top)) 16px 0;
+  }
+  /* 状态行放最下面：车机上这块是常驻信息，不跟切换按钮抢顶部 */
+  .sbar{position:fixed;left:0;right:0;bottom:0;z-index:121;
+    background:rgba(11,11,13,.96);border-top:1px solid rgba(255,255,255,.1);
+    padding:7px 0 calc(7px + env(safe-area-inset-bottom))}
+  .sbar-in{display:flex;align-items:center;gap:8px;min-height:34px;
+    width:100%;max-width:var(--shell-w,560px);margin:0 auto;padding:0 16px;
+    font-size:13px;color:rgba(255,255,255,.55)}
+  .sdot{flex:none;width:8px;height:8px;border-radius:50%;background:#8e8e93;
+    transition:background .2s}
+  .sdot.on{background:#34c759}
+  .sdot.warn{background:#ff9f0a}
+  .sdot.off{background:#ff453a}
+  .stxt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:8px}
+  .sver{flex:none;font-style:normal;font-size:10px;letter-spacing:.3px;
+    color:rgba(255,255,255,.3)}
+  .sbtn{flex:none;width:34px;height:34px;border-radius:50%;padding:0;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
+    display:flex;align-items:center;justify-content:center}
+  .sbtn svg{width:17px;height:17px;fill:none;stroke:#fff;stroke-width:2;
+    stroke-linecap:round;stroke-linejoin:round}
+  .sbtn:active{background:rgba(255,255,255,.14)}
+
+  /* 中文切换：就放在最外面，不进设置 */
+  .stabs{display:flex;gap:8px;margin:9px 0 11px}
+  .stab{flex:1;min-width:0;height:43px;border-radius:12px;padding:0 6px;
+    font-size:13.5px;letter-spacing:0;color:rgba(255,255,255,.58);
+    background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);
+    display:flex;align-items:center;justify-content:center;gap:5px;
+    white-space:nowrap;overflow:hidden;-webkit-text-size-adjust:100%}
+  .stab.on{color:#fff;font-weight:600;background:rgba(250,45,72,.2);
+    border-color:rgba(250,45,72,.55)}
+  .stab:active{background:rgba(250,45,72,.3)}
+  .sn{width:5px;height:5px;border-radius:50%;background:#8e8e93;
+    transition:background .2s;flex:none}
+  .sn.on{background:#34c759}
+  .sn.off{background:#ff453a}
+  .stab.on .sn{background:rgba(255,255,255,.75)}
+  .stab.on .sn.on{background:#34c759}
+  .stab.on .sn.off{background:#ff453a}
+
+  /* 内容区：外包负责的那一页贴在下面，不跳转、不闪 */
+  .spane{position:fixed;left:0;right:0;bottom:var(--sbar-h,56px);z-index:120;
+    display:none;background:#0b0b0d}
+  .spane.on{display:block}
+  .spane iframe{display:block;width:100%;height:100%;border:0;background:#0b0b0d}
+  .sfail{position:absolute;inset:0;display:none;flex-direction:column;
+    align-items:center;justify-content:center;gap:14px;padding:28px;
+    text-align:center;font-size:13.5px;line-height:1.8;
+    color:rgba(255,255,255,.55);background:#0b0b0d}
+  .sfail.on{display:flex}
+  .sfail b{color:#fff;font-weight:600;font-size:15px}
+  .sfail button{min-width:150px;height:42px;border-radius:11px;font-size:14px;
+    color:#fff;background:rgba(250,45,72,.2);border:1px solid rgba(250,45,72,.5)}
+
+  /* ---- 模式：内容页（被 iframe 进来）把外壳全部收掉 ---- */
+  html.pane #shellRoot,
+  html.pane .spane,
+  html.pane .smask,
+  html.pane .ssheet{display:none !important}
+
+  /* ---- 模式：外壳。没 ready 之前先别把内容闪出来 ---- */
+  html.shell:not(.ready) body > *:not(#shellRoot):not(.spane):not(.smask):not(.ssheet),
+  html.shell.foreign body > *:not(#shellRoot):not(.spane):not(.smask):not(.ssheet){
+    display:none !important;
+  }
+
+  /* ---- 设置 / 诊断（三个端口共用一套，数据取 18766） ---- */
+  .smask{position:fixed;inset:0;background:rgba(0,0,0,.6);opacity:0;
+    pointer-events:none;transition:opacity .2s;z-index:129}
+  .smask.show{opacity:1;pointer-events:auto}
+  .ssheet{position:fixed;left:0;right:0;bottom:0;z-index:130;max-height:88vh;
+    transform:translateY(103%);transition:transform .26s cubic-bezier(.3,.8,.3,1);
+    background:#141417;border-top:1px solid rgba(255,255,255,.12);
+    border-radius:18px 18px 0 0;display:flex;flex-direction:column;
+    box-shadow:0 -12px 40px rgba(0,0,0,.5)}
+  .ssheet.show{transform:translateY(0)}
+  .sshead{flex:none;display:flex;align-items:center;gap:10px;
+    padding:15px 18px 12px;border-bottom:1px solid rgba(255,255,255,.12)}
+  .sshead h3{margin:0;font-size:16px;font-weight:600;flex:1;color:#fff}
+  .ssx{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.12);display:flex;align-items:center;
+    justify-content:center;font-size:15px;color:rgba(255,255,255,.55)}
+  .ssbody{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    padding:14px 16px calc(20px + env(safe-area-inset-bottom))}
+  .sskv{font-size:12px;line-height:1.95;color:rgba(255,255,255,.55);
+    margin:0 2px 12px;white-space:pre-wrap;word-break:break-all}
+  .ssrow{display:flex;gap:8px;margin-bottom:12px}
+  .ssrow button{flex:1;min-height:42px;border-radius:11px;color:#fff;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
+    font-size:13.5px}
+  .ssrow button:active{background:rgba(255,255,255,.12)}
+  .ssrow button.primary{background:rgba(250,45,72,.18);
+    border-color:rgba(250,45,72,.45)}
+  .sstabs{display:flex;gap:6px;margin:0 0 10px;overflow-x:auto}
+  .sstab{flex:1 0 auto;min-height:34px;padding:0 12px;border-radius:9px;
+    background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);
+    font-size:12.5px;color:rgba(255,255,255,.55);white-space:nowrap}
+  .sstab.on{background:rgba(250,45,72,.2);border-color:rgba(250,45,72,.5);
+    color:#fff}
+  .sstxt{margin:0;padding:12px;border-radius:12px;
+    background:rgba(0,0,0,.38);border:1px solid rgba(255,255,255,.12);
+    font:11px/1.65 ui-monospace,Consolas,monospace;
+    color:rgba(255,255,255,.74);white-space:pre-wrap;word-break:break-all;
+    min-height:120px;max-height:36vh;overflow:auto;
+    user-select:text;-webkit-user-select:text}
+  .sstip{font-size:11.5px;line-height:1.75;color:rgba(255,255,255,.32);
+    margin:10px 2px 0}
+
+</style>
+<script>
+  /* 外壳启动：在 <head> 里就定好这一页是「壳」还是「内容页」，
+     免得内容先闪一下再被外壳盖住。?pane=car / ?pane=music 都是内容页。 */
+  (function () {
+    var d = document.documentElement;
+    d.className = (d.className ? d.className + ' ' : '')
+      + (location.search.indexOf('pane=') >= 0 ? 'pane' : 'shell');
+  })();
+
+</script>
+<!--@/shell:head-->
+</head>
+<body>
+<!--@shell:body-->
+<div id="shellRoot" data-ver="18.73">
+  <div class="sbar" id="sBar">
+   <div class="sbar-in">
+    <span class="sdot" id="sDot"></span>
+    <span class="stxt" id="sTxt">正在连接…</span>
+    <i class="sver">18.73</i>
+    <button class="sbtn" id="sSet" aria-label="设置与诊断" title="设置与诊断">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9.1 19a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 4.8 15a1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.8 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 9.1 4.8 1.6 1.6 0 0 0 10 3.3V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+    </button>
+    <button class="sbtn" id="sReload" aria-label="刷新" title="刷新">
+      <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+    </button>
+   </div>
+  </div>
+  <div class="stabs">
+    <button class="stab" id="sTabCar" data-tab="car">车机控制<i class="sn" id="sDotCar"></i></button>
+    <button class="stab" id="sTabMusic" data-tab="music">音乐控制<i class="sn" id="sDotMusic"></i></button>
+    <button class="stab" id="sTabDvr" data-tab="dvr">行车记录仪<i class="sn" id="sDotDvr"></i></button>
+  </div>
+</div>
+
+<div class="spane" id="sPane">
+  <iframe id="sFrame" title="内容"></iframe>
+  <div class="sfail" id="sFail">
+    <b id="sFailT">这一路没起来</b>
+    <div id="sFailS">—</div>
+    <button id="sFailGo">切到车机控制</button>
+  </div>
+</div>
+
+<div class="smask" id="sMask"></div>
+<div class="ssheet" id="sSheet">
+  <div class="sshead">
+    <h3>设置 · 诊断</h3>
+    <button class="ssx" id="sClose" aria-label="关闭">✕</button>
+  </div>
+  <div class="ssbody">
+    <div class="sskv" id="sKv">—</div>
+    <div class="sstabs" id="sSegs">
+      <button class="sstab on" data-seg="diag">诊断</button>
+      <button class="sstab" data-seg="log">操作记录</button>
+      <button class="sstab" data-seg="cards">车况</button>
+      <button class="sstab" data-seg="acts">动作表</button>
+    </div>
+    <div class="ssrow">
+      <button class="primary" id="sGen">生成</button>
+      <button id="sCopy">复制</button>
+      <button id="sSave">下载</button>
+    </div>
+    <pre class="sstxt" id="sTxt2">点「生成」，取当前这一段的文本。</pre>
+    <div class="sstip" id="sTip"></div>
+    <div class="ssrow" style="margin-top:16px">
+      <button id="sDump">全部导出</button>
+      <button id="sRec">停止记录</button>
+      <button id="sClear">清空记录</button>
+    </div>
+    <div class="sstip">
+      诊断里是端口、引擎绑定、安装包版本、动作项数和最近日志。<br>
+      「下载」给的是服务器直出的 txt（UTF-8），文件名带时间，不再走浏览器临时文件。<br>
+      「停止记录」之后不再写新行，已有的留着，方便把现场钉在出问题那一段。<br>
+      下载没反应时点「复制」，或长按上面的文本全选。
+    </div>
+  </div>
+</div>
+<!--@/shell:body-->
+
+<div id="scroll">
+  <div class="sec"><h2>温度</h2><span class="hint" id="tempHint">15 - 30 ℃</span></div>
+  <div id="temp"></div>
+  <div class="sec"><h2>控制</h2><span class="hint" id="capHint"></span></div>
+  <div id="caps"></div>
+  <div class="sec"><h2>座椅</h2><span class="hint">关 / 3 档</span></div>
+  <div id="seat"></div>
+  <div class="sec"><h2>内置音量</h2><span class="hint" id="volHint">联动播报</span></div>
+  <div class="volcard">
+    <div class="volrow"><span class="vname">播报</span>
+      <input type="range" id="volRange" min="0" max="100" step="1" value="80">
+      <span class="vval" id="volVal">80</span></div>
+    <div class="voltip">车门 / 档位 / 联动播报音量，拖动后下一次播报生效</div>
+  </div>
+  <div id="log" class="log hidden"></div>
+  <footer>
+    数据与控制都来自车机助手（reflection），这里不发任何车机总线命令<br>
+    <span id="host">—</span> · 18766
+  </footer>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var POLL_MS = 2500;
+  var capsBox = document.getElementById('caps');
+  var statusEl = document.getElementById('status');
+  var dot = document.getElementById('dot');
+  var logEl = document.getElementById('log');
+  var hintEl = document.getElementById('capHint');
+  var hostEl = document.getElementById('host');
+
+  var busy = false;
+  var inflight = false;
+  var lastOp = '';          // 最近一次操作的摘要，设置面板里显示
+
+  hostEl.textContent = location.hostname;
+
+  function setStatus(text, kind) {
+    // 状态行在外壳上（web/_shell.*），这一页不再自己画一条
+    if (statusEl) { statusEl.textContent = text; }
+    if (dot) { dot.className = kind || ''; }
+  }
+
+  function toast(text) {
+    var t = document.getElementById('toast');
+    t.textContent = text;
+    t.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { t.classList.remove('show'); }, 1600);
+  }
+
+  function req(path, opt) {
+    var ctl = window.AbortController ? new AbortController() : null;
+    var o = { cache: 'no-store', method: (opt && opt.method) || 'GET', headers: (opt && opt.headers) || {} };
+    if (ctl) o.signal = ctl.signal;
+    if (opt && opt.body) o.body = opt.body;
+    var timer = ctl ? setTimeout(function () { ctl.abort(); }, 3500) : null;
+    return fetch(path, o).then(function (r) {
+      if (timer) clearTimeout(timer);
+      return r.text();
+    }).then(function (t) {
+      return JSON.parse(t);
+    }).catch(function (e) {
+      if (timer) clearTimeout(timer);
+      throw e;
+    });
+  }
+
+  function node(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  /**
+   * 按一下就发一下，按住不放连着发。
+   * 温度从 24 调到 18 要点六下，手指按住的体感比连点准得多；
+   * 首下在 pointerdown 就走，不必等松手 —— 车机上按一下就走的反馈更直接。
+   */
+  function pressRepeat(btn, step) {
+    var hold = 0;
+    var rep = 0;
+    var down = false;
+
+    function stop() {
+      down = false;
+      clearTimeout(hold); clearInterval(rep);
+      hold = rep = 0;
+    }
+
+    btn.addEventListener('pointerdown', function (e) {
+      if (btn.disabled) return;
+      e.preventDefault();
+      down = true;
+      step();
+      hold = setTimeout(function () {
+        if (!down) return;
+        rep = setInterval(function () {
+          if (btn.disabled) { stop(); return; }
+          step();
+        }, 130);
+      }, 420);
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) {
+      btn.addEventListener(ev, stop);
+    });
+    btn.addEventListener('blur', stop);
+    // 有 pointer 事件的环境里首下已经发过了，click 不能再补一下；
+    // 老 WebView 没有 pointerdown 时才走这条
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      if (!('onpointerdown' in window)) step();
+    });
+  }
+
+  /**
+   * 上次读到的值。车机偶尔某一拍读不到温度/风量，
+   * 这时候界面上要沿用上次的数，不能变成一条横杠（看着像坏了）。
+   */
+  function cached(key, dft) {
+    var v = parseInt(localStorage.getItem(key), 10);
+    return (!isNaN(v) && v >= 0) ? v : dft;
+  }
+
+  function remember(key, v) {
+    try { localStorage.setItem(key, String(v)); } catch (e) { }
+  }
+
+  // ---------- 控制 ----------
+
+  // 动作表来自后端 /acts：只列车机助手里真的存在的方法，所以点下去一定有人接
+  function paintActs(d) {
+    capsBox.textContent = '';
+    if (!d || d.ok !== 1) {
+      hintEl.textContent = '';
+      capsBox.appendChild(node('div', 'empty', '动作表拿不到，18766 可能没响应'));
+      return;
+    }
+    var gs = d.groups || [];
+    var total = 0;
+    gs.forEach(function (g) {
+      var items = g.items || [];
+      if (!items.length) return;
+      total += items.length;
+      capsBox.appendChild(node('div', 'capgrp', g.g));
+      var grid = node('div', 'caps');
+      items.forEach(function (it) {
+        var b = node('button', 'cap');
+        b.appendChild(node('span', 'nm', it.t || it.id));
+        b.addEventListener('click', function () { act(it.id, it.t || it.id, it.v); });
+        grid.appendChild(b);
+      });
+      capsBox.appendChild(grid);
+      if (g.g === '空调') {
+        // 风量跟空调一组，就贴在 AUTO / 内外循环 下面
+        capsBox.appendChild(fanBox('f', '前排'));
+        capsBox.appendChild(fanBox('r', '后排'));
+        fanShow();
+      }
+    });
+    hintEl.textContent = total ? (total + ' 项') : '';
+    if (!total) {
+      capsBox.appendChild(node('div', 'empty',
+        '助手未绑定：先在车机上打开一次「桌面助手」，再回来刷新'));
+    }
+  }
+
+  // ---------- 风量 ----------
+  // 车机助手里风量是滑条不是按钮，动作表按方法名筛不出来，所以单独走 /fan
+
+  var fanF = cached('car.fanF', 3);   // 前排档位
+  var fanR = cached('car.fanR', 0);   // 后排档位，0 = 关
+  var fanBusy = false;
+
+  function fanBox(kind, label) {
+    var f = kind === 'f';
+    var row = node('div', 'ctlrow fan');
+    row.dataset.kind = kind;
+
+    var head = node('div', 'ctl-head');
+    head.appendChild(node('span', 'ctl-name', label));
+    var val = node('span', 'ctl-val', '—');
+    head.appendChild(val);
+    row.appendChild(head);
+
+    var body = node('div', 'ctl-body');
+    var minus = node('button', 'fb', '−');
+    var bar = document.createElement('input');
+    bar.type = 'range';
+    bar.min = f ? '1' : '0';
+    bar.max = f ? '7' : '4';
+    bar.step = '1';
+    bar.value = f ? '3' : '0';
+    var plus = node('button', 'fb', '＋');
+    pressRepeat(minus, function () { fanStep(kind, -1); });
+    pressRepeat(plus, function () { fanStep(kind, 1); });
+    // 拖动时只改数字，松手（change）才发命令，不然一次拖拽会甩几十条
+    bar.addEventListener('input', function () { val.textContent = bar.value + ' 档'; });
+    bar.addEventListener('change', function () { fanSet(kind, parseInt(bar.value, 10)); });
+    body.appendChild(minus);
+    body.appendChild(bar);
+    body.appendChild(plus);
+    row.appendChild(body);
+    row._el = { minus: minus, plus: plus, bar: bar, val: val };
+    return row;
+  }
+
+  function fanShow() {
+    var rows = capsBox.querySelectorAll('.ctlrow');
+    for (var i = 0; i < rows.length; i++) {
+      var f = rows[i].dataset.kind === 'f';
+      var el = rows[i]._el;
+      if (!el) continue;
+      var v = f ? fanF : fanR;
+      // 后排 0 就是 0 档，别写成横杠或「关」—— 看着像没读到
+      el.val.textContent = v + ' 档';
+      el.bar.value = String(v);
+      // 读了确定档位就按边界灰化
+      el.minus.disabled = v <= (f ? 1 : 0);
+      el.plus.disabled = v >= (f ? 7 : 4);
+    }
+  }
+
+  function fanStep(kind, d) {
+    var f = kind === 'f';
+    var cur = f ? fanF : fanR;
+    if (cur < 0) cur = f ? 2 : 1;
+    fanSet(kind, cur + d);
+  }
+
+  /* 和温度同一套：界面先走，在途只留最后想去的值，回来补一发。
+     前排后排各记各的，两个滑条同时动也不会互相丢。 */
+  var fanPending = { f: null, r: null };
+
+  function fanSet(kind, v) {
+    var f = kind === 'f';
+    var next = f ? Math.max(1, Math.min(7, v)) : Math.max(0, Math.min(4, v));
+    var cur = f ? fanF : fanR;
+    var slot = f ? 'f' : 'r';
+    if (next === cur && !fanBusy && fanPending[slot] == null) { fanShow(); return; }
+
+    if (f) fanF = next; else fanR = next;   // 先动界面
+    remember(f ? 'car.fanF' : 'car.fanR', next);
+    fanShow();
+
+    if (fanBusy) { fanPending[slot] = next; return; }
+    fanSend(kind, next);
+  }
+
+  function fanSend(kind, next) {
+    var f = kind === 'f';
+    fanBusy = true;
+    var body = {};
+    body[f ? 'v' : 'r'] = next;
+    req('/fan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      fanBusy = false;
+      if (r && r.ok === 1) {
+        if (r.front >= 0) { fanF = r.front; remember('car.fanF', fanF); }
+        if (r.rear >= 0) { fanR = r.rear; remember('car.fanR', fanR); }
+
+        // 还有排队的就接着发，最后一下才是要落地的
+        var nk = fanPending.f != null ? 'f' : (fanPending.r != null ? 'r' : null);
+        if (nk) {
+          var nv = fanPending[nk];
+          fanPending[nk] = null;
+          fanShow();
+          fanSend(nk, nv);
+          return;
+        }
+
+        fanShow();
+        toast('风量 ' + (f ? '前排 ' : '后排 ') + next + ' 档');
+        setStatus('风量 ' + (f ? '前排 ' : '后排 ') + next + ' 档', 'on');
+        delete segCache.log;
+        setTimeout(function () {
+          if (!fanBusy && fanPending.f == null && fanPending.r == null) loadFan();
+        }, 600);
+        setTimeout(loadCards, 600);
+      } else {
+        fanPending.f = fanPending.r = null;
+        toast((r && r.err) ? r.err : '风量没设上');
+        setStatus((r && r.err) ? r.err : '风量设置失败', 'warn');
+        loadFan();
+      }
+    }).catch(function () {
+      fanBusy = false;
+      fanPending.f = fanPending.r = null;
+      toast('连不上桥接服务');
+      setStatus('请求失败', 'off');
+    });
+  }
+
+  function loadFan() {
+    req('/fan').then(function (r) {
+      if (!r || r.ok !== 1) return;
+      if (r.front >= 0) { fanF = r.front; remember('car.fanF', fanF); }
+      if (r.rear >= 0) { fanR = r.rear; remember('car.fanR', fanR); }
+      fanShow();
+    }).catch(function () {});
+  }
+
+  // ---------- 温度 ----------
+  var tempV = cached('car.temp', 24);
+  var tempBusy = false;
+  var TEMP_MIN = 15;
+  var TEMP_MAX = 30;
+
+  function tempBuild() {
+    var box = document.getElementById('temp');
+    if (!box) return;
+    if (box.dataset.built) { tempShow(); return; }   // 已经建过：补画一次
+    box.dataset.built = '1';
+
+    // 温度就一个数，滑条反而要多看一眼：− 数字 ＋，数字居中。
+    var row = node('div', 'ctlrow trow');
+    var minus = node('button', 'fb tfb', '−');
+    var mid = node('div', 'tmid');
+    var val = node('span', 'tnum', '—');
+    mid.appendChild(val);
+    var plus = node('button', 'fb tfb', '＋');
+    pressRepeat(minus, function () { tempStep(-1); });
+    pressRepeat(plus, function () { tempStep(1); });
+    row.appendChild(minus);
+    row.appendChild(mid);
+    row.appendChild(plus);
+    box.appendChild(row);
+    box._el = { minus: minus, plus: plus, val: val };
+    // 建完立刻画一次。以前只在 /temp 回读到 v>=0 时画面才更新，
+    // 引擎刚绑上、总线还没温度时 v=-1，卡片就一直停在「—」，点一下才出数字。
+    tempShow();
+  }
+
+  function tempShow() {
+    var box = document.getElementById('temp');
+    if (!box || !box._el) return;
+    var v = tempV;
+    box._el.val.textContent = (v < 0 ? '—' : v) + '°C';
+    box._el.minus.disabled = v >= 0 && v <= TEMP_MIN;
+    box._el.plus.disabled = v >= 0 && v >= TEMP_MAX;
+  }
+
+  function tempStep(d) {
+    tempSet(Math.max(TEMP_MIN, Math.min(TEMP_MAX, tempV + d)));
+  }
+
+  /* 连点时不要「丢」，也不要「排队发六条」：
+     点下去先把数字走了，在途期间只记住最后想去的那个值，回来再补一发。 */
+  var tempPending = null;
+  var tempBusAt = 0;         // 最近一次拿到总线温度的时间
+
+  function tempSet(v) {
+    var t = Math.max(TEMP_MIN, Math.min(TEMP_MAX, v));
+    tempV = t;               // 先动数：连点六下，数字要跟着走六格
+    remember('car.temp', t);
+    tempShow();
+    if (tempBusy) { tempPending = t; return; }
+    tempSend(t);
+  }
+
+  function tempSend(t) {
+    tempBusy = true;
+    req('/temp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ v: t })
+    }).then(function (r) {
+      tempBusy = false;
+      if (r && r.ok === 1) {
+        tempBusAt = Date.now();
+        if (tempPending != null) {          // 还有没发的，接着发最新那个
+          var n = tempPending;
+          tempPending = null;
+          tempSend(n);
+          return;
+        }
+        tempV = r.v >= 0 ? r.v : t;
+        remember('car.temp', tempV);
+        tempShow();
+        toast('温度 ' + tempV + '°C');
+        setStatus('温度 ' + tempV + '°C', 'on');
+        setTimeout(function () {
+          if (!tempBusy && tempPending == null) loadTemp();
+        }, 800);
+      } else {
+        tempPending = null;
+        toast((r && r.err) ? r.err : '温度没设上');
+        setStatus((r && r.err) ? r.err : '温度设置失败', 'warn');
+        loadTemp();
+      }
+    }).catch(function () {
+      tempBusy = false;
+      tempPending = null;
+      toast('连不上桥接服务');
+      setStatus('请求失败', 'off');
+    });
+  }
+
+  function loadTemp() {
+    // 有下发在途或有待发的，回读只会把刚点的数字拽回去
+    if (tempBusy || tempPending != null) return;
+    req('/temp').then(function (r) {
+      if (!r || r.ok !== 1) return;
+      if (r.v >= 0) {
+        tempV = r.v;
+        tempBusAt = Date.now();
+        remember('car.temp', tempV);
+        tempShow();
+      }
+    }).catch(function () {});
+  }
+
+  /** 温度回读兜底：/temp 断了的时候，用卡片里「主驾温度」那一项把数字填上。
+      /temp 正常时它每 2.5s 就在刷新，卡片那一路不必掺和，免得两个源来回跳。 */
+  function tempFromCards(d) {
+    if (Date.now() - tempBusAt < 8000) return;
+    var cards = (d && d.cards) || [];
+    for (var i = 0; i < cards.length; i++) {
+      var items = cards[i].items || [];
+      for (var j = 0; j < items.length; j++) {
+        var k = items[j].k || '';
+        if (k.indexOf('温度') < 0 || k.indexOf('驾') < 0) continue;
+        var n = parseFloat(String(items[j].v).replace(/[^0-9.]/g, ''));
+        if (n >= 10 && n <= 40) {
+          tempV = Math.round(n);
+          remember('car.temp', tempV);
+          tempShow();
+          return;
+        }
+      }
+    }
+  }
+
+  // ---------- 座椅 ----------
+  // 只有「关 / 3 档」。下发值由后端按原厂语义 data=目标档位+1 一次到位（见 Acts.seat），
+  // 回读只用于点亮和 match 提示，这里不做乐观绘制。
+  var SEAT_GROUPS = [
+    ['heat', '座椅加热', [{ p: 'fl', n: '主驾' }, { p: 'fr', n: '副驾' },
+                          { p: 'rl', n: '左后' }, { p: 'rr', n: '右后' }]],
+    ['vent', '座椅通风', [{ p: 'fl', n: '主驾' }, { p: 'fr', n: '副驾' }]]
+  ];
+  var seatState = {};
+  /* 每个座位的开关各自一条在途：点完主驾马上点副驾，不该被主驾那条挡住。
+     同一个座位在途时又点了，只记最后一个档位，回来补发。 */
+  var seatBusy = {};
+  var seatPending = {};
+
+  function seatBuild() {
+    var box = document.getElementById('seat');
+    if (!box || box.dataset.built) return;
+    box.dataset.built = '1';
+    SEAT_GROUPS.forEach(function (g) {
+      var card = node('div', 'seatcard');
+      card.appendChild(node('div', 'scap', g[1]));
+      g[2].forEach(function (p) {
+        var row = node('div', 'srow');
+        row.appendChild(node('span', 'sname', p.n));
+        var seg = node('div', 'seg seg2');
+        seg.dataset.pos = p.p;
+        seg.dataset.kind = g[0];
+        [0, 3].forEach(function (lv) {
+          var b = node('button', '', lv ? '3 档' : '关');
+          b.dataset.lv = String(lv);
+          b.addEventListener('click', function () { seatSet(p.p, g[0], lv); });
+          seg.appendChild(b);
+        });
+        row.appendChild(seg);
+        card.appendChild(row);
+      });
+      box.appendChild(card);
+    });
+  }
+
+  function seatLevel(pos, kind) {
+    var raw = seatState[kind + '_' + pos];
+    if (!raw) return -1;
+    if (String(raw).indexOf('关') >= 0) return 0;
+    var m = String(raw).match(/(\d+)/);
+    return m ? parseInt(m[1], 10) : -1;
+  }
+
+  /* 只按回读点亮。读不到就空着，绝不先画上去。 */
+  function seatShow() {
+    var segs = document.querySelectorAll('#seat .seg2');
+    for (var i = 0; i < segs.length; i++) {
+      var seg = segs[i];
+      var lv = seatLevel(seg.dataset.pos, seg.dataset.kind);
+      var bs = seg.querySelectorAll('button');
+      for (var j = 0; j < bs.length; j++) {
+        bs[j].className = (lv >= 0 && parseInt(bs[j].dataset.lv, 10) === lv) ? 'on' : '';
+      }
+    }
+  }
+
+  function seatSet(pos, kind, lv) {
+    var key = pos + ':' + kind;
+    if (seatBusy[key]) { seatPending[key] = lv; return; }
+    seatSend(pos, kind, lv, key);
+  }
+
+  function seatSend(pos, kind, lv, key) {
+    seatBusy[key] = true;
+    req('/seat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p: pos, k: kind, lv: lv })
+    }).then(function (r) {
+      seatBusy[key] = false;
+      if (r && r.ok === 1) {
+        if (r.seats) { seatState = r.seats; seatShow(); }
+        if (seatPending[key] != null) {      // 这一个在途时又点过，补发最新那个
+          var n = seatPending[key];
+          delete seatPending[key];
+          seatSend(pos, kind, n, key);
+          return;
+        }
+        if (r.match === 0) toast('车机没到这个档位');
+        else toast(lv ? '已到 3 档' : '已关');
+      } else {
+        delete seatPending[key];
+        toast((r && r.err) ? r.err : '座椅没响应');
+      }
+      setTimeout(loadSeat, 600);
+      setTimeout(loadSeat, 1800);
+    }).catch(function () {
+      seatBusy[key] = false;
+      delete seatPending[key];
+      toast('连不上桥接服务');
+    });
+  }
+
+  function loadSeat() {
+    req('/seat').then(function (r) {
+      if (!r || r.ok !== 1 || !r.seats) return;
+      seatState = r.seats;
+      seatShow();
+    }).catch(function () {});
+  }
+
+  // ---------- 内置播报音量 ----------
+  // 写原厂 navi_tool_prefs/log_media_volume（0-50），网页按 0-100 显示。
+  var volRange = document.getElementById('volRange');
+  var volVal = document.getElementById('volVal');
+  function paintVolume(v) {
+    if (volRange) volRange.value = v;
+    if (volVal) volVal.textContent = v;
+  }
+  function loadVolume() {
+    req('/volume').then(function (d) {
+      if (d && d.ok === 1) paintVolume(d.volume);
+    }).catch(function () {});
+  }
+  if (volRange) {
+    volRange.addEventListener('input', function () {
+      paintVolume(volRange.value);
+    });
+    volRange.addEventListener('change', function () {
+      var v = parseInt(volRange.value, 10);
+      req('/volume', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ v: v })
+      }).then(function (d) {
+        if (d && d.ok === 1) paintVolume(d.volume);
+        toast('播报音量 ' + v);
+      }).catch(function () { toast('音量设置失败'); });
+    });
+  }
+
+  function act(id, name, v) {
+    if (busy) return;
+    busy = true;
+    setStatus('执行：' + name, 'warn');
+    var t0 = Date.now();
+    req('/act', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ a: id, v: (v == null ? -1 : v) })
+    }).then(function (r) {
+      busy = false;
+      var ms = Date.now() - t0;
+      if (r && r.ok === 1) {
+        lastOp = name + ' · 成功 · ' + ms + 'ms';
+        toast(name + ' 已执行');
+        setStatus('已执行：' + name, 'on');
+      } else {
+        lastOp = name + ' · 失败' + (r && r.err ? '：' + r.err : '') + ' · ' + ms + 'ms';
+        toast(name + ' 没执行成功');
+        setStatus((r && r.err) ? r.err : '执行失败', 'warn');
+        if (r && r.err) showLog([r.err]);
+      }
+      delete segCache.log;      // 记录变了，下次进「操作记录」重新取
+      setTimeout(loadCards, 600);
+    }).catch(function () {
+      busy = false;
+      lastOp = name + ' · 请求失败';
+      toast('连不上桥接服务');
+      setStatus('请求失败', 'off');
+    });
+  }
+
+  function showLog(lines) {
+    if (!lines || !lines.length) return;
+    logEl.classList.remove('hidden');
+    logEl.textContent = lines.slice(-8).join('\n');
+  }
+
+  // ---------- 数据 ----------
+
+  function loadCards() {
+    if (inflight) return;
+    inflight = true;
+    req('/cards').then(function (d) {
+      inflight = false;
+      // 卡片不再画（用户要求去掉），但 /cards 仍要请求：温度回读兜底靠它，连接状态也靠它。
+      tempFromCards(d);
+      setStatus(d && d.ok === 1 ? '已连接 · 车机助手' : '车机助手未就绪', d && d.ok === 1 ? 'on' : 'warn');
+      if (d && d.log) showLog(d.log);
+    }).catch(function () {
+      inflight = false;
+      setStatus('连不上车机助手', 'off');
+    });
+  }
+
+  function loadActs() {
+    req('/acts').then(function (d) {
+      paintActs(d);
+    }).catch(function () { paintActs(null); });
+  }
+
+  function refreshAll() {
+    tempBuild();
+    seatBuild();
+    loadCards();
+    loadActs();
+    loadFan();
+    loadTemp();
+    loadSeat();
+    loadVolume();
+  }
+
+  // 设置面板和端口切换都搬到外壳里了（web/_shell.*），这一页只管车控本身。
+  var segCache = {};        // 发完命令后代码里会 delete segCache.log，留个空壳
+
+  /* 从后台回来要整页对一次：锁屏前看到的是那一刻的车况，
+     中间车机上有人动过空调，只刷卡片的话温度/风量/座椅全是旧的。 */
+  var wokeAt = 0;
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) return;
+    var now = Date.now();
+    if (now - wokeAt < 800) return;   // iOS 偶尔连发两次
+    wokeAt = now;
+    refreshAll();
+  });
+
+  refreshAll();
+  // 卡片每 2.5s 一拍；温度单独取一次 —— 卡片里的温度只是兜底，
+  // 总线值要自己刷，不然界面会停在离开时那个数。
+  setInterval(function () {
+    if (document.hidden) return;
+    loadCards();
+    loadTemp();
+  }, POLL_MS);
+})();
+</script>
+<!--@shell:script-->
+<script>
+/* ==========================================================================
+   统一外壳（车机助手 18766 / 网易云车机版 18765 / 桥接包 18764 共用同一份）
+   - 顶上一条状态行 + 一行中文切换「车机控制 / 音乐控制 / 行车记录仪」
+   - 从 18766 进来是统一入口：三路全在本机，音乐/记录仪由网关转发，地址只记 18766
+   - 从 18765 / 18764 进来是老入口：本端自带的音乐 + iframe 车控 / 记录仪，tab 与网关入口完全一致
+   - 对端用 iframe 贴进来，不跳转、不闪
+   ========================================================================== */
+(function () {
+  'use strict';
+
+  var D = document.documentElement;
+  if (D.className.indexOf('pane') >= 0) return;   // 内容页：外壳不参与
+
+  var HOST = location.hostname || '127.0.0.1';
+  var CAR_PORT = 18766;
+  var DVR_PORT = 18767;
+  var MUSIC_PORTS = [18765, 18764];
+  var K_TAB = 'jb.tab';
+  var K_MUS = 'jb.musPort';
+
+  var CAR_BASE = 'http://' + HOST + ':' + CAR_PORT;
+  // 拼接时写进来的构建号：并进 iframe 地址，页面一改 URL 就变，
+  // 装新包后不用手动清缓存也一定拿到新页面；同一个包重复打开仍走缓存。
+  var BUILD = 'b28eb7ea';
+  // 哪个端口发下来的页，就自带哪一路，不用 iframe 套自己
+  var NATIVE = String(location.port) === String(CAR_PORT) ? 'car' : 'music';
+  // 统一入口：从 18766 进来，三路都走本机 + 网关转发，地址只有一个
+  var GATEWAY = NATIVE === 'car';
+
+  var el = {};
+  ['shellRoot', 'sBar', 'sDot', 'sTxt', 'sSet', 'sReload', 'sTabCar', 'sTabMusic',
+   'sTabDvr', 'sDotCar', 'sDotMusic', 'sDotDvr', 'sPane', 'sFrame', 'sFail',
+   'sFailT', 'sFailS', 'sFailGo',
+   'sMask', 'sSheet', 'sClose', 'sKv', 'sSegs', 'sGen', 'sCopy', 'sSave', 'sTxt2',
+   'sTip', 'sDump', 'sRec', 'sClear'
+  ].forEach(function (id) { el[id] = document.getElementById(id); });
+
+  var stored = localStorage.getItem(K_TAB);
+  var tab = stored === 'car' || stored === 'music' || stored === 'dvr' ? stored : 'music';
+  var musPort = parseInt(localStorage.getItem(K_MUS) || '0', 10) || 0;
+  var carOk = null;      // null 还没探到 / true / false
+  var musOk = null;
+  // 记录仪只在用户点「连接」后才连，外壳绝不主动碰 18767。
+  // 这里的状态由记录仪页 iframe 用 postMessage 报上来（on/off），null = 这一页还没说话。
+  var dvrOk = null;
+
+  // ---------- 状态行 ----------
+
+  function setStatus(text, kind) {
+    el.sTxt.textContent = text;
+    el.sDot.className = 'sdot' + (kind ? ' ' + kind : '');
+  }
+
+  function paintDots() {
+    el.sDotCar.className = 'sn' + (carOk === true ? ' on' : (carOk === false ? ' off' : ''));
+    el.sDotMusic.className = 'sn' + (musOk === true ? ' on' : (musOk === false ? ' off' : ''));
+    if (el.sDotDvr) el.sDotDvr.className = 'sn'
+      + (dvrOk === true ? ' on' : (dvrOk === false ? ' off' : ''));
+  }
+
+  function paintStatus() {
+    if (tab === 'car') {
+      if (carOk === null) setStatus('正在连接车机助手…');
+      else if (carOk) setStatus('已连接 · 车机助手', 'on');
+      else setStatus('车机助手未就绪 · 到车机上打开一次桌面助手', 'warn');
+    } else if (tab === 'dvr') {
+      if (dvrOk === null) setStatus('记录仪未连接 · 点「连接」手动读取');
+      else if (dvrOk) setStatus('记录仪已连接 · 18767', 'on');
+      else setStatus('记录仪已断开', 'warn');
+    } else {
+      if (musOk === null) setStatus('正在找音乐端…');
+      else if (musOk) setStatus(GATEWAY ? '音乐端在跑' : '音乐端在跑 · ' + musPort, 'on');
+      else setStatus('音乐端没响应 · 打开汽水音乐或桥接包', 'warn');
+    }
+  }
+
+  // ---------- 探活 ----------
+
+  function withTimeout(ms) {
+    var ctl = window.AbortController ? new AbortController() : null;
+    var o = { cache: 'no-store' };
+    if (ctl) { o.signal = ctl.signal; setTimeout(function () { ctl.abort(); }, ms); }
+    return o;
+  }
+
+  function probeCar(cb) {
+    var done = false;
+    var t = setTimeout(function () { if (!done) { done = true; carOk = false; cb(false); } }, 2500);
+    fetch(CAR_BASE + '/ping?_=' + Date.now(), withTimeout(2500))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (done) return; done = true; clearTimeout(t);
+        carOk = !!(d && d.ok === 1); cb(carOk);
+      })
+      .catch(function () {
+        if (done) return; done = true; clearTimeout(t);
+        carOk = false; cb(false);
+      });
+  }
+
+  /* no-cors 只关心「连不连得上」：音乐端可能是别人的页，没有 /ping 也无所谓 */
+  function probeOne(port, cb) {
+    var done = false;
+    var t = setTimeout(function () { if (!done) { done = true; cb(false); } }, 1400);
+    fetch('http://' + HOST + ':' + port + '/?_=' + Date.now(),
+          { mode: 'no-cors', cache: 'no-store' })
+      .then(function () { if (done) return; done = true; clearTimeout(t); cb(true); })
+      .catch(function () { if (done) return; done = true; clearTimeout(t); cb(false); });
+  }
+
+  /* 记录仪不探。18767 只在用户自己点开这一页、并且点了「连接」之后才有流量：
+     外壳不做任何后台探测/预连接，避免用户明明断了还被后台重新连上。 */
+
+  function probeMusic(cb) {
+    if (GATEWAY) { probeGateway(cb); return; }
+    var order = [];
+    // 自己就是音乐服务端时，先认自己 —— 18764 的页不该报成 18765
+    if (NATIVE === 'music' && location.port) order.push(location.port);
+    if (musPort) order.push(musPort);
+    MUSIC_PORTS.forEach(function (p) { if (order.indexOf(p) < 0) order.push(p); });
+    var i = 0;
+    (function step() {
+      if (i >= order.length) {
+        musOk = false; musPort = 0;
+        localStorage.removeItem(K_MUS);
+        cb(false);
+        return;
+      }
+      var p = order[i++];
+      probeOne(p, function (ok) {
+        if (!ok) { step(); return; }
+        musOk = true; musPort = p;
+        localStorage.setItem(K_MUS, String(p));
+        cb(true);
+      });
+    })();
+  }
+
+  /* 统一入口：问网关音乐后端在哪个端口。记录仪不在这里问 —— 网关一旦顺手探 18767，
+     用户在记录仪页点过「断开」之后又会被后台连上，那正是要避免的。 */
+  function probeGateway(cb) {
+    fetch('/gateway?_=' + Date.now(), withTimeout(2500))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        musOk = !!(d && d.music);
+        musPort = d && d.music ? d.music : 0;
+        if (cb) cb(musOk);
+        paintDots();
+      })
+      .catch(function () {
+        musOk = false;
+        if (cb) cb(false);
+        paintDots();
+      });
+  }
+
+  // ---------- 切换 ----------
+
+  function paneTop() {
+    if (!el.sPane) return;
+    var r = el.shellRoot ? el.shellRoot.getBoundingClientRect() : null;
+    el.sPane.style.top = Math.max(0, Math.round(r ? r.bottom + 1 : 0)) + 'px';
+    // 状态行固定在底部，内容区要按它的实际高度让位（含安全区）
+    if (el.sBar) D.style.setProperty('--sbar-h', el.sBar.offsetHeight + 'px');
+  }
+
+  function paneUrl(t) {
+    // 音乐直连音乐端自己的端口，不走 /music 反代。
+    // 反代能取到页面，但 WebSocket 会被网关接管：实测车上表现为
+    // 「握手成功 → 立刻断开 → 两秒后重连」，一直是「与车机断开连接」。
+    // 直连 18765/18764 是验证过正常的那条路，WS 不经过任何中转。
+    if (GATEWAY) {
+      if (t === 'music') {
+        var mp = musPort || MUSIC_PORTS[0];
+        return 'http://' + HOST + ':' + mp + '/?pane=music';
+      }
+      if (t === 'dvr') return '/dvr?pane=dvr';
+      return '/?pane=car';
+    }
+    // 从 18765 / 18764 进来：三路都用绝对地址，端口各归各的，tab 表现和网关入口一致
+    if (t === 'car') return CAR_BASE + '/?pane=car';
+    if (t === 'dvr') return 'http://' + HOST + ':' + DVR_PORT + '/dvr?pane=dvr';
+    return musPort ? 'http://' + HOST + ':' + musPort + '/?pane=music' : '';
+  }
+
+  function showFail(t) {
+    el.sFailT.textContent = t === 'car' ? '车机助手没响应'
+      : (t === 'dvr' ? '行车记录仪没响应' : '音乐端没响应');
+    el.sFailS.innerHTML = t === 'car'
+      ? '到车机上确认「车机助手」在跑（18766），<br>再点右上角的刷新。'
+      : (t === 'dvr'
+        ? '确认车机上的桥接包在跑（记录仪服务 18767），<br>再点右上角的刷新。'
+        : '车上跑的是第三方播放器就打开它（18765），<br>跑的是官方网易云就开桥接包（18764）。');
+    el.sFail.className = 'sfail on';
+  }
+
+  function hideFail() { el.sFail.className = 'sfail'; }
+
+  /* 两条路的宽度不一样（车控宽屏是两列、音乐是单列），
+     外壳跟着当前这一路走，顶栏才跟下面的内容对得齐。 */
+  function fitWidth(t) {
+    var cs = getComputedStyle(D);
+    var key = t === 'car' ? '--w-car' : (t === 'dvr' ? '--w-dvr' : '--w-music');
+    var v = cs.getPropertyValue(key).trim();
+    D.style.setProperty('--shell-w', v || '560px');
+  }
+
+  function apply(t, silent) {
+    tab = t;
+    localStorage.setItem(K_TAB, t);
+    fitWidth(t);
+    el.sTabCar.className = 'stab' + (t === 'car' ? ' on' : '');
+    el.sTabMusic.className = 'stab' + (t === 'music' ? ' on' : '');
+    if (el.sTabDvr) el.sTabDvr.className = 'stab' + (t === 'dvr' ? ' on' : '');
+
+    if (t === NATIVE) {
+      D.classList.remove('foreign');
+      el.sPane.className = 'spane';
+      el.sPane.style.top = '';
+      hideFail();
+    } else {
+      D.classList.add('foreign');
+      var url = paneUrl(t);
+      // 已经确认这一路没在跑：别贴一个白框，直接给失败提示（和音乐那一路一致）。
+      // 记录仪不参与判断 —— 它没连是常态，页面自己会摆「点连接」。
+      var dead = (t === 'music' && GATEWAY && musOk === false);
+      if (!url || dead) {
+        // 清掉旧 src：等这一路恢复时可以重新拉一次，不会停在空白框上
+        if (el.sFrame.getAttribute('src')) el.sFrame.removeAttribute('src');
+        el.sPane.className = 'spane on';
+        paneTop();
+        showFail(t);
+      } else {
+        if (el.sFrame.getAttribute('src') !== url) el.sFrame.setAttribute('src', url);
+        el.sPane.className = 'spane on';
+        hideFail();
+        paneTop();
+      }
+    }
+    paintStatus();
+    if (!silent) closeSheet();
+  }
+
+  el.sTabCar.addEventListener('click', function () { apply('car'); });
+  el.sTabMusic.addEventListener('click', function () {
+    if (musOk === false) {
+      apply('music');            // 先把失败提示摆出来，别点了像没反应
+      probeMusic(function (ok) {
+        paintDots();
+        if (ok) apply('music');
+        else paintStatus();
+      });
+      return;
+    }
+    apply('music');
+  });
+  if (el.sTabDvr) el.sTabDvr.addEventListener('click', function () {
+    // 记录仪只贴页面，不探端口、不预连接：连不连由页面上的「连接 / 断开」说了算
+    apply('dvr');
+  });
+
+  el.sFailGo.addEventListener('click', function () { apply('car'); });
+
+  el.sReload.addEventListener('click', function () { location.reload(); });
+
+  /* 记录仪页自己报状态：只有它在页面上真的点了「连接」拿到数据，或者点了「断开」，
+     才把点亮成绿/灰。外壳全程不碰 18767，用户断开后就一直是断开。 */
+  window.addEventListener('message', function (ev) {
+    var d = ev.data;
+    if (!d || d.src !== 'dvr' || typeof d.connected !== 'boolean') return;
+    dvrOk = d.connected;
+    paintDots();
+    if (tab === 'dvr') paintStatus();
+  });
+
+  // ---------- 设置 / 诊断（数据永远取 18766） ----------
+
+  var SEGS = {
+    diag: { url: '/diag', dl: '/diag.txt', file: '车机诊断', slow: 18000,
+      tip: '端口、引擎绑定、安装包版本、动作项数、进程日志和 logcat 摘要。' },
+    log: { url: '/acts.log', dl: '/acts.log.txt', file: '操作记录', slow: 6000,
+      tip: '每次点按钮的结果和耗时，最新的在最上面。' },
+    cards: { url: '/cards.txt', dl: '/cards.txt', file: '车况快照', slow: 6000,
+      tip: '每张卡、每一项的名字和值。' },
+    acts: { url: '/acts.txt', dl: '/acts.txt', file: '动作表', slow: 6000,
+      tip: '当前能执行的项和方法名。' }
+  };
+  var curSeg = 'diag';
+  var segCache = {};
+  var segBusy = false;
+
+  function openSheet() {
+    el.sSheet.className = 'ssheet show';
+    el.sMask.className = 'smask show';
+    el.sKv.textContent = '读取中…';
+    fetch(CAR_BASE + '/ping?_=' + Date.now(), withTimeout(3500))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || d.ok !== 1) { el.sKv.textContent = '18766 没响应'; return; }
+        el.sKv.textContent = '车控　' + CAR_BASE + '\n'
+          + '音乐　' + (musPort ? ('http://' + HOST + ':' + musPort) : '未探到') + '\n'
+          + '记录仪　' + (dvrOk ? ('http://' + HOST + ':' + DVR_PORT) : '未连接（手动）') + '\n'
+          + '服务　端口 ' + d.port + (d.bound ? ' 已绑定' : ' 未绑定') + ' · 接口 v' + d.v + '\n'
+          + '引擎　' + (d.helper ? '已绑定' : '未绑定 ← 打开一次桌面助手')
+          + ' · 界面 ' + (d.activity ? '已出现' : '未出现') + '\n'
+          + '操作　' + (d.ops == null ? 0 : d.ops) + ' 次调用'
+          + (d.opsFail ? ' · 失败 ' + d.opsFail : '')
+          + (d.err ? '\n错误　' + d.err : '');
+      })
+      .catch(function () { el.sKv.textContent = '连不上 18766，诊断也取不到。'; });
+    refreshRec();
+    pickSeg(curSeg);
+  }
+
+  function closeSheet() {
+    el.sSheet.className = 'ssheet';
+    el.sMask.className = 'smask';
+  }
+
+  function pickSeg(seg) {
+    if (!SEGS[seg]) return;
+    curSeg = seg;
+    Array.prototype.forEach.call(el.sSegs.children, function (b) {
+      b.classList.toggle('on', b.getAttribute('data-seg') === seg);
+    });
+    el.sTip.textContent = SEGS[seg].tip;
+    el.sTxt2.textContent = segCache[seg] || ('点「生成」取' + SEGS[seg].file + '。');
+    el.sTxt2.scrollTop = 0;
+    if (!segCache[seg] && !segBusy) loadSeg();
+  }
+
+  function loadSeg() {
+    if (segBusy) return;
+    var seg = curSeg;
+    var cfg = SEGS[seg];
+    segBusy = true;
+    el.sTxt2.textContent = '读取中…';
+    fetch(CAR_BASE + cfg.url + '?_=' + Date.now(), withTimeout(cfg.slow))
+      .then(function (r) { return r.text(); })
+      .then(function (t) {
+        segBusy = false; segCache[seg] = t;
+        if (curSeg === seg) { el.sTxt2.textContent = t; el.sTxt2.scrollTop = 0; }
+      })
+      .catch(function () {
+        segBusy = false;
+        if (curSeg === seg) {
+          el.sTxt2.textContent = '取不到：18766 没响应。\n'
+            + '浏览器里直接打开 ' + CAR_BASE + cfg.url + ' 看看。';
+        }
+      });
+  }
+
+  function toast(text) {
+    var t = document.getElementById('stoast');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'stoast';
+      t.style.cssText = 'position:fixed;left:50%;bottom:34px;transform:translate(-50%,10px);'
+        + 'max-width:80%;padding:10px 18px;border-radius:999px;z-index:200;'
+        + 'background:rgba(28,28,30,.96);border:1px solid rgba(255,255,255,.12);'
+        + 'font-size:13px;color:#fff;opacity:0;pointer-events:none;'
+        + 'transition:opacity .18s,transform .18s;font-family:inherit';
+      document.body.appendChild(t);
+    }
+    t.textContent = text;
+    t.style.opacity = '1';
+    t.style.transform = 'translate(-50%,0)';
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () {
+      t.style.opacity = '0';
+      t.style.transform = 'translate(-50%,10px)';
+    }, 1600);
+  }
+
+  function copyText(text) {
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;left:-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      toast(ok ? '已复制' : '复制被拦，长按文本全选');
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { toast('已复制'); }, fallback);
+    } else {
+      fallback();
+    }
+  }
+
+  function stamp() {
+    var d = new Date();
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate())
+      + '-' + p(d.getHours()) + p(d.getMinutes());
+  }
+
+  function saveText(text, name) {
+    try {
+      var blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () {
+        if (a.parentNode) a.parentNode.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 1500);
+      toast('已保存 ' + name);
+    } catch (e) {
+      toast('下载不支持，长按文本复制');
+    }
+  }
+
+  el.sSet.addEventListener('click', openSheet);
+  el.sClose.addEventListener('click', closeSheet);
+  el.sMask.addEventListener('click', closeSheet);
+  el.sSegs.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('.sstab') : null;
+    if (b) pickSeg(b.getAttribute('data-seg'));
+  });
+  el.sGen.addEventListener('click', loadSeg);
+  el.sCopy.addEventListener('click', function () {
+    if (!segCache[curSeg]) { toast('先点「生成」'); return; }
+    copyText(segCache[curSeg]);
+  });
+  el.sSave.addEventListener('click', function () {
+    if (!segCache[curSeg]) { toast('先点「生成」'); return; }
+    var name = SEGS[curSeg].file + '_' + stamp() + '.txt';
+    // 优先走 App 的存盘接口：WebView 里既没有下载器，Blob 也常常存成没后缀的文件
+    var N = window.CarRemoteNative;
+    if (N && typeof N.saveText === 'function') {
+      try {
+        if (N.saveText(name, segCache[curSeg]) !== false) {
+          toast('已存到手机下载目录：' + name);
+          return;
+        }
+      } catch (e) { /* 退回服务器下载 */ }
+    }
+    // 服务器直出 txt（Content-Disposition + UTF-8），浏览器会存成正经的 .txt
+    toast('开始下载 ' + name);
+    try { location.href = SEGS[curSeg].dl || SEGS[curSeg].url; }
+    catch (e) { saveText(segCache[curSeg], name); }
+  });
+  el.sDump.addEventListener('click', function () {
+    var name = '车机全量_' + stamp() + '.txt';
+    toast('正在打包…');
+    fetch(CAR_BASE + '/dump?_=' + Date.now(), withTimeout(25000))
+      .then(function (r) { return r.text(); })
+      .then(function (t) {
+        var N = window.CarRemoteNative;
+        if (N && typeof N.saveText === 'function') {
+          try {
+            if (N.saveText(name, t) !== false) {
+              toast('已存到手机下载目录：' + name);
+              return;
+            }
+          } catch (e) { /* 退回服务器下载 */ }
+        }
+        location.href = '/dump.txt';
+      })
+      .catch(function () { toast('打包失败，先试单个「下载」'); });
+  });
+
+  /* 日志开关：停止之后 18766 不再往缓冲里写新行，已有的留着，
+     正好把出问题那一段钉住，不会被后面的正常日志冲掉。 */
+  function paintRec(on, lines) {
+    if (!el.sRec) return;
+    el.sRec.textContent = on ? '停止记录' : '开始记录';
+    if (typeof lines === 'number') el.sRec.setAttribute('data-lines', String(lines));
+  }
+
+  function refreshRec() {
+    fetch(CAR_BASE + '/log/rec?_=' + Date.now(), withTimeout(3000))
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (d && d.ok === 1) paintRec(d.rec === 1, d.lines); })
+      .catch(function () { if (el.sRec) el.sRec.textContent = '记录开关'; });
+  }
+
+  el.sRec.addEventListener('click', function () {
+    var turnOn = el.sRec.textContent.indexOf('停止') >= 0 ? false : true;
+    fetch(CAR_BASE + '/log/rec?on=' + (turnOn ? 1 : 0) + '&_=' + Date.now(),
+          withTimeout(3000))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || d.ok !== 1) { toast('开关失败'); return; }
+        paintRec(d.rec === 1, d.lines);
+        toast(d.rec === 1 ? '开始记录' : '已停止记录，现场保留 ' + d.lines + ' 行');
+      })
+      .catch(function () { toast('连不上 18766'); });
+  });
+  el.sClear.addEventListener('click', function () {
+    fetch(CAR_BASE + '/log/clear', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (r && r.ok === 1) { delete segCache.log; toast('操作记录已清空'); }
+        else toast('清空失败');
+      })
+      .catch(function () { toast('连不上桥接服务'); });
+  });
+
+  // ---------- 起 ----------
+
+  window.addEventListener('resize', paneTop);
+
+  apply(tab, true);
+  D.classList.add('ready');
+  paneTop();
+
+  probeCar(function () {
+    paintDots();
+    paintStatus();
+    // 记录仪不探：它连不连由记录仪页面上的按钮决定，外壳不代为连接
+    // 第一次进来默认落音乐；音乐端没有就退回车控，别让人对着空框
+    if (tab === 'music' && !stored) {
+      probeMusic(function (ok) {
+        paintDots();
+        if (!ok) apply('car');
+        else apply('music', true);   // 探到了就把框补上，别停在「没响应」上
+      });
+      return;
+    }
+    probeMusic(function (ok) {
+      paintDots();
+      paintStatus();
+      // 开局那次 apply 可能还没探到端口，补一次
+      if (ok && tab !== NATIVE) apply(tab, true);
+    });
+  });
+
+  setInterval(function () {
+    if (document.hidden) return;
+    probeCar(function () { paintDots(); paintStatus(); });
+    if (GATEWAY) probeGateway();   // 统一入口：只问音乐后端在哪个端口
+    // 老入口的音乐页自己探自己的端口；记录仪两路都不探
+  }, 15000);
+})();
+
+</script>
+<!--@/shell:script-->
+</body>
+</html>

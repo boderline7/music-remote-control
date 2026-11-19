@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#0b0b0d">
+<title>行车记录仪</title>
+<style>
+  :root{
+    --fg:#fff;--dim:rgba(255,255,255,.6);--faint:rgba(255,255,255,.34);
+    --line:rgba(255,255,255,.12);--card:rgba(255,255,255,.06);--red:#fa2d48;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;min-height:100%;background:#0b0b0d;color:var(--fg);
+    font:14px/1.5 -apple-system,'PingFang SC','Microsoft YaHei',sans-serif}
+  body{max-width:620px;margin:0 auto;padding:0 0 32px}
+  .top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;
+    padding:14px 16px;background:rgba(11,11,13,.94);border-bottom:1px solid var(--line)}
+  .back{flex:none;width:38px;height:38px;border-radius:11px;border:1px solid var(--line);
+    background:var(--card);color:var(--fg);font-size:22px;line-height:1}
+  .back:active{background:rgba(250,45,72,.28)}
+  .ttl{flex:1;font-size:16px;font-weight:600}
+  .ip{font-size:11px;color:var(--faint);font-family:ui-monospace,Consolas,monospace}
+  .bar{display:flex;gap:8px;padding:12px 16px 0}
+  .btn{flex:1;height:42px;border-radius:11px;border:1px solid var(--line);
+    background:var(--card);color:var(--fg);font-size:13.5px}
+  .btn:active{background:rgba(250,45,72,.28);border-color:rgba(250,45,72,.5)}
+  .btn.primary{background:rgba(250,45,72,.2);border-color:rgba(250,45,72,.45)}
+  .st{padding:9px 18px 0;font-size:12px;color:var(--faint);min-height:16px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sec{display:flex;align-items:baseline;gap:8px;padding:16px 18px 6px}
+  .sec h2{margin:0;font-size:15px;font-weight:600;flex:none}
+  .sec .dir{flex:1;min-width:0;font-size:11px;color:var(--faint);
+    font-family:ui-monospace,Consolas,monospace;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;cursor:pointer}
+  .sec .cnt{flex:none;font-size:12px;color:var(--dim)}
+  .list{padding:0 10px}
+  .row{display:flex;align-items:center;gap:10px;padding:11px 8px;width:100%;
+    border:0;background:none;color:var(--fg);text-align:left;border-radius:10px}
+  .row+.row{border-top:1px solid rgba(255,255,255,.07)}
+  .row:active{background:rgba(255,255,255,.05)}
+  .li{flex:1;min-width:0;display:block}
+  .t{display:block;font-size:14px;font-variant-numeric:tabular-nums;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .f{display:block;margin-top:2px;font-size:11.5px;color:var(--faint);overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .dl{flex:none;font-size:12px;color:var(--faint);padding-right:2px}
+  .fold .ic{flex:none;width:18px;text-align:center;font-size:13px;color:#f0b429}
+  .nav{padding:0 18px 4px}
+  .up{height:30px;padding:0 12px;border-radius:8px;border:1px solid var(--line);
+    background:rgba(255,255,255,.05);color:var(--dim);font-size:12px}
+  .up:active{background:rgba(250,45,72,.3);color:#fff}
+  .more{margin:6px 18px 0;width:calc(100% - 36px);height:38px;border-radius:10px;
+    border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--dim);font-size:13px}
+  .more:active{background:rgba(250,45,72,.25);color:#fff}
+  .empty{margin:8px 16px 0;padding:16px 14px;border:1px dashed var(--line);border-radius:12px;
+    color:var(--dim);font-size:13px;line-height:1.7;text-align:center}
+  .empty .raw{display:block;margin-top:6px;font-size:10.5px;color:var(--faint);
+    font-family:ui-monospace,Consolas,monospace;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap}
+  .fsbox{margin:8px 12px 0;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .fsbox iframe{display:block;width:100%;height:52vh;border:0;background:#0b0b0d}
+  .hint{padding:8px 18px 0;font-size:11px;color:var(--faint)}
+  #toast{position:fixed;left:50%;bottom:32px;transform:translateX(-50%);
+    background:rgba(0,0,0,.86);border:1px solid var(--line);color:#fff;
+    padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;
+    transition:opacity .2s;z-index:20}
+  #toast.on{opacity:1}
+</style>
+<script>
+/* 被统一外壳用 iframe 嵌入时（?pane=dvr）收掉自己的顶栏，否则两层头。
+   独立打开（不带 pane）行为完全不变。 */
+if (/[?&]pane=dvr(&|$)/.test(location.search)) {
+  document.documentElement.className += ' pane';
+}
+</script>
+<style>
+html.pane .top{display:none}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <button class="back" id="back" aria-label="返回">‹</button>
+  <div class="ttl">行车记录仪</div>
+  <div class="ip" id="ip">—</div>
+</div>
+
+<div class="bar">
+  <button class="btn primary" id="connect">连接</button>
+  <button class="btn" id="disconnect">断开</button>
+  <button class="btn" id="setip">指定 IP</button>
+</div>
+<div class="st" id="st">未连接</div>
+
+<div id="root"><div class="empty">点「连接」读取记录仪录像。</div></div>
+<div id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+  function el(id) { return document.getElementById(id); }
+  var root = el('root'), st = el('st');
+  var curIp = '';
+  var seq = 0;                                    // 连接序号：断开后旧请求的结果直接丢
+
+  var TITLE = { normal: '普通录像', event: '事件录像' };
+  var DEF = { normal: '/SD0/NOR/M_video/', event: '/SD0/EVT/M_video/' };
+  var opened = { normal: false, event: false };    // 「更多」是否展开
+  var state = { normal: null, event: null };       // 最近一次返回：展开/收起时本地重绘，不重发请求
+
+  function toast(t) {
+    var e = el('toast');
+    e.textContent = t; e.className = 'on';
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { e.className = ''; }, 1500);
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function setStatus(t) { st.textContent = t; }
+
+  /* 把「连上了 / 断开了」报给外壳，外壳只靠这条消息点亮状态点，
+     自己绝不去探 18767 —— 用户点了断开之后就该一直是断开。 */
+  function notify(on) {
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ src: 'dvr', connected: !!on }, '*');
+      }
+    } catch (e) {}
+  }
+
+  function fmtSize(s) {
+    var v = parseInt(s, 10);
+    if (!isFinite(v) || v <= 0) return '';
+    if (v >= 1073741824) return (Math.round(v / 10737418.24) / 100) + ' GB';
+    return (Math.round(v / 104857.6) / 10) + ' MB';
+  }
+
+  /* 后端单边可能要等记录仪 9 秒×2 协议，前端必须自带超时，
+     否则弱设备不应答时页面会一直转，看不到「重试/失败」。 */
+  function api(p, ms) {
+    var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, ms || 26000) : null;
+    var opt = { cache: 'no-store' };
+    if (ctrl) opt.signal = ctrl.signal;
+    return fetch(p, opt).then(
+      function (r) { if (timer) clearTimeout(timer); return r.json(); },
+      function (e) {
+        if (timer) clearTimeout(timer);
+        throw new Error((e && e.name === 'AbortError') ? '读取超时' : ((e && e.message) || e));
+      }
+    );
+  }
+
+  /* 点一行就是下载：不做预览、不做播放器 */
+  function download(dir, f) {
+    var a = document.createElement('a');
+    a.href = '/dvr/file?p=' + encodeURIComponent(dir + f) + '&dl=1';
+    a.download = f;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    toast('开始下载 ' + f);
+  }
+
+  /* 解析不出列表时，把记录仪自己的目录页代理进来 */
+  function frame(dir) {
+    if (!dir) return '';
+    return '<div class="hint">↓ 记录仪自己的文件列表（原样转出来的）</div>' +
+      '<div class="fsbox"><iframe src="/dvr/fs?p=' + encodeURIComponent(dir) +
+      '" loading="lazy"></iframe></div>';
+  }
+
+  /* 一段：标题 + 目录 + 文件夹 + 文件（默认只给最新 5 个） */
+  function paint(type) {
+    var sec = el('sec-' + type);
+    if (!sec) return;
+    var d = state[type];
+    var dir = (d && d.path) || DEF[type];
+    var list = (d && d.list) || [];
+    var dirs = (d && d.dirs) || [];
+    var total = list.length;
+
+    var h = '<div class="sec"><h2>' + TITLE[type] + '</h2>' +
+      '<span class="dir" data-path="' + esc(dir) + '">' + esc(dir) + '</span>' +
+      '<span class="cnt">' + (d && d.ok
+        ? (total + dirs.length) + ' 项' + (d.stale ? '（上次结果）' : '')
+        : '没读到') + '</span></div>';
+
+    if (!d) { sec.innerHTML = h + '<div class="empty">读取中…</div>'; return; }
+
+    if (!d.ok) {
+      sec.innerHTML = h + '<div class="empty">' + esc(d.err || '读取失败') +
+        (d.stat ? '<span class="raw">' + esc(d.stat) + '</span>' : '') + '</div>' + frame(dir);
+      sec.dataset.dir = dir;
+      return;
+    }
+
+    if (d && d.ok && dir !== DEF[type]) {
+      h += '<div class="nav"><button class="up" data-go="' + esc(d.parent || '/') +
+        '">‹ 上一级</button></div>';
+    }
+
+    if (dirs.length) {
+      h += '<div class="list">';
+      for (var i = 0; i < dirs.length; i++) {
+        h += '<div class="row fold" data-go="' + esc(dirs[i].p) + '">' +
+          '<span class="ic">▸</span><span class="li"><span class="t">' + esc(dirs[i].n) +
+          '</span><span class="f">文件夹</span></span></div>';
+      }
+      h += '</div>';
+    }
+
+    if (total) {
+      var show = opened[type] ? total : Math.min(5, total);
+      h += '<div class="list">';
+      for (var k = 0; k < show; k++) {
+        var it = list[k];
+        var size = fmtSize(it.s);
+        h += '<div class="row" data-file="' + esc(it.f) + '">' +
+          '<span class="li"><span class="t">' + esc(it.t || it.f) + '</span>' +
+          '<span class="f">' + esc(it.f + (size ? ' · ' + size : '')) + '</span></span>' +
+          '<span class="dl">下载 ↓</span></div>';
+      }
+      h += '</div>';
+      if (total > 5) {
+        h += '<button class="more" data-more="1">' +
+          (opened[type] ? '收起' : '更多（共 ' + total + ' 条）') + '</button>';
+      }
+    } else if (!dirs.length) {
+      h += '<div class="empty">这个目录里没有录像</div>' + frame(dir);
+    }
+
+    sec.innerHTML = h;
+    sec.dataset.dir = dir;
+  }
+
+  /* 事件都挂在段容器上，重绘不用重新绑 */
+  function bind(type) {
+    var sec = el('sec-' + type);
+    if (!sec || sec.dataset.bound) return;
+    sec.dataset.bound = '1';
+    sec.addEventListener('click', function (ev) {
+      var t = ev.target;
+      while (t && t !== sec && !(t.getAttribute && (t.getAttribute('data-go') ||
+        t.getAttribute('data-file') || t.getAttribute('data-path') ||
+        t.getAttribute('data-more')))) {
+        t = t.parentNode;
+      }
+      if (!t || t === sec) return;
+
+      if (t.getAttribute('data-more')) {
+        opened[type] = !opened[type];
+        paint(type);
+        return;
+      }
+      var dp = t.getAttribute('data-path');
+      if (dp) {
+        var nv = prompt(TITLE[type] + ' 在记录仪上的目录', dp);
+        if (nv === null) return;
+        nv = nv.trim();
+        if (!nv) return;
+        if (nv.charAt(0) !== '/') nv = '/' + nv;
+        if (nv.charAt(nv.length - 1) !== '/') nv += '/';
+        opened[type] = false;
+        load(type, nv);
+        return;
+      }
+      var go = t.getAttribute('data-go');
+      if (go) { opened[type] = false; load(type, go); return; }
+      var f = t.getAttribute('data-file');
+      if (f) download(sec.dataset.dir || DEF[type], f);
+    });
+  }
+
+  /* 记录仪网页服务很弱：刚连上第一次常抓空（返回 ok:0 或空应答），
+     ok:0 是正常 HTTP 应答走 then，catch 兜不住。
+     失败自动重试 2 次，间隔递增长一点，给设备缓过来的时间；
+     断开了(seq 变了)就不再回填。后端还会用上次成功的列表兜底(带 stale)。 */
+  var RETRY_GAP = [0, 1200, 2400];
+  function load(type, path, left) {
+    if (left === undefined) left = RETRY_GAP.length - 1;
+    var my = seq;
+    if (left === RETRY_GAP.length - 1) { state[type] = null; paint(type); }
+    var url = '/dvr/list?path=' + encodeURIComponent(path || DEF[type]);
+    function once() {
+      return api(url).then(function (d) { return d; }, function (e) {
+        return { ok: 0, err: '请求失败：' + ((e && e.message) || e) };
+      });
+    }
+    function bad(d) { return !d || d.ok !== 1; }
+    return once().then(function (d) {
+      if (bad(d) && left > 0 && my === seq) {
+        return new Promise(function (res) { setTimeout(res, RETRY_GAP[3 - left]); })
+          .then(function () { return my === seq ? load(type, path, left - 1) : null; });
+      }
+      return d;
+    }).then(function (d) {
+      if (my !== seq || !d) return null;
+      state[type] = bad(d) ? { ok: 0, err: (d && d.err) || '空应答' } : d;
+      paint(type);
+      return state[type];
+    });
+  }
+
+  function setup() {
+    root.innerHTML = '<section id="sec-normal"></section><section id="sec-event"></section>';
+    bind('normal');
+    bind('event');
+  }
+
+  /* 两类顺序读：记录仪的网页服务同时只吃一两个连接，
+     中间留 500ms 让它处理完上一个请求，避免连发两个抓空。 */
+  function loadAll() {
+    return load('normal').then(function () {
+      return new Promise(function (res) { setTimeout(res, 500); });
+    }).then(function () {
+      return load('event');
+    }).then(function () {
+      var n = state.normal && state.normal.list ? state.normal.list.length : 0;
+      var e = state.event && state.event.list ? state.event.list.length : 0;
+      setStatus('已连接 ' + (curIp || '记录仪') + ' · 普通 ' + n + ' · 事件 ' + e);
+    });
+  }
+
+  function connect() {
+    var my = ++seq;
+    setStatus('正在找记录仪…');
+    root.innerHTML = '<div class="empty">正在连接记录仪…</div>';
+    api('/dvr/probe').then(function (d) {
+      if (my !== seq) return null;
+      if (!d || !d.ok) throw new Error((d && d.err) || '找不到记录仪');
+      curIp = d.ip || '';
+      el('ip').textContent = curIp || '—';
+      notify(true);
+      setup();
+      setStatus('已连接 ' + curIp + ' · 读取目录…');
+      return loadAll();
+    }).catch(function (e) {
+      if (my !== seq) return;
+      notify(false);
+      setStatus('没连上');
+      root.innerHTML = '<div class="empty">' + esc(String((e && e.message) || e)) +
+        '<br>记录仪要和车机在同一内网；扫不到就点「指定 IP」填它的地址。</div>';
+    });
+  }
+
+  function disconnect() {
+    seq++;
+    curIp = '';
+    state.normal = null; state.event = null;
+    el('ip').textContent = '—';
+    root.innerHTML = '<div class="empty">已断开。点「连接」重新读取记录仪。</div>';
+    setStatus('已断开');
+    notify(false);
+    api('/dvr/disconnect').catch(function () {});
+    // 断开之后什么都不再做：不重连、不轮询、不预热，
+    // 下次连只有用户自己点「连接」这一个入口。
+  }
+
+  el('back').addEventListener('click', function () {
+    if (history.length > 1) history.back(); else location.reload();
+  });
+  el('connect').addEventListener('click', connect);
+  el('disconnect').addEventListener('click', disconnect);
+  el('setip').addEventListener('click', function () {
+    var v = prompt('记录仪 IP（留空＝自动探测）', curIp || '192.168.1.110');
+    if (v === null) return;
+    v = v.trim();
+    api('/dvr/setip?ip=' + encodeURIComponent(v)).then(function () {
+      toast(v ? ('已指定 ' + v) : '恢复自动探测');
+      connect();
+    }).catch(function () { toast('设置失败'); });
+  });
+
+  /* 打开就是「未连接」：不自动连、不后台连。
+     记录仪是要用户主动点「连接」才会碰的端口，断开后也一直保持断开。 */
+  notify(false);
+})();
+</script>
+</body>
+</html>

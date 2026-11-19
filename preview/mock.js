@@ -1,0 +1,464 @@
+/* 仅用于本地预览车控页：模拟 18765（网页）与 18766（车机助手） */
+const http = require('http');
+const net = require('net');
+const fs = require('fs');
+const path = require('path');
+
+/* 页面源码在 web/pages/，跟本脚本的相对位置固定，不写绝对路径 */
+const WEB = path.resolve(__dirname, '..', 'web', 'pages');
+
+
+/* 和真机一致：把 {{HOST}} 换成请求里的主机名 */
+function withHost(html, req) {
+  const h = String(req.headers.host || '').split(':')[0] || '127.0.0.1';
+  return html.replace(/\{\{HOST\}\}/g, h);
+}
+
+const PAGE = process.argv[2] || path.join(WEB, 'remote_lunastub.html');
+
+/* 预览用的最小 WebSocket：只回一条 state，够让页面从「断开」变成「已连接」 */
+const crypto = require('crypto');
+
+function wsFrame(obj) {
+  const data = Buffer.from(JSON.stringify(obj));
+  const len = data.length;
+  let head;
+  if (len < 126) {
+    head = Buffer.from([0x81, len]);
+  } else if (len < 65536) {
+    head = Buffer.from([0x81, 126, (len >> 8) & 0xff, len & 0xff]);
+  } else {
+    head = Buffer.from([0x81, 127, 0, 0, 0, 0,
+      (len >>> 24) & 0xff, (len >> 16) & 0xff, (len >> 8) & 0xff, len & 0xff]);
+  }
+  return Buffer.concat([head, data]);
+}
+
+const srv65 = http.createServer((req, res) => {
+  const u = req.url.split('?')[0];
+  if (u === '/' || u === '/index.html') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(withHost(fs.readFileSync(PAGE, 'utf8'), req));
+  } else if (u === '/ping') {
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+    res.end('ok');
+  } else {
+    res.writeHead(404); res.end();
+  }
+});
+
+srv65.on('upgrade', (req, socket) => {
+  const key = req.headers['sec-websocket-key'] || '';
+  const accept = crypto.createHash('sha1')
+    .update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
+  socket.write('HTTP/1.1 101 Switching Protocols\r\n'
+    + 'Upgrade: websocket\r\nConnection: Upgrade\r\n'
+    + 'Sec-WebSocket-Accept: ' + accept + '\r\n\r\n');
+
+  let seq = 0;
+  const push = () => {
+    seq++;
+    try {
+      socket.write(wsFrame({ type: 'state', data: {
+        seq, title: '预览歌曲', artist: '预览歌手', album: '',
+        playing: false, durationMs: 218000, positionMs: 12000,
+        volume: 12, volumeMax: 30, liked: false, mode: 'order'
+      } }));
+    } catch (e) {}
+  };
+  push();
+  const t = setInterval(push, 2000);
+  socket.on('data', push);
+  socket.on('close', () => clearInterval(t));
+  socket.on('error', () => clearInterval(t));
+});
+
+srv65.listen(18765, '0.0.0.0');
+
+const cards = {
+  ok: 1, at: Date.now(),
+  style: { propColor: '#B3FFFFFF', valueColor: '#FFFFFFFF', alpha: 90, fontSize: 20, round: 1, radius: 14, margin: 8 },
+  cards: [
+    { t: 'HVAC', title: '空调信息', cols: 2, items: [
+      { k: '主驾温度', v: '22.0℃', s: 1 }, { k: '副驾温度', v: '22.0℃', s: 1 },
+      { k: '风量', v: '2 档', s: 1 }, { k: '吹风模式', v: '面部', s: 1 },
+      { k: 'AUTO', v: '开', s: 1 }, { k: '循环', v: '内循环', s: 1 }
+    ] },
+    { t: 'SEAT', title: '座椅舒适', cols: 2, items: [
+      { k: '主驾加热', v: '关', s: 1 }, { k: '副驾加热', v: '1 档', s: 1 },
+      { k: '主驾通风', v: '关', s: 1 }, { k: '副驾通风', v: '关', s: 1 }
+    ] },
+    { t: 'DOOR', title: '门窗信息', cols: 2, items: [
+      { k: '主驾门', v: '已关', s: 1 }, { k: '后备箱', v: '已关', s: 1 },
+      { k: '天窗', v: '已关', s: 1 }, { k: '遮阳帘', v: '已开', s: 1 }
+    ] },
+    { t: 'STATUS', title: '状态信息', cols: 2, items: [
+      { k: '续航', v: '420 km', s: 1 }, { k: '总里程', v: '12034 km', s: 1 }
+    ] }
+  ]
+};
+
+const topIds = ['steering_heat', 'hvac_auto', 'hvac_circ', 'hvac_mode', 'trunk_switch',
+  'wireless_charging', 'fragrance', 'massage_fl', 'wiper_sensitivity', 'light_height',
+  'pedestrian_alert', 'seat_heat_fl'];
+const names = ['方向盘加热', '空调 AUTO', '内外循环', '吹风模式', '后备箱', '无线充电',
+  '香氛', '座椅按摩', '雨刷灵敏度', '大灯高度', '行人提醒', '主驾加热'];
+const acts = {
+  ok: 1,
+  groups: [
+    { g: '空调', items: [{ id: 'handleHvacAutoClick', t: 'AUTO', v: -1 }, { id: 'handleHvacCirculationClick', t: '内外循环', v: -1 }] },
+    { g: '底盘', items: [
+      { id: 'actionSetSuspensionModeComfort', t: '悬架 舒适', v: -1 }, { id: 'actionSetSuspensionModeStandard', t: '悬架 标准', v: -1 },
+      { id: 'actionSetSuspensionModeSport', t: '悬架 运动', v: -1 },
+      { id: 'actionSetSuspensionLinkEnabled', t: '悬架联动 开', v: 1 }, { id: 'actionSetSuspensionLinkEnabled', t: '悬架联动 关', v: 0 },
+      { id: 'actionSetBrakeFeelModeComfort', t: '刹车 舒适', v: -1 }, { id: 'actionSetBrakeFeelModeSport', t: '刹车 运动', v: -1 }] }
+  ]
+};
+
+const probe = {
+  ok: 1, helper: 1, cls: 'com.navi.tool.ui.extra.DesktopAssistantCarControlHelper',
+  topIds, names,
+  match: topIds.map((id, i) => ({ id, name: names[i], via: 'handle' + id, ok: id === 'seat_heat_fl' ? 0 : 1 })),
+  summary: { total: 12, auto: 11, manual: 1 },
+  fields: { carControlAdapter: 1, prefs: 1, carControlContainer: 1 }, log: []
+};
+
+const diag = `==== 车机桥接诊断 ====
+时间   2026-11-16 11:58:03
+设备   BYD DiLink · Android 13 (SDK 33)
+访问   http://192.168.1.23:18766/
+
+-- 服务 --
+端口   18766  已绑定
+自测   127.0.0.1 不通 ← 本机回环可用，跨应用连接被拦，改用局域网地址
+自测   192.168.1.23 通
+进程   pid 8412 · 已运行 2 小时 13 分
+
+-- 助手引擎 --
+界面   已抓到 DesktopAssistantActivity
+引擎   已绑定 DesktopAssistantCarControlHelper（3 分 12 秒前）
+动作   29 项可执行
+最近错误 无
+
+-- 安装包 --
+  com.navi.tool  18.62 (vC 14)  2026-11-16 10:41
+  com.luna.music.car  未安装
+
+-- 桥接日志（进程内存，新→旧倒序不了，按发生顺序）--
+install ok, watching com.navi.tool.ui.extra.DesktopAssistantActivity
+http start requested
+http listening on 18766 (try 1)
+helper bound: com.navi.tool.ui.extra.DesktopAssistantCarControlHelper
+
+-- 系统日志（本应用相关，最近 60 行）--
+11-16 11:44:02.113 I/NavitoolBridge( 8412): http listening on 18766 (try 1)
+`;
+const ops = [];
+let fanFront = 3;
+let fanRear = 0;
+let tempV = 24;
+let seatState = {
+  heat_fl: '关', heat_fr: '关', heat_rl: '关', heat_rr: '关',
+  vent_fl: '关', vent_fr: '关', vent_rl: '', vent_rr: ''
+};
+const pad2 = (n) => (n < 10 ? '0' : '') + n;
+const hhmmss = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+const ymdhms = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${hhmmss(d)}`;
+
+function opsText() {
+  const okN = ops.filter((o) => o.ok).length;
+  let s = '==== 操作记录 ====\n';
+  s += `进程启动  ${ymdhms(new Date(Date.now() - 3600e3))}\n`;
+  s += `调用统计  ${ops.length} 次 · 成功 ${okN} · 失败 ${ops.length - okN}\n`;
+  s += `保留      ${ops.length}/150 条，最新的在上面\n`;
+  if (!ops.length) return s + '\n(还没有操作记录)\n';
+  s += '\n时间      结果  耗时    动作\n' + '-'.repeat(56) + '\n';
+  for (const o of ops) {
+    s += `${hhmmss(o.at)}  ${o.ok ? '成功' : '失败'}  ${(o.ms + 'ms').padEnd(6)} ${o.label}  (${o.id}`
+      + (o.v >= 0 ? ` v=${o.v}` : '') + ')' + (o.err ? `  ← ${o.err}` : '') + '\n';
+  }
+  return s;
+}
+
+function cardsText() {
+  let s = '==== 车况快照 ====\n';
+  s += `时间   ${ymdhms(new Date())}\n`;
+  s += '样式   透明度 90% · 字号 20px · 属性色 #B3FFFFFF · 数值色 #FFFFFFFF\n';
+  let n = 0;
+  for (const c of cards.cards) {
+    s += `\n[${c.title}]  ${c.t} · ${c.cols} 列\n`;
+    for (const it of c.items) {
+      n++;
+      const kw = [...it.k].reduce((a, ch) => a + (ch.charCodeAt(0) > 0x2e80 ? 2 : 1), 0);
+      s += `  ${it.k}${' '.repeat(Math.max(1, 16 - kw))} ${it.v || '(空)'}\n`;
+    }
+  }
+  return s + `\n合计   ${cards.cards.length} 张卡 · ${n} 项\n`;
+}
+
+function actsText() {
+  let s = '==== 动作表 ====\n';
+  const live = acts.groups.reduce((a, g) => a + g.items.length, 0);
+  s += `可执行  ${live} 项 / 表内 ${live} 条\n`;
+  s += '说明    只列车机助手里真实存在的方法，运行时不存在的整条不出现\n';
+  for (const g of acts.groups) {
+    s += `\n[${g.g}]\n`;
+    for (const it of g.items) {
+      const kw = [...it.t].reduce((a, ch) => a + (ch.charCodeAt(0) > 0x2e80 ? 2 : 1), 0);
+      s += `  ${it.t}${' '.repeat(Math.max(1, 14 - kw))} ${it.id}` + (it.v >= 0 ? `  v=${it.v}` : '') + '\n';
+    }
+  }
+  return s;
+}
+
+const txt = (res, body) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+  res.end(body);
+};
+
+/* ------------------------------------------------------------------
+   记录仪（18767）假数据。
+   真机上 18766 的网关会把 /dvr/* 原样转给 18767，这里两个端口挂同一份
+   处理函数：从 18766 进（统一入口）和直接开 18767 看到的东西一致。
+   ------------------------------------------------------------------ */
+const DEF_DVR = { normal: '/SD0/NOR/M_video/', event: '/SD0/EVT/M_video/' };
+let dvrIp = '192.168.1.110';
+
+function dvrList(p) {
+  const path = p || DEF_DVR.normal;
+  const type = path.indexOf('/EVT/') >= 0 ? 'event' : 'normal';
+  const n = type === 'event' ? 3 : 7;
+  const list = [];
+  for (let i = 0; i < n; i++) {
+    const hh = String(9 + (i % 4)).padStart(2, '0');
+    const mm = String((58 - i * 7 + 60) % 60).padStart(2, '0');
+    list.push({
+      t: `2026-11-18 ${hh}:${mm}:31`,
+      f: `20261118_${hh}${mm}31_F.mp4`,
+      s: (38 + i * 11) * 1024 * 1024
+    });
+  }
+  return { ok: 1, path, parent: '/SD0/', dirs: [], list };
+}
+
+function dvrApi(req, res) {
+  const u = req.url.split('?')[0];
+  const q = new URL('http://x' + req.url).searchParams;
+  const h = {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Access-Control-Allow-Origin': '*',
+    'Cache-Control': 'no-store'
+  };
+  if (u === '/dvr/probe') {
+    res.writeHead(200, h);
+    res.end(JSON.stringify({ ok: 1, ip: dvrIp }));
+    return;
+  }
+  if (u === '/dvr/list') {
+    res.writeHead(200, h);
+    res.end(JSON.stringify(dvrList(q.get('path'))));
+    return;
+  }
+  if (u === '/dvr/disconnect') {
+    res.writeHead(200, h);
+    res.end('{"ok":1}');
+    return;
+  }
+  if (u === '/dvr/setip') {
+    if (q.get('ip')) dvrIp = q.get('ip');
+    res.writeHead(200, h);
+    res.end(JSON.stringify({ ok: 1, ip: dvrIp }));
+    return;
+  }
+  if (u === '/dvr/fs') {
+    const dir = q.get('p') || DEF_DVR.normal;
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end('<!doctype html><meta charset="utf-8"><body style="background:#111;color:#ccc;'
+      + 'font:13px/1.7 system-ui;padding:18px"><b>' + dir + '</b><br>'
+      + '(预览环境的目录页占位，真机这里是记录仪自己的文件列表)</body>');
+    return;
+  }
+  if (u === '/dvr/file') {
+    res.writeHead(200, {
+      'Content-Type': 'video/mp4',
+      'Content-Disposition': 'attachment; filename="preview.mp4"'
+    });
+    res.end(Buffer.alloc(2048));
+    return;
+  }
+  res.writeHead(404, h);
+  res.end('{}');
+}
+
+/* 真机的 Gateway.java 是纯字节反代：/music/* 去掉前缀转给音乐后端，/api/* 原样转。
+   本地照做一份，从 18766 进来才真的有「音乐控制」这一档。 */
+function proxyMusic(req, res) {
+  const p = req.url.replace(/^\/music/, '') || '/';
+  const up = http.request({
+    host: '127.0.0.1',
+    port: 18765,
+    path: p,
+    method: req.method,
+    headers: Object.assign({}, req.headers, { host: '127.0.0.1:18765' })
+  }, (r) => {
+    res.writeHead(r.statusCode, r.headers);
+    r.pipe(res);
+  });
+  up.on('error', () => {
+    res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('音乐后端没起（18765）');
+  });
+  req.pipe(up);
+}
+
+const srv66 = http.createServer((req, res) => {
+  const u = req.url.split('?')[0];
+  const h = {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': '*',
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Cache-Control': 'no-store'
+  };
+  if (req.method === 'OPTIONS') { res.writeHead(204, h); res.end(); return; }
+  if (u.indexOf('/music/') === 0 || u.indexOf('/api/') === 0) { proxyMusic(req, res); return; }
+  let body = '';
+  req.on('data', (c) => body += c);
+  req.on('end', () => {
+    if (u === '/' || u === '/index.html') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+      res.end(withHost(fs.readFileSync(path.join(WEB, 'car.html'), 'utf8'), req)); return;
+    }
+    if (u === '/cards') { res.writeHead(200, h); res.end(JSON.stringify(cards)); return; }
+    if (u === '/acts') { res.writeHead(200, h); res.end(JSON.stringify(acts)); return; }
+    if (u === '/probe') { res.writeHead(200, h); res.end(JSON.stringify(probe)); return; }
+    if (u === '/' || u === '/index.html') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(fs.readFileSync(path.join(WEB, 'car.html')));
+      return;
+    }
+    /* 统一入口：外壳问「音乐后端在哪个端口」，真机由 Gateway.java 回，
+       这里固定答 18765，好让「音乐控制」那一档在本地也能真连上 */
+    if (u === '/gateway') {
+      res.writeHead(200, h);
+      res.end(JSON.stringify({ ok: 1, music: 18765, dvr: 18767 }));
+      return;
+    }
+    if (u === '/dvr' || u === '/dvr.html') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+      res.end(withHost(fs.readFileSync(path.join(WEB, 'dvr.html'), 'utf8'), req));
+      return;
+    }
+    if (u.indexOf('/dvr/') === 0) { dvrApi(req, res); return; }
+    if (u === '/ping') {
+      const okN = ops.filter((o) => o.ok).length;
+      res.writeHead(200, h);
+      res.end(JSON.stringify({
+        ok: 1, v: '1.2', port: 18766, bound: 1, helper: 1, activity: 1,
+        ops: ops.length, opsFail: ops.length - okN, err: ''
+      }));
+      return;
+    }
+    if (u === '/diag') { txt(res, `${diag}\n-- 操作 --\n操作   ${ops.length} 次调用\n`); return; }
+    if (u === '/acts.log' || u === '/acts.log.txt') { txt(res, opsText()); return; }
+    if (u === '/cards.txt') { txt(res, cardsText()); return; }
+    if (u === '/acts.txt') { txt(res, actsText()); return; }
+    if (u === '/dump' || u === '/dump.txt') {
+      txt(res, `${diag}\n${cardsText()}\n${actsText()}\n${opsText()}\n==== 结束 ====\n`); return;
+    }
+    if (u === '/log/clear') { ops.length = 0; res.writeHead(200, h); res.end('{"ok":1}'); return; }
+    if (u === '/act') {
+      let q = {};
+      try { q = JSON.parse(body || '{}'); } catch (e) { q = {}; }
+      const id = q.a || '';
+      const v = q.v == null ? -1 : q.v;
+      let label = id;
+      for (const g of acts.groups) for (const it of g.items) if (it.id === id) label = it.t;
+      // 模拟几种动作的效果，用来验证「执行后数值闪一下」
+      const flip = { 'handleHvacAutoClick': ['空调信息', 'AUTO'], 'handleHvacCirculationClick': ['空调信息', '循环'],
+        'handleTrunkClick': ['门窗信息', '后备箱'] };
+      const f = flip[id];
+      if (f) {
+        const c = cards.cards.find((x) => x.title === f[0]);
+        const it = c && c.items.find((x) => x.k === f[1]);
+        if (it) it.v = it.v === '开' ? '关' : it.v === '关' ? '开' : (it.v === '内循环' ? '外循环' : '内循环');
+      }
+      ops.unshift({ at: new Date(), id, label, v, ok: true, ms: 18 + Math.floor(Math.random() * 40), err: '' });
+      res.writeHead(200, h);
+      res.end(JSON.stringify({ ok: 1, via: id }));
+      return;
+    }
+    if (u === '/fan') {
+      let q = {};
+      try { q = JSON.parse(body || '{}'); } catch (e) { q = {}; }
+      if (q.v != null) fanFront = Math.max(1, Math.min(7, q.v));
+      if (q.r != null) fanRear = Math.max(0, Math.min(4, q.r));
+      if (q.v != null || q.r != null) {
+        ops.unshift({ at: new Date(), id: 'fan', label: `风量 ${q.v != null ? '前' + q.v : ''}${q.v != null && q.r != null ? ' /' : ''}${q.r != null ? ' 后' + q.r : ''}`, v: q.r != null ? q.r : q.v, ok: true, ms: 12, err: '' });
+      }
+      res.writeHead(200, h);
+      res.end(JSON.stringify({ ok: 1, front: fanFront, rear: fanRear }));
+      return;
+    }
+    if (u === '/temp') {
+      let q = {};
+      try { q = JSON.parse(body || '{}'); } catch (e) { q = {}; }
+      if (q.v != null) {
+        tempV = Math.max(15, Math.min(30, q.v));
+        ops.unshift({ at: new Date(), id: 'temp', label: `温度 ${tempV}°C`, v: tempV, ok: true, ms: 9, err: '' });
+      }
+      res.writeHead(200, h);
+      res.end(JSON.stringify({ ok: 1, v: tempV }));
+      return;
+    }
+    if (u === '/seat') {
+      let q = {};
+      try { q = JSON.parse(body || '{}'); } catch (e) { q = {}; }
+      const lv = q.lv != null ? q.lv : q.v;
+      if (q.p && lv != null) {
+        const k = `${q.k}_${q.p}`;
+        seatState[k] = lv <= 0 ? '关' : `${lv} 档`;
+        ops.unshift({ at: new Date(), id: 'seat', label: `座椅 ${q.p} ${q.k === 'vent' ? '通风' : '加热'}`, v: lv, ok: true, ms: 11, err: '' });
+      }
+      res.writeHead(200, h);
+      res.end(JSON.stringify({ ok: 1, seats: seatState }));
+      return;
+    }
+    res.writeHead(404, h); res.end('{}');
+  });
+});
+
+srv66.listen(18766, '0.0.0.0');
+
+/* 音乐控制靠 WebSocket，网关要连 Upgrade 一起转；这里做纯 socket 对接 */
+srv66.on('upgrade', (req, socket, head) => {
+  const up = net.connect(18765, '127.0.0.1', () => {
+    const lines = [`GET ${req.url} HTTP/1.1`];
+    for (let i = 0; i < req.rawHeaders.length; i += 2) {
+      lines.push(`${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}`);
+    }
+    up.write(lines.join('\r\n') + '\r\n\r\n');
+    if (head && head.length) up.write(head);
+    up.pipe(socket);
+    socket.pipe(up);
+  });
+  up.on('error', () => socket.destroy());
+  socket.on('error', () => up.destroy());
+});
+
+/* 记录仪单独一个口，对应桥接包的 DvrSvc（18767） */
+http.createServer((req, res) => {
+  const u = req.url.split('?')[0];
+  if (u === '/' || u === '/dvr' || u === '/dvr.html') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(withHost(fs.readFileSync(path.join(WEB, 'dvr.html'), 'utf8'), req));
+    return;
+  }
+  if (u.indexOf('/dvr/') === 0) { dvrApi(req, res); return; }
+  res.writeHead(404); res.end();
+}).listen(18767, '0.0.0.0');
+
+console.log('preview up:');
+console.log('  车控 + 统一入口   http://127.0.0.1:18766/');
+console.log('  音乐              http://127.0.0.1:18765/');
+console.log('  记录仪            http://127.0.0.1:18767/dvr');

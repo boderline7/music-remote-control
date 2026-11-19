@@ -1,0 +1,51 @@
+# ---- 构建产物 ----
+/dist/
+/src/bridge/build/
+build/
+*.apk
+*.ipa
+*.idsig
+
+# ---- 第三方 / 不入库 ----
+# apktool 是 24M 的第三方 jar，缺了从官方或本机其他目录拷一份进来
+/tools/apktool.jar
+/patch/apktool.jar
+
+# ---- 原厂素材：不入库 ----
+# 原厂安装包（要了自己从官方或车上取）
+/apk/
+# 脱壳输出（19.00 脱壳源码等，从原厂包重新脱即可，见 docs/unpack.md）
+/dex/
+/dump/
+# 退役的 18.62 解包树（76M，历史参考，不入库）
+/archive/_legacy/
+
+# ---- 本地配置 ----
+# 本机路径覆盖（JDK / build-tools / android.jar / ASCII 构建目录）
+scripts/config.local.sh
+local.properties
+
+# ---- 预览：只留假数据服务，调试脚本与截图随时重生成 ----
+/preview/*
+!/preview/mock.js
+
+# ---- Gradle / IDE / 系统 ----
+.gradle/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+*.log
+
+# ---- 本地隔离待删 ----
+/_trash/
+
+# ---- 构建时从 web/pages 拷进来的副本（单一真相在 web/pages）----
+music/cloudmusic-car/lunastub/src/main/assets/remote.html
+music/cloudmusic-car/lunastub/src/main/assets/dvr.html
+music/cloudmusic-car/app/src/main/assets/remote.html
+
+# ---- iOS 生成物 ----
+phone/ios/out/
+phone/ios/build/
+phone/ios/*.xcodeproj/

@@ -1,0 +1,108 @@
+[
+    {
+    "name": "8PRO专用免唤醒控制音乐播放配置_0919.zip",
+    "time": "2026-09-19",
+    "description": "仅适用于瑞虎8PRO",
+    "tags": ["联动媒体"],
+    "download_url": "https://1841323622.cdn.123clouddisk.com/1841323622/config/MHX09198PRO.zip#"
+  },
+  {
+    "name": "语音搜索收藏歌曲配置文件_0730.zip",
+    "time": "2026-07-30",
+    "description": "适用于瑶光、瑞虎9、艾瑞泽8、风云A8、瑞虎8PRO、追风等车型",
+    "tags": ["联动媒体"],
+    "download_url": "https://1841323622.cdn.123clouddisk.com/1841323622/config/YYSS0730.zip"
+  },
+    {
+    "name": "通用配置_联动助手_免唤醒控制音乐播放配置_0604.zip",
+    "time": "2026-06-04",
+    "description": "适用于瑶光302及以下、瑞虎9、艾瑞泽8、风云A8、追风等车型",
+    "tags": ["联动媒体"],
+    "download_url": "https://1841323622.v.123pan.cn/1841323622/config/MHX0604.zip"
+  },
+  {
+    "name": "桌面助手静态壁纸_0602.zip",
+    "time": "2026-06-02",
+    "description": "解压后目录为navitool/filemanager/",
+    "tags": ["桌面助手静态壁纸"],
+    "download_url": "https://1841323622.v.123pan.cn/1841323622/config/wallpaper0602.zip"
+  },
+  {
+    "name": "IOS风格图标_0430.zip",
+    "time": "2026-04-30",
+    "description": "解压后目录为navitool/filemanager/IOS风格",
+    "tags": ["IOS风格图标包"],
+    "download_url": "https://1841323622.v.123pan.cn/1841323622/config/ios_icon.zip"
+  },
+  {
+    "name": "视频壁纸_0429.zip",
+    "time": "2026-04-29",
+    "description": "解压后目录为navitool/filemanager/视频壁纸",
+    "tags": ["桌面助手动态壁纸"],
+    "download_url": "https://1841323622.v.123pan.cn/1841323622/config/mp4.zip"
+  },
+  {
+    "name": "情景模式_常用配置文件_0421.zip",
+    "time": "2026-04-21",
+    "description": "仅适用于瑶光和瑞虎9最新版车机系统",
+    "tags": ["智能化", "舒适化", "高度自定义化"],
+    "download_url": "https://1841323622.v.123pan.cn/1841323622/config/0421Scenefile.zip"
+  },
+  {
+    "name": "瑶光油车_车机助手日志联动配置文件_0209.zip",
+    "time": "2026-02-09",
+    "description": "适用于瑶光油车",
+    "tags": ["联动应用", "联动媒体", "联动助手"],
+    "download_url": "https://1841323622.v.123pan.cn/1841323622/config/YG0209.zip"
+  },
+  {
+    "name": "瑶光CDM_车机助手日志联动配置文件_0209.zip",
+    "time": "2026-02-09",
+    "description": "适用于瑶光CDM",
+    "tags": ["联动应用", "联动媒体", "联动助手"],
+    "download_url": "https://1841323622.v.123pan.cn/1841323622/config/YGCDM0209.zip"
+  },
+    {
+    "name": "瑞虎9通用版_车机助手日志联动配置文件_0325.zip",
+    "time": "2026-03-25",
+    "description": "适用于瑞虎9油车和CDM",
+    "tags": ["联动应用", "联动媒体", "联动助手"],
+    "download_url": "https://1841323622.v.123pan.cn/1841323622/config/HU90325.zip"
+  },
+    {
+    "name": "瑞虎8PRO_车机助手日志联动配置文件_0319.zip",
+    "time": "2026-03-19",
+    "description": "适用于瑞虎8PRO",
+    "tags": ["联动应用", "联动媒体", "联动助手"],
+    "download_url": "https://1841323622.v.123pan.cn/1841323622/config/8PRO0319.zip"
+  },
+    {
+    "name": "艾瑞泽8_车机助手日志联动配置文件_0122.zip",
+    "time": "2026-01-22",
+    "description": "适用于艾瑞泽8",
+    "tags": ["联动应用", "联动媒体", "联动助手"],
+    "download_url": "https://1841323622.v.123pan.cn/1841323622/config/AI80122.zip"
+  },
+    {
+    "name": "0401车联服务提示音文件.zip",
+    "time": "2026-04-01",
+    "description": "适用于瑶光、瑞虎9、艾瑞泽8、风云A8、追风、瑞虎8PRO等车型",
+    "tags": ["车联服务提示"],
+    "download_url": "https://1841323622.v.123pan.cn/1841323622/config/0317carlink.zip"
+  },
+    {
+    "name": "双指_三指手势打开应用_0328.zip",
+    "time": "2026-03-28",
+    "description": "适用于瑶光、瑞虎9、艾瑞泽8、风云A8、追风等车型，应用配置之后，需要修改成自己的应用",
+    "tags": ["联动应用"],
+    "download_url": "https://1841323622.v.123pan.cn/1841323622/config/YGGestures0328.zip"
+  },
+    {
+    "name": "疯狂动物城语音包.zip",
+    "time": "2026-03-28",
+    "description": "下载应用之后，需要自行修改相关配置文件选择对应的mp3文件",
+    "tags": ["联动媒体"],
+    "download_url": "https://1841323622.v.123pan.cn/1841323622/config/Crazymp30328.zip"
+  }
+
+]

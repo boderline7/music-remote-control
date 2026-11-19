@@ -1,0 +1,97 @@
+package com.carremote.client
+
+import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
+import java.net.Inet4Address
+import java.net.InetSocketAddress
+import java.net.NetworkInterface
+import java.net.Socket
+
+/**
+ * 网段扫描。
+ *
+ * 手机开热点时车机 IP 每次都可能变（192.168.43.x / 192.168.124.x / 172.20.10.x），
+ * mDNS 在部分热点和车机上也经常发现不了。这里直接把本机所在 /24 扫一遍，
+ * 谁能连上 18766（车控）或 18765（音乐）就是车机——比让用户去车上看 IP 靠谱得多。
+ *
+ * 一台车机通常两个端口都开，所以结果按 IP + 端口成对返回，不折叠成 IP。
+ */
+object Scanner {
+
+    private const val TAG = "CarRemote"
+
+    private val _scanning = MutableStateFlow(false)
+    val scanning: StateFlow<Boolean> = _scanning.asStateFlow()
+
+    private val _results = MutableStateFlow<List<Pair<String, Int>>>(emptyList())
+    val results: StateFlow<List<Pair<String, Int>>> = _results.asStateFlow()
+
+    /** 本机所有可用 IPv4 的 /24 前缀，例如 192.168.43。 */
+    fun subnets(): List<String> = runCatching {
+        NetworkInterface.getNetworkInterfaces()?.asSequence()
+            ?.filter { it.isUp && !it.isLoopback }
+            ?.flatMap { ni -> ni.inetAddresses.asSequence().map { ni.name to it } }
+            ?.filter { (_, addr) -> addr is Inet4Address && addr.isSiteLocalAddress }
+            ?.map { (_, addr) -> addr.hostAddress.orEmpty() }
+            ?.filter { it.isNotEmpty() }
+            ?.map { it.substringBeforeLast('.') }
+            ?.distinct()
+            ?.toList()
+            .orEmpty()
+    }.getOrDefault(emptyList())
+
+    suspend fun scan(
+        ports: List<Int> = Protocol.PORTS,
+        timeoutMs: Int = 180,
+        stopOnFirst: Boolean = true,
+    ): List<Pair<String, Int>> = withContext(Dispatchers.IO) {
+        val prefixes = subnets()
+        if (prefixes.isEmpty()) {
+            Log.w(TAG, "no local ipv4, skip scan")
+            return@withContext emptyList()
+        }
+        _scanning.value = true
+        val hits = java.util.Collections.synchronizedList(mutableListOf<Pair<String, Int>>())
+        try {
+            // 一台车机就够，命中即停：整个 /24 不用扫完，冷启动从秒级压到几百毫秒。
+            // 每批 128 并发，超时内没开端口就算没有。
+            outer@ for (prefix in prefixes) {
+                val chunks = (1..254).chunked(128)
+                for (chunk in chunks) {
+                    coroutineScope {
+                        chunk.map { n ->
+                            async {
+                                val ip = "$prefix.$n"
+                                for (p in ports) {
+                                    if (reachable(ip, p, timeoutMs)) {
+                                        hits.add(ip to p)
+                                        Log.i(TAG, "hit $ip:$p")
+                                    }
+                                }
+                            }
+                        }.forEach { it.await() }
+                    }
+                    if (stopOnFirst && hits.isNotEmpty()) break@outer
+                }
+            }
+        } finally {
+            _scanning.value = false
+        }
+        val sorted = hits.toList().sortedWith(compareBy({ it.first }, { it.second }))
+        _results.value = sorted
+        sorted
+    }
+
+    private fun reachable(ip: String, port: Int, timeoutMs: Int): Boolean = runCatching {
+        Socket().use { socket ->
+            socket.connect(InetSocketAddress(ip, port), timeoutMs)
+            true
+        }
+    }.getOrDefault(false)
+}

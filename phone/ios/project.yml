@@ -1,0 +1,42 @@
+name: CarRemote
+options:
+  bundleIdPrefix: com.carremote
+  deploymentTarget:
+    iOS: "15.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    TARGETED_DEVICE_FAMILY: "1,2"
+targets:
+  CarRemote:
+    type: application
+    platform: iOS
+    sources:
+      - path: CarRemote
+        excludes:
+          - Info.plist
+    # 不要写 info 段：XcodeGen 会把 info.path 指向的文件覆写成它自己生成的 plist
+    # （实测会把 ATS / 本地网络权限 / NSBonjourServices 全部抹掉）。
+    # 直接用 build settings 指向仓库内的 Info.plist，云构建里另有一道合并兜底。
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.carremote.ios
+        PRODUCT_NAME: CarRemote
+        INFOPLIST_FILE: CarRemote/Info.plist
+        GENERATE_INFOPLIST_FILE: "NO"
+        IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+        MARKETING_VERSION: "2.1.1"
+        CURRENT_PROJECT_VERSION: "21"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # 云构建默认出未签名 IPA，交给 Sideloadly / AltStore 用本机 Apple ID 签名安装。
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGNING_REQUIRED: "NO"
+schemes:
+  CarRemote:
+    build:
+      targets:
+        CarRemote: all
+    run:
+      config: Debug
+    archive:
+      config: Release
