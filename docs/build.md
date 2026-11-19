@@ -52,6 +52,21 @@ cp scripts/config.example.sh scripts/config.local.sh   # 然后按需改
 `build_remote.sh` 先把 `web/pages/*.html` 同步进 `music/cloudmusic-car/*/src/main/assets/`，
 再 `gradlew :lunastub:assembleRelease --offline`、`:app:assembleRelease --offline`。Gradle 与 JDK 17 都走本机缓存，不需要联网。
 
+## 开关
+
+| 开关 | 作用 |
+|---|---|
+| `--inject` | 网关 + 车控页 + classes3.dex |
+| `--no-so` | 整块去 so（27 个 native 桩化） |
+| `--assets-config` | 预置瑞虎9+通用配置（8 包 / 162 文件） |
+| `--free-weather` | 目的地播报天气改 Open-Meteo（免 key） |
+| `--free-desk-weather` | 桌面卡片天气也改 Open-Meteo（与 `--no-weather` 互斥） |
+| `--no-seat-confirm` | 去掉座椅「应用配置」确认框 |
+| `--floating-map` | 悬浮地图切走即结束进程 |
+| `--no-weather` | 停用桌面天气，保留目的地播报 |
+
+默认都不开。当前交付那版七个一起开，不含 `--free-desk-weather`——桌面天气既然停用，再改它的 URL 与解析就是死代码，`make.py` 会拒绝两者同时出现。
+
 ## 包名、版本、签名
 
 | | 包名 | 版本 | 签名 |
