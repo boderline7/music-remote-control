@@ -12,13 +12,16 @@ build/
 /patch/apktool.jar
 
 # ---- 原厂素材：不入库 ----
-# 原厂安装包（要了自己从官方或车上取）
+# 原厂安装包（自行从合法渠道取得）
 /apk/
-# 脱壳输出（19.00 脱壳源码等，从原厂包重新脱即可，见 docs/unpack.md）
+# 从原包导出的产物
 /dex/
 /dump/
-# 退役的 18.62 解包树（76M，历史参考，不入库）
-/archive/_legacy/
+
+# ---- 本地文档与资料：只留本地，不上传 ----
+/docs/
+/analysis/
+/archive/
 
 # ---- 本地配置 ----
 # 本机路径覆盖（JDK / build-tools / android.jar / ASCII 构建目录）

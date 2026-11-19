@@ -10,31 +10,14 @@
 - 页面、网关、音乐端、手机端均为自行编写。
 - **请支持原版**，购买官方服务与授权。本工程与原作者无关。
 
-## 目录
+## 结构
 
 ```
-make.py                 构建入口（inspect / build / verify）
-src\bridge\             网关注入源码
+src\bridge\             网关源码
 web\pages\              四个页面 + 统一外壳
 music\cloudmusic-car\   音乐端（app / lunastub）
 phone\                  手机端 android / ios
-patch\ scripts\ docs\   素材、构建脚本、文档
-dist\                   产物
 ```
-
-## 出包
-
-```bash
-python make.py build \
-  --apk "apk/navitool-19.00-protected.apk" \
-  --dex "dex/V19.00/dex" \
-  --inject --no-so --assets-config --free-weather --no-seat-confirm --floating-map --no-weather \
-  --out "dist/车机助手_V18.73_bridge_源19.00_带配置_无天气.apk"
-```
-
-开关说明与其它命令见 `docs/build.md`。各端：`bash scripts/build_remote.sh`、`build_phone.sh`、`build_ios.sh`。
-
-版本号不动，改内容就重出同名包，随时能退回上一版。纯网页改动只影响车机端，手机端刷新页面即可。
 
 ## 端口
 
@@ -45,8 +28,4 @@ python make.py build \
 | **18764** | 桥接包 | 官方音源模式 |
 | **18767** | 桥接包 `DvrSvc` | 常驻 |
 
-手机和浏览器只连 18766，页面上切三个 tab。18764 与 18765 互斥。
-
-## 文档
-
-`docs/architecture.md` 结构 · `interfaces.md` 接口 · `build.md` 构建 · `conventions.md` 约定 · `troubleshooting.md` 排障 · `unpack.md` 取源码。
+手机和浏览器只连 18766，页面上切三个 tab：车机控制 / 音乐控制 / 行车记录仪。18764 与 18765 互斥。
