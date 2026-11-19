@@ -88,7 +88,7 @@ $jadxBat = "<jadx>\bin\jadx.bat"
 产物直接放进本工程，不再另建 D 盘目录：
 
 ```
-D:\开发\车机助手\dex\V{versionName去点}\
+<工程根>\dex\V{versionName去点}\
 ├── dex\     # 脱壳得到的原始 dex（构建输入）
 └── src\     # jadx 反编译的 Java（查阅用，不参与构建）
 ```

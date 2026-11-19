@@ -97,3 +97,10 @@ java -jar "$BUILD_TOOLS/lib/apksigner.jar" verify --print-certs dist/xxx.apk
 
 18764 与 18765 互斥。外壳每 15 秒问一次 `/gateway`，后端端口变了会自动重贴音乐页。
 没变就点一下「音乐控制」tab 重新贴。
+
+## 已知问题
+
+- **新装的车机助手要先手动打开一次**，之后才由服务接管（安卓 stopped 状态不投递开机广播）。
+- **装新包必须 `am force-stop com.navi.tool` 再启动**，`Page` 有进程内缓存。
+- **18.62 脱壳 dex 只有一份**。18.62 原厂包在 `apk\navitool-18.62-original.apk`（vc13），真丢了按 `docs/unpack.md` 重新脱。
+- **`music\cloudmusic-car` 派生自 LGPL-3.0 项目**（`xuqian-git/cloudmusic-car`），其 `README.md` 引用的根 `NOTICE.md` 尚不存在。若将来开源，需补来源链与改动声明。
