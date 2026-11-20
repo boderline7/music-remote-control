@@ -19,6 +19,31 @@ music\cloudmusic-car\   音乐端（app / lunastub）
 phone\                  手机端 android / ios
 ```
 
+## 环境
+
+构建输入端（`make.py`）需要：
+
+- Python 3.8+（只用标准库，无第三方依赖）
+- JDK 17
+- Android SDK：`build-tools 34.0.0` + `platforms/android-35`
+- apktool 2.11.1，放到 `patch/apktool.jar`（体积大，不在仓库里，自行下载）
+
+音乐端与手机端走 Gradle wrapper（8.14.5 / AGP 8.7.3 / Kotlin 2.0.21），首次构建需联网拉依赖。
+iOS 需 macOS + Xcode + XcodeGen，或直接走仓库内的 GitHub Actions 云构建。
+
+路径不写死在代码里，按需提供：
+
+```bash
+# 方式一：工程根建 local.env（不入库）
+JB=<jdk-17 目录>
+BT=<build-tools 目录>
+ANDROID_JAR=<sdk>/platforms/android-35/android.jar
+
+# 方式二：scripts/config.local.sh（不入库，脚本用）
+```
+
+缺配置会直接报出缺哪一项。脱壳另需 root 设备 + frida-server，装包另需 adb。
+
 ## 端口
 
 | 端口 | 谁在提供 | 什么时候在 |

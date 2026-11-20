@@ -56,8 +56,14 @@ def _local_env(name, default=""):
     return default
 
 
+def _raw(name, default=""):
+    """环境变量 > local.env > default，返回原始字符串（可能为空）。"""
+    return os.environ.get(name) or _local_env(name, default)
+
+
 def _tool(name, default=""):
-    return Path(os.environ.get(name) or _local_env(name, default))
+    v = _raw(name, default)
+    return Path(v) if v else None
 
 
 JB = _tool("JB", "")
@@ -74,13 +80,15 @@ ANDROID_JAR = _tool("ANDROID_JAR", "")
 # apktool 在中文路径下编 res 会失败，构建目录必须纯 ASCII
 ASCII = _tool("ASCII_BUILD", "C:/Temp/mod_build")
 
-JAVA = (JB / "bin" / "java.exe") if (JB / "bin" / "java.exe").exists() else (JB / "java.exe")
-JAVAC = JAVA.with_name("javac.exe")
-D8 = BT / "d8.bat"
-ZIPALIGN = BT / "zipalign.exe"
-AAPT2 = BT / "aapt2.exe"
-APKSIGNER = BT / "lib" / "apksigner.jar"
-
+if JB is None or BT is None:
+    JAVA = JAVAC = D8 = ZIPALIGN = AAPT2 = APKSIGNER = None
+else:
+    JAVA = (JB / "bin" / "java.exe") if (JB / "bin" / "java.exe").exists() else (JB / "java.exe")
+    JAVAC = JAVA.with_name("javac.exe")
+    D8 = BT / "d8.bat"
+    ZIPALIGN = BT / "zipalign.exe"
+    AAPT2 = BT / "aapt2.exe"
+    APKSIGNER = BT / "lib" / "apksigner.jar"
 KS_PASS = "android"
 KS_ALIAS = "debugkey"
 
@@ -102,7 +110,7 @@ def run(cmd, **kw):
 
 
 def need_tools():
-    if not str(JB) or not str(BT) or not str(ANDROID_JAR):
+    if JB is None or BT is None or ANDROID_JAR is None:
         raise SystemExit(
             "缺工具路径配置。在工程根建一个 local.env（不入库），内容形如：\n"
             "  JB=<jdk-17 目录>\n"
