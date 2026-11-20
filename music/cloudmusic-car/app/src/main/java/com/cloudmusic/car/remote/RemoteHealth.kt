@@ -1,8 +1,6 @@
 package com.cloudmusic.car.remote
 
-import android.content.Context
 import android.util.Log
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.ArrayDeque
 import java.util.Date
@@ -171,42 +169,32 @@ object RemoteHealth {
         )
     }
 
-    /**
-     * 导出诊断文本。唯一的磁盘写入点 —— 只在用户点「导出」时发生。
-     * @return 写好的文件；失败返回 null。
-     */
-    fun export(context: Context, clients: Int, pendingFrames: Int, pendingBytes: Long): File? {
-        val s = snapshot(clients, pendingFrames, pendingBytes)
-        val body = buildString {
-            appendLine("# cloudmusic-car 遥控诊断")
-            appendLine("导出时间: ${fmt(System.currentTimeMillis())}")
-            appendLine("运行时长: ${fmtDuration(s.uptimeMs)}")
-            appendLine("连接: 当前 ${s.clients} / 峰值 ${s.peakClients} / 累计 ${s.connects} / 断开 ${s.disconnects} / 拒绝 ${s.rejected}")
-            appendLine("线程: 总 ${s.threads}，遥控相关 ${s.remoteThreads}")
-            appendLine("消息: 入 ${s.messagesIn} 条 / 出 ${s.messagesOut} 条")
-            appendLine("帧: 入 ${s.framesIn} (${s.bytesIn}B) / 出 ${s.framesOut} (${s.bytesOut}B)")
-            appendLine("发送队列: 待发 ${s.pendingFrames} 帧 / ${s.pendingBytes}B")
-            appendLine("队列策略: 合并 ${s.stateCoalesced} / 丢弃状态 ${s.stateDropped} / 溢出断开 ${s.overflowCloses}")
-            appendLine("慢客户端: 断开 ${s.slowClientCloses} / 写阻塞 ${s.writeStalls}")
-            appendLine("网络变化: ${s.networkChanges} 次，mDNS 重建 ${s.mdnsRebuilds} 次")
-            appendLine("网易云请求: ${s.neteaseCount} 次，最近 ${s.neteaseLastMs}ms，最大 ${s.neteaseMaxMs}ms，平均 ${s.neteaseAvgMs}ms，失败 ${s.neteaseFailures}")
-            appendLine("最近错误:")
-            s.errors.forEach { appendLine("  $it") }
-            appendLine()
-            appendLine("## 环形日志（最近 ${dump().size} 条）")
-            dump().forEach { appendLine(it) }
-        }
-        return runCatching {
-            val dir = (context.getExternalFilesDir("diag") ?: File(context.filesDir, "diag"))
-                .apply { mkdirs() }
-            val name = "remote-diag-" +
-                SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date()) + ".txt"
-            File(dir, name).apply {
-                writeText(body)
-                Log.i(TAG, "diag exported: $absolutePath")
-            }
-        }.getOrNull()
+    /** 环形缓冲全量（Web 日志接口 / 导出共用）。 */
+    fun logsText(): String = buildString { dump().forEach { appendLine(it) } }
+
+    /** Web 诊断接口与文件导出共用的同一份文本，避免两处内容慢慢长歪。 */
+    fun text(s: Snapshot): String = buildString {
+        appendLine("# cloudmusic-car 音乐控制诊断")
+        appendLine("导出时间: ${fmt(System.currentTimeMillis())}")
+        appendLine("运行时长: ${fmtDuration(s.uptimeMs)}")
+        appendLine("连接: 当前 ${s.clients} / 峰值 ${s.peakClients} / 累计 ${s.connects} / 断开 ${s.disconnects} / 拒绝 ${s.rejected}")
+        appendLine("线程: 总 ${s.threads}，遥控相关 ${s.remoteThreads}")
+        appendLine("消息: 入 ${s.messagesIn} 条 / 出 ${s.messagesOut} 条")
+        appendLine("帧: 入 ${s.framesIn} (${s.bytesIn}B) / 出 ${s.framesOut} (${s.bytesOut}B)")
+        appendLine("发送队列: 待发 ${s.pendingFrames} 帧 / ${s.pendingBytes}B")
+        appendLine("队列策略: 合并 ${s.stateCoalesced} / 丢弃状态 ${s.stateDropped} / 溢出断开 ${s.overflowCloses}")
+        appendLine("慢客户端: 断开 ${s.slowClientCloses} / 写阻塞 ${s.writeStalls}")
+        appendLine("网络变化: ${s.networkChanges} 次，mDNS 重建 ${s.mdnsRebuilds} 次")
+        appendLine("网易云请求: ${s.neteaseCount} 次，最近 ${s.neteaseLastMs}ms，最大 ${s.neteaseMaxMs}ms，平均 ${s.neteaseAvgMs}ms，失败 ${s.neteaseFailures}")
+        appendLine("最近错误:")
+        s.errors.forEach { appendLine("  $it") }
+        appendLine()
+        appendLine("## 环形日志（最近 ${dump().size} 条）")
+        appendLine(logsText().trimEnd())
     }
+
+    fun text(clients: Int, pendingFrames: Int, pendingBytes: Long): String =
+        text(snapshot(clients, pendingFrames, pendingBytes))
 
     fun fmtDuration(ms: Long): String {
         val total = ms / 1000

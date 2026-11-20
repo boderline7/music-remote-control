@@ -65,7 +65,7 @@ class CloudMusicPlugin {
             MusicCache.init(context)
             AccountStore.init()
             PlayerHub.init(context)
-            session = MediaSession.Builder(context, PlayerHub.player)
+            session = MediaSession.Builder(context, PlayerHub.sessionPlayer)
                 .setId("paopao.cloudmusic")
                 .build()
                 .also { mediaSession ->

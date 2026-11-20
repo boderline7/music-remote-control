@@ -43,6 +43,14 @@ object RemoteWeb {
             path == "/" || path == "/index.html" -> page(context, host)
             // 车控页拿它探活：18765 在不在，一个空响应就够了
             path == "/ping" -> text("ok", "200 OK")
+            // Web 设置面板的音乐那一路：状态 / 诊断 / 采样日志。
+            // 18766 网关把 /api/* 原样转过来，所以从统一入口进来也是这三个接口。
+            path == "/api/status" -> response(
+                "application/json; charset=utf-8",
+                RemoteServer.statusJson().toByteArray(Charsets.UTF_8),
+            )
+            path == "/api/diag" -> download("music-diag.txt", RemoteServer.diagText())
+            path == "/api/logs" -> download("music-log.txt", RemoteHealth.logsText())
             path == "/icon.png" -> icon(context)
             path == "/favicon.ico" -> icon(context)
             else -> text("404 Not Found", "404 Not Found")
@@ -116,16 +124,24 @@ object RemoteWeb {
     private fun text(body: String, status: String): ByteArray =
         response("text/plain; charset=utf-8", body.toByteArray(Charsets.UTF_8), status)
 
+    /** 网页「下载」的直出兜底：带 attachment 头，浏览器存下来的就是正常 txt。 */
+    private fun download(name: String, body: String): ByteArray =
+        response("text/plain; charset=utf-8", body.toByteArray(Charsets.UTF_8), attachment = name)
+
     private fun response(
         contentType: String,
         body: ByteArray,
         status: String = "200 OK",
         cache: String = "no-store",
+        attachment: String? = null,
     ): ByteArray {
         val head = buildString {
             append("HTTP/1.1 ").append(status).append("\r\n")
             append("Content-Type: ").append(contentType).append("\r\n")
             append("Content-Length: ").append(body.size).append("\r\n")
+            if (attachment != null) {
+                append("Content-Disposition: attachment; filename=\"").append(attachment).append("\"\r\n")
+            }
             append("Access-Control-Allow-Origin: *\r\n")
             append("Cache-Control: ").append(cache).append("\r\n")
             append("Connection: close\r\n\r\n")

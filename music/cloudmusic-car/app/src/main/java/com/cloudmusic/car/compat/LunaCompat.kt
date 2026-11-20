@@ -11,6 +11,7 @@ import com.cloudmusic.car.api.LyricsParser
 import com.cloudmusic.car.api.sized
 import com.cloudmusic.car.data.AccountStore
 import com.cloudmusic.car.player.PlayerHub
+import com.cloudmusic.car.remote.RemoteHealth
 import com.paopao.music.nowplaying.PlayModes
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -147,6 +148,7 @@ object LunaCompat {
                     // 方向盘 / 桌面卡片若走的是助手的 PLAYER_CONTROL 广播，这里能一眼看到有没有送达。
                     // 系统媒体按键（KEYCODE_MEDIA_NEXT/PREVIOUS）不经这里，直接到 MediaSession。
                     Log.i(TAG, "收到播控 controlType=$type")
+                    RemoteHealth.log("助手播控 controlType=$type")
                     when (type) {
                         CONTROL_TOGGLE -> PlayerHub.togglePlay()
                         CONTROL_PREV -> PlayerHub.previous()
@@ -209,6 +211,9 @@ object LunaCompat {
                     pausedPosition = if (playing) -1L else currentPosition()
                     pushState()
                     pushLyric(force = true)
+                    // 换歌这一拍也要喂看门狗：只发 STATE 不发 LINE，到下一拍就是 2 秒，
+                    // 超过助手的 1.8 秒超时，界面会自己刷成暂停（声音还在），看着像切完又停了。
+                    if (playing) pushLine()
                     continue
                 }
 

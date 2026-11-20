@@ -536,7 +536,7 @@
 <div class="smask" id="sMask"></div>
 <div class="ssheet" id="sSheet">
   <div class="sshead">
-    <h3>设置 · 诊断</h3>
+    <h3 id="sTitle">设置 · 诊断</h3>
     <button class="ssx" id="sClose" aria-label="关闭">✕</button>
   </div>
   <div class="ssbody">
@@ -547,19 +547,19 @@
       <button class="sstab" data-seg="cards">车况</button>
       <button class="sstab" data-seg="acts">动作表</button>
     </div>
-    <div class="ssrow">
+    <div class="ssrow" id="sGenRow">
       <button class="primary" id="sGen">生成</button>
       <button id="sCopy">复制</button>
       <button id="sSave">下载</button>
     </div>
     <pre class="sstxt" id="sTxt2">点「生成」，取当前这一段的文本。</pre>
     <div class="sstip" id="sTip"></div>
-    <div class="ssrow" style="margin-top:16px">
+    <div class="ssrow" id="sRecRow" style="margin-top:16px">
       <button id="sDump">全部导出</button>
       <button id="sRec">停止记录</button>
       <button id="sClear">清空记录</button>
     </div>
-    <div class="sstip">
+    <div class="sstip" id="sHelp">
       诊断里是端口、引擎绑定、安装包版本、动作项数和最近日志。<br>
       「下载」给的是服务器直出的 txt（UTF-8），文件名带时间，不再走浏览器临时文件。<br>
       「停止记录」之后不再写新行，已有的留着，方便把现场钉在出问题那一段。<br>
@@ -1721,7 +1721,7 @@
   var CAR_BASE = 'http://' + HOST + ':' + CAR_PORT;
   // 拼接时写进来的构建号：并进 iframe 地址，页面一改 URL 就变，
   // 装新包后不用手动清缓存也一定拿到新页面；同一个包重复打开仍走缓存。
-  var BUILD = '26032bc2';
+  var BUILD = 'cc450885';
   // 哪个端口发下来的页，就自带哪一路，不用 iframe 套自己
   var NATIVE = String(location.port) === String(CAR_PORT) ? 'car' : 'music';
   // 统一入口：从 18766 进来，三路都走本机 + 网关转发，地址只有一个
@@ -1731,8 +1731,8 @@
   ['shellRoot', 'sBar', 'sDot', 'sTxt', 'sSet', 'sReload', 'sTabCar', 'sTabMusic',
    'sTabDvr', 'sDotCar', 'sDotMusic', 'sDotDvr', 'sPane', 'sFrame', 'sFail',
    'sFailT', 'sFailS', 'sFailGo',
-   'sMask', 'sSheet', 'sClose', 'sKv', 'sSegs', 'sGen', 'sCopy', 'sSave', 'sTxt2',
-   'sTip', 'sDump', 'sRec', 'sClear'
+   'sMask', 'sSheet', 'sClose', 'sTitle', 'sKv', 'sSegs', 'sGenRow', 'sGen', 'sCopy',
+   'sSave', 'sTxt2', 'sTip', 'sHelp', 'sDump', 'sRecRow', 'sRec', 'sClear'
   ].forEach(function (id) { el[id] = document.getElementById(id); });
 
   var stored = localStorage.getItem(K_TAB);
@@ -1973,31 +1973,18 @@
     if (tab === 'dvr') paintStatus();
   });
 
-  // ---------- 设置 / 诊断（数据永远取 18766） ----------
+  // ---------- 设置 / 诊断：按当前 tab 分源，不再三路共用 18766 那一份 ----------
+  // car 走 18766 自己的接口；music 走 /api/*（18766 网关会转给音乐后端，
+  // 从 18765 / 18764 进来则是本端接口）；dvr 没有独立接口，只给说明。
 
-  var SEGS = {
-    diag: { url: '/diag', dl: '/diag.txt', file: '车机诊断', slow: 18000,
-      tip: '端口、引擎绑定、安装包版本、动作项数、进程日志和 logcat 摘要。' },
-    log: { url: '/acts.log', dl: '/acts.log.txt', file: '操作记录', slow: 6000,
-      tip: '每次点按钮的结果和耗时，最新的在最上面。' },
-    cards: { url: '/cards.txt', dl: '/cards.txt', file: '车况快照', slow: 6000,
-      tip: '每张卡、每一项的名字和值。' },
-    acts: { url: '/acts.txt', dl: '/acts.txt', file: '动作表', slow: 6000,
-      tip: '当前能执行的项和方法名。' }
-  };
-  var curSeg = 'diag';
-  var segCache = {};
-  var segBusy = false;
-
-  function openSheet() {
-    el.sSheet.className = 'ssheet show';
-    el.sMask.className = 'smask show';
-    el.sKv.textContent = '读取中…';
-    fetch(CAR_BASE + '/ping?_=' + Date.now(), withTimeout(3500))
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (!d || d.ok !== 1) { el.sKv.textContent = '18766 没响应'; return; }
-        el.sKv.textContent = '车控　' + CAR_BASE + '\n'
+  var SOURCES = {
+    car: {
+      name: '车机助手',
+      base: CAR_BASE,
+      kvUrl: CAR_BASE + '/ping',
+      kv: function (d) {
+        if (!d || d.ok !== 1) return '18766 没响应';
+        return '车控　' + CAR_BASE + '\n'
           + '音乐　' + (musPort ? ('http://' + HOST + ':' + musPort) : '未探到') + '\n'
           + '记录仪　' + (dvrOk ? ('http://' + HOST + ':' + DVR_PORT) : '未连接（手动）') + '\n'
           + '服务　端口 ' + d.port + (d.bound ? ' 已绑定' : ' 未绑定') + ' · 接口 v' + d.v + '\n'
@@ -2006,10 +1993,107 @@
           + '操作　' + (d.ops == null ? 0 : d.ops) + ' 次调用'
           + (d.opsFail ? ' · 失败 ' + d.opsFail : '')
           + (d.err ? '\n错误　' + d.err : '');
-      })
-      .catch(function () { el.sKv.textContent = '连不上 18766，诊断也取不到。'; });
-    refreshRec();
-    pickSeg(curSeg);
+      },
+      segs: [
+        { key: 'diag', label: '诊断', url: '/diag', dl: '/diag.txt', file: '车机助手诊断', slow: 18000,
+          tip: '端口、引擎绑定、安装包版本、动作项数、进程日志和 logcat 摘要。' },
+        { key: 'log', label: '操作记录', url: '/acts.log', dl: '/acts.log.txt', file: '车机助手操作记录', slow: 6000,
+          tip: '每次点车控按钮的结果和耗时，最新的在最上面。' },
+        { key: 'cards', label: '车况', url: '/cards.txt', dl: '/cards.txt', file: '车机助手车况', slow: 6000,
+          tip: '每张卡、每一项的名字和值。' },
+        { key: 'acts', label: '动作表', url: '/acts.txt', dl: '/acts.txt', file: '车机助手动作表', slow: 6000,
+          tip: '当前能执行的车控项和方法名。' }
+      ],
+      dump: true, rec: true,
+      help: '这一路是车机助手（18766）的诊断：车控接口、车辆状态、动作表和操作记录。<br>'
+        + '「下载」给的是服务器直出的 txt（UTF-8）。「停止记录」会钉住现场，删掉记录前先下载。'
+    },
+    music: {
+      name: '音乐控制',
+      base: '',
+      kvUrl: '/api/status',
+      kv: function (d) {
+        if (!d || (d.ok !== 1 && d.ok !== true)) return '音乐端没响应，打开汽水音乐或网易云车机版';
+        var s = '音乐　端口 ' + (d.port || '—') + ' · ' + (d.running ? '服务在跑' : '服务已停') + '\n'
+          + '在线　' + (d.clients || 0) + (d.maxClients ? ' / ' + d.maxClients : '') + '\n'
+          + '地址　' + (d.ip || '—');
+        if (d.modeLabel) s += '\n音源　' + d.modeLabel;
+        if (d.version) s += '\n版本　' + d.version;
+        if (d.mdnsIp) s += '\n域名　' + d.mdnsIp;
+        return s;
+      },
+      segs: [
+        { key: 'diag', label: '诊断', url: '/api/diag', dl: '/api/diag', file: '音乐控制诊断', slow: 18000,
+          tip: '音乐端运行状态、连接、mDNS、媒体请求耗时和最近错误。' },
+        { key: 'log', label: '运行日志', url: '/api/logs', dl: '/api/logs', file: '音乐控制日志', slow: 6000,
+          tip: '手机下发的播放指令与音乐端链路时序，最新在最下面。' }
+      ],
+      dump: false, rec: false,
+      help: '这一路是音乐端的诊断和日志，跟车机助手那份不是一回事。<br>'
+        + '「合并导出」把诊断和运行日志打在一个 txt 里；下载没反应时点「复制」。'
+    },
+    dvr: {
+      name: '行车记录仪',
+      base: '',
+      kvUrl: null,
+      kv: function () { return '记录仪没有独立的诊断接口。\n连接状态和设置请在「行车记录仪」页面里操作。'; },
+      segs: [], dump: false, rec: false,
+      help: '记录仪的日志由它自己的页面管理，这里不代取，也不跟另外两路混在一起。'
+    }
+  };
+
+  var segCache = {};   // key = '源:段'，切 tab 不会串内容
+  var segBusy = false;
+  var curSegBySrc = { car: 'diag', music: 'diag', dvr: '' };
+
+  function src() { return SOURCES[tab] || SOURCES.car; }
+  function segCfg(seg) {
+    var s = src();
+    for (var i = 0; i < s.segs.length; i++) if (s.segs[i].key === seg) return s.segs[i];
+    return null;
+  }
+  function cacheKey(which, seg) { return which + ':' + seg; }
+
+  function renderSegs(s) {
+    el.sSegs.innerHTML = '';
+    s.segs.forEach(function (cfg) {
+      var b = document.createElement('button');
+      b.className = 'sstab';
+      b.setAttribute('data-seg', cfg.key);
+      b.textContent = cfg.label;
+      el.sSegs.appendChild(b);
+    });
+    el.sSegs.style.display = s.segs.length ? '' : 'none';
+  }
+
+  function openSheet() {
+    var s = src();
+    el.sSheet.className = 'ssheet show';
+    el.sMask.className = 'smask show';
+    el.sTitle.textContent = s.name + ' · 设置与诊断';
+    el.sKv.textContent = s.kvUrl ? '读取中…' : s.kv(null);
+    if (s.kvUrl) {
+      var which = tab;
+      fetch(s.kvUrl + (s.kvUrl.indexOf('?') >= 0 ? '&' : '?') + '_=' + Date.now(), withTimeout(3500))
+        .then(function (r) { return r.json(); })
+        .then(function (d) { if (tab === which) el.sKv.textContent = s.kv(d); })
+        .catch(function () {
+          if (tab === which) el.sKv.textContent = s.name + '没响应，这一段的状态取不到。';
+        });
+    }
+    renderSegs(s);
+    el.sGenRow.style.display = s.segs.length ? '' : 'none';
+    el.sTxt2.style.display = s.segs.length ? '' : 'none';
+    el.sTip.style.display = s.segs.length ? '' : 'none';
+    el.sDump.style.display = (s.dump || s.segs.length) ? '' : 'none';
+    el.sDump.textContent = s.dump ? '全部导出' : (s.segs.length ? '合并导出' : '');
+    el.sRec.style.display = s.rec ? '' : 'none';
+    el.sClear.style.display = s.rec ? '' : 'none';
+    el.sHelp.innerHTML = s.help;
+    if (s.rec) refreshRec();
+    var first = s.segs.length ? (curSegBySrc[tab] || s.segs[0].key) : '';
+    if (s.segs.length && !segCfg(first)) first = s.segs[0].key;
+    pickSeg(first);
   }
 
   function closeSheet() {
@@ -2018,34 +2102,44 @@
   }
 
   function pickSeg(seg) {
-    if (!SEGS[seg]) return;
-    curSeg = seg;
+    var s = src();
+    var cfg = segCfg(seg);
+    if (!cfg) return;
+    curSegBySrc[tab] = seg;
     Array.prototype.forEach.call(el.sSegs.children, function (b) {
       b.classList.toggle('on', b.getAttribute('data-seg') === seg);
     });
-    el.sTip.textContent = SEGS[seg].tip;
-    el.sTxt2.textContent = segCache[seg] || ('点「生成」取' + SEGS[seg].file + '。');
+    el.sTip.textContent = cfg.tip;
+    var key = cacheKey(tab, seg);
+    el.sTxt2.textContent = segCache[key] || ('点「生成」取' + cfg.file + '。');
     el.sTxt2.scrollTop = 0;
-    if (!segCache[seg] && !segBusy) loadSeg();
+    if (!segCache[key] && !segBusy) loadSeg();
   }
 
   function loadSeg() {
     if (segBusy) return;
-    var seg = curSeg;
-    var cfg = SEGS[seg];
+    var which = tab;
+    var s = src();
+    var seg = curSegBySrc[which];
+    var cfg = segCfg(seg);
+    if (!cfg) return;
+    var key = cacheKey(which, seg);
+    var url = s.base + cfg.url;
     segBusy = true;
     el.sTxt2.textContent = '读取中…';
-    fetch(CAR_BASE + cfg.url + '?_=' + Date.now(), withTimeout(cfg.slow))
+    fetch(url + (url.indexOf('?') >= 0 ? '&' : '?') + '_=' + Date.now(), withTimeout(cfg.slow))
       .then(function (r) { return r.text(); })
       .then(function (t) {
-        segBusy = false; segCache[seg] = t;
-        if (curSeg === seg) { el.sTxt2.textContent = t; el.sTxt2.scrollTop = 0; }
+        segBusy = false; segCache[key] = t;
+        if (tab === which && curSegBySrc[which] === seg) {
+          el.sTxt2.textContent = t; el.sTxt2.scrollTop = 0;
+        }
       })
       .catch(function () {
         segBusy = false;
-        if (curSeg === seg) {
-          el.sTxt2.textContent = '取不到：18766 没响应。\n'
-            + '浏览器里直接打开 ' + CAR_BASE + cfg.url + ' 看看。';
+        if (tab === which && curSegBySrc[which] === seg) {
+          el.sTxt2.textContent = '取不到：' + s.name + '没响应。\n'
+            + '浏览器里直接打开 ' + url + ' 看看。';
         }
       });
   }
@@ -2128,44 +2222,68 @@
     if (b) pickSeg(b.getAttribute('data-seg'));
   });
   el.sGen.addEventListener('click', loadSeg);
-  el.sCopy.addEventListener('click', function () {
-    if (!segCache[curSeg]) { toast('先点「生成」'); return; }
-    copyText(segCache[curSeg]);
-  });
-  el.sSave.addEventListener('click', function () {
-    if (!segCache[curSeg]) { toast('先点「生成」'); return; }
-    var name = SEGS[curSeg].file + '_' + stamp() + '.txt';
-    // 优先走 App 的存盘接口：WebView 里既没有下载器，Blob 也常常存成没后缀的文件
+
+  function currentKey() {
+    var seg = curSegBySrc[tab];
+    return seg ? cacheKey(tab, seg) : '';
+  }
+
+  /* 存盘三选一：手机端 JS 接口 → 服务端直出 txt → 浏览器 Blob。
+     三路都带的是当前 tab 那一份内容，不再混到别的服务上去。 */
+  function deliver(name, text, fallbackUrl) {
     var N = window.CarRemoteNative;
     if (N && typeof N.saveText === 'function') {
       try {
-        if (N.saveText(name, segCache[curSeg]) !== false) {
+        if (N.saveText(name, text) !== false) {
           toast('已存到手机下载目录：' + name);
           return;
         }
       } catch (e) { /* 退回服务器下载 */ }
     }
-    // 服务器直出 txt（Content-Disposition + UTF-8），浏览器会存成正经的 .txt
-    toast('开始下载 ' + name);
-    try { location.href = SEGS[curSeg].dl || SEGS[curSeg].url; }
-    catch (e) { saveText(segCache[curSeg], name); }
+    if (fallbackUrl) {
+      toast('开始下载 ' + name);
+      try { location.href = fallbackUrl; return; } catch (e) { /* 退回 Blob */ }
+    }
+    saveText(text, name);
+  }
+
+  el.sCopy.addEventListener('click', function () {
+    var key = currentKey();
+    if (!segCache[key]) { toast('先点「生成」'); return; }
+    copyText(segCache[key]);
+  });
+  el.sSave.addEventListener('click', function () {
+    var key = currentKey();
+    if (!segCache[key]) { toast('先点「生成」'); return; }
+    var s = src();
+    var cfg = segCfg(curSegBySrc[tab]);
+    var name = cfg.file + '_' + stamp() + '.txt';
+    deliver(name, segCache[key], s.base + (cfg.dl || cfg.url) + '?_=' + Date.now());
   });
   el.sDump.addEventListener('click', function () {
-    var name = '车机全量_' + stamp() + '.txt';
+    var s = src();
+    if (!s.segs.length) return;
+    if (s.dump) {
+      var name = s.name + '全量_' + stamp() + '.txt';
+      toast('正在打包…');
+      fetch(CAR_BASE + '/dump?_=' + Date.now(), withTimeout(25000))
+        .then(function (r) { return r.text(); })
+        .then(function (t) { deliver(name, t, '/dump.txt'); })
+        .catch(function () { toast('打包失败，先试单个「下载」'); });
+      return;
+    }
+    if (tab !== 'music') return;
+    // 音乐端没有服务端 dump：诊断 + 运行日志在前端拼成一份，来源仍是音乐那一路。
+    var mname = '音乐控制全量_' + stamp() + '.txt';
     toast('正在打包…');
-    fetch(CAR_BASE + '/dump?_=' + Date.now(), withTimeout(25000))
-      .then(function (r) { return r.text(); })
-      .then(function (t) {
-        var N = window.CarRemoteNative;
-        if (N && typeof N.saveText === 'function') {
-          try {
-            if (N.saveText(name, t) !== false) {
-              toast('已存到手机下载目录：' + name);
-              return;
-            }
-          } catch (e) { /* 退回服务器下载 */ }
-        }
-        location.href = '/dump.txt';
+    Promise.all([
+      fetch('/api/diag?_=' + Date.now(), withTimeout(18000)).then(function (r) { return r.text(); }),
+      fetch('/api/logs?_=' + Date.now(), withTimeout(6000)).then(function (r) { return r.text(); }),
+    ])
+      .then(function (parts) {
+        var t = '# 音乐控制全量导出\n导出时间: ' + new Date().toLocaleString() + '\n\n'
+          + parts[0] + '\n\n--- 运行日志 ---\n' + parts[1];
+        deliver(mname, t, '');
       })
       .catch(function () { toast('打包失败，先试单个「下载」'); });
   });
@@ -2201,7 +2319,7 @@
     fetch(CAR_BASE + '/log/clear', { cache: 'no-store' })
       .then(function (r) { return r.json(); })
       .then(function (r) {
-        if (r && r.ok === 1) { delete segCache.log; toast('操作记录已清空'); }
+        if (r && r.ok === 1) { delete segCache[cacheKey(tab, 'log')]; toast('操作记录已清空'); }
         else toast('清空失败');
       })
       .catch(function () { toast('连不上桥接服务'); });

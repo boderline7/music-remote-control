@@ -3,6 +3,7 @@ package com.cloudmusic.car.remote
 import android.content.Context
 import android.media.AudioManager
 import android.os.SystemClock
+import androidx.media3.common.Player
 import com.cloudmusic.car.api.LyricLine
 import com.cloudmusic.car.data.AccountStore
 import com.cloudmusic.car.player.PlayerHub
@@ -43,7 +44,12 @@ object PlayerBridge {
             else -> runCatching { player.duration }.getOrDefault(0L).coerceAtLeast(0L)
         }
         return Snapshot(
-            playing = PlayerHub.isPlaying.value,
+            // 切歌加载那一秒 ExoPlayer.isPlaying 会短暂变 false，直接上报会让遥控器闪回暂停图标。
+            // 用「打算播 && 不在 IDLE/ENDED」判定，和 LunaCompat.isTrulyPlaying 保持一致。
+            playing = runCatching {
+                val p = PlayerHub.player
+                p.playWhenReady && p.playbackState != Player.STATE_IDLE && p.playbackState != Player.STATE_ENDED
+            }.getOrDefault(PlayerHub.isPlaying.value),
             title = track?.name.orEmpty(),
             artist = track?.artistNames.orEmpty(),
             album = track?.album?.name.orEmpty(),
@@ -89,6 +95,10 @@ object PlayerBridge {
      *
      * 现在按「目标状态」处理，并且 [DEDUP_MS] 内的同向指令直接忽略。
      *
+     * 判定一律用 `playWhenReady`（用户意图），不用 `isPlaying`：buffering 时后者会短暂变 false，
+     * 于是「已经在播」被误判成「还没播」，补一条 toggle 反而按成暂停——切歌后停掉就是这么来的。
+     * isPlaying 只留给 UI 显示用。
+     *
      * @return 永远是 true（播放器没有「拒绝播放」这种状态，失败由 UI 的 state 反映）。
      */
     fun setPlaying(want: Boolean): Boolean {
@@ -96,9 +106,8 @@ object PlayerBridge {
         if (wantedPlaying == want && now - lastPlayingCommandAt < DEDUP_MS) return true
         wantedPlaying = want
         lastPlayingCommandAt = now
-        val actual = runCatching { PlayerHub.player.isPlaying }.getOrDefault(false)
         // 已经是目标状态就什么都不做 —— 这就是幂等
-        if (actual != want) PlayerHub.togglePlay()
+        if (PlayerHub.player.playWhenReady != want) PlayerHub.togglePlay()
         return true
     }
 

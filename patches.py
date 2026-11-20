@@ -35,7 +35,7 @@ PATCHES = [
     # ---------------- 2) VIP / 授权 ----------------
     dict(cls="com.navi.tool.utils.NativeBridge",
          sig="getLicenseMask(Landroid/content/Context;)I", ret="I",
-         val="0x7ff", tag="授权掩码全开"),
+         val="0x1fff", tag="授权掩码全开"),
     dict(cls="com.navi.tool.utils.NativeBridge",
          sig="fetchLicenseStatus(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
          # 19.00 起多一个 String 参数；两个签名都认，命中哪个用哪个

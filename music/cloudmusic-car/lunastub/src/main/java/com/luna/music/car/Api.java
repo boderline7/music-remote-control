@@ -55,6 +55,10 @@ final class Api {
                 if ("GET".equals(method)) return logsText();
                 return bytes(setLogs(body));
             }
+            if ("/api/diag".equals(path)) {
+                if ("GET".equals(method)) return diagText(c);
+                return bytes(fail("诊断只读"));
+            }
             JSONObject in = parse(body);
             if ("/api/mode".equals(path)) return bytes(setMode(c, in.optString("mode", "")));
             if ("/api/service".equals(path)) return bytes(service(c, in.optString("op", "restart")));
@@ -87,6 +91,27 @@ final class Api {
         try {
             return LogCapture.dump().getBytes("UTF-8");
         } catch (Throwable t) {
+            return new byte[]{};
+        }
+    }
+
+    /** Web 设置面板「音乐控制 → 诊断」：状态 + 采样日志，和 /api/status 同源。 */
+    private static byte[] diagText(Context c) {
+        try {
+            StringBuilder sb = new StringBuilder();
+            sb.append("# 音乐控制诊断（桥接包 ").append(Cfg.PORT).append("）\n");
+            sb.append("导出时间: ").append(new java.util.Date()).append('\n');
+            JSONObject d = status(c);
+            java.util.Iterator<?> it = d.keys();
+            while (it.hasNext()) {
+                String k = (String) it.next();
+                sb.append(k).append(": ").append(d.opt(k)).append('\n');
+            }
+            sb.append("\n## 采样日志\n");
+            sb.append(LogCapture.dump());
+            return sb.toString().getBytes("UTF-8");
+        } catch (Throwable t) {
+            Log.w(Cfg.TAG, "diagText failed", t);
             return new byte[]{};
         }
     }

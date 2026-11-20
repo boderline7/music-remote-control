@@ -31,7 +31,7 @@
 <div class="smask" id="sMask"></div>
 <div class="ssheet" id="sSheet">
   <div class="sshead">
-    <h3>设置 · 诊断</h3>
+    <h3 id="sTitle">设置 · 诊断</h3>
     <button class="ssx" id="sClose" aria-label="关闭">✕</button>
   </div>
   <div class="ssbody">
@@ -42,19 +42,19 @@
       <button class="sstab" data-seg="cards">车况</button>
       <button class="sstab" data-seg="acts">动作表</button>
     </div>
-    <div class="ssrow">
+    <div class="ssrow" id="sGenRow">
       <button class="primary" id="sGen">生成</button>
       <button id="sCopy">复制</button>
       <button id="sSave">下载</button>
     </div>
     <pre class="sstxt" id="sTxt2">点「生成」，取当前这一段的文本。</pre>
     <div class="sstip" id="sTip"></div>
-    <div class="ssrow" style="margin-top:16px">
+    <div class="ssrow" id="sRecRow" style="margin-top:16px">
       <button id="sDump">全部导出</button>
       <button id="sRec">停止记录</button>
       <button id="sClear">清空记录</button>
     </div>
-    <div class="sstip">
+    <div class="sstip" id="sHelp">
       诊断里是端口、引擎绑定、安装包版本、动作项数和最近日志。<br>
       「下载」给的是服务器直出的 txt（UTF-8），文件名带时间，不再走浏览器临时文件。<br>
       「停止记录」之后不再写新行，已有的留着，方便把现场钉在出问题那一段。<br>

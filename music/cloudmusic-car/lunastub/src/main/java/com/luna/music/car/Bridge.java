@@ -305,9 +305,14 @@ class Bridge {
                 if (isPlaying()) tc.pause();
                 else tc.play();
             } else if (type == 1) {
-                // 整单播已交给官方 playlist_play，上一首直接让官方切
-                LogCapture.log("助手 PREV → 官方 skipToPrevious");
-                tc.skipToPrevious();
+                // 与「下一首」走同一条 Ncm 入口：暂停时切歌要等新曲落地补播，直接 skipToPrevious 会漏掉。
+                int code = Ncm.I.execute("prev", J.o());
+                if (code != 0) {
+                    LogCapture.log("助手 PREV → 官方 skipToPrevious（Ncm 不可用）");
+                    tc.skipToPrevious();
+                } else {
+                    LogCapture.log("助手 PREV → Ncm 统一入口");
+                }
             } else if (type == 2) {
                 // 走 Ncm 的统一入口：单曲点播期间按下一首必须接管到随机歌单，
                 // 直接 skipToNext 会停在「同一首歌不同版本」的点播队列里。

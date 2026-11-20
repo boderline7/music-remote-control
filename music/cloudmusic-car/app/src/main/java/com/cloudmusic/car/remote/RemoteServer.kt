@@ -342,6 +342,7 @@ object RemoteServer : WsServer.Listener {
         val args = data.optJSONObject("args") ?: JSONObject()
         // 资料库相关要发网络请求，走异步分支，不能在这里同步等
         if (action in LIBRARY_ACTIONS) {
+            RemoteHealth.log("cmd ${client.deviceName.ifEmpty { "手机" }} $action -> async")
             handleLibrary(client, id, action, args)
             return
         }
@@ -351,6 +352,8 @@ object RemoteServer : WsServer.Listener {
                 Log.w(RemoteConfig.TAG, "command $action failed", it)
                 RemoteConfig.ERR_ACTION_FAILED
             }
+            // 音乐控制日志：每条来自手机的指令留一行，Web「音乐控制 → 日志」能直接看到。
+            RemoteHealth.log("cmd ${client.deviceName.ifEmpty { "手机" }} $action -> ${if (code == 0) "ok" else errorName(code)}")
             client.conn.sendText(
                 envelope(
                     "ack", id,
@@ -785,6 +788,34 @@ object RemoteServer : WsServer.Listener {
         lastHealthAt = now
         return snapshot
     }
+
+    /** Web 设置面板用的诊断文本：现取快照，不吃 UI 那边的 15 秒缓存。 */
+    fun diagText(): String = RemoteHealth.text(
+        RemoteHealth.snapshot(
+            clients = clients.size,
+            pendingFrames = ws?.pendingFrames() ?: 0,
+            pendingBytes = ws?.pendingBytes() ?: 0L,
+        )
+    )
+
+    /** Web 设置面板顶部的状态行；桥接包 /api/status 的同名精简版。 */
+    fun statusJson(): String = JSONObject().apply {
+        val s = _ui.value
+        put("ok", 1)
+        put("running", s.running)
+        put("clients", s.connected)
+        put("maxClients", s.maxClients)
+        put("port", s.port)
+        put("ip", s.ip)
+        put("domainDiscovery", s.domainDiscovery)
+        put("mdnsRunning", s.mdnsRunning)
+        put("mdnsIp", s.mdnsIp)
+        val ctx = appContext
+        val version = runCatching {
+            if (ctx == null) "" else ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
+        }.getOrNull().orEmpty()
+        if (version.isNotEmpty()) put("version", version)
+    }.toString()
 
     /**
      * 取本机局域网 IPv4。开热点时地址经常变，优先 wlan/ap 网卡，

@@ -110,6 +110,14 @@ final class Ncm {
     /** 上一次的播放状态：判断「播放/缓冲 → 停止」这种由播放到结束的边沿。 */
     volatile int lastPlayState = -1;
     /**
+     * 手动切歌后补播：官方 skipToNext/Previous 是异步的，紧跟其后读 state 拿到的还是旧曲的
+     * 暂停态（或切歌瞬间的 BUFFERING），此刻 play 会被约 1 秒后落地的新曲盖掉 ——
+     * 表现就是「切歌正常，切完一秒又停」。先记下切歌前是否在播，等新曲 metadata 落地再补 play。
+     */
+    private volatile boolean pendingResume = false;
+    private volatile long pendingResumeAt = 0;
+    private volatile String pendingResumeMetaKey = "";
+    /**
      * 自建歌单的「假队列」。官方没有整单播放入口（orpheus://playlist_play 在主 App 里，
      * 车机版没有对应页面，发出去只回成功不切歌），所以只能逐首语音点播：
      * 每首歌起播后由状态机跟上，播完/被官方换版本时自动点下一首。
@@ -467,11 +475,13 @@ final class Ncm {
                     if (poState != PO_IDLE && poState != PO_TAKEOVER) {
                         poTo(poReq, PO_IDLE, "队列为空，手动下一首放弃跟踪", null);
                     }
+                    armResumeAfterCut();
                     LogCapture.log("NEXT → 官方 skipToNext");
                     if (c != null) c.skipToNext(); else mediaKey(KeyEvent.KEYCODE_MEDIA_NEXT);
                 }
             }
             else if ("prev".equals(action)) {
+                armResumeAfterCut();
                 LogCapture.log("PREV → 官方 skipToPrevious");
                 if (c != null) c.skipToPrevious(); else mediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS);
             }
@@ -509,6 +519,54 @@ final class Ncm {
     private MediaController.TransportControls controls() {
         if (ctl == null) return null;
         try { return ctl.getTransportControls(); } catch (Throwable t) { return null; }
+    }
+
+    /**
+     * 切歌前记下当前曲目与播放意图。必须在 skipToNext 之前调用 —— 之后读到的也可能已经是
+     * 过渡态，判断不准。真正补播交给 {@link #onCutTrackLanded(String, String, String)}。
+     */
+    private void armResumeAfterCut() {
+        PlaybackState s = state();
+        int st = s == null ? PlaybackState.STATE_NONE : s.getState();
+        // 正在播/缓冲中：官方切歌会接着播，不用补。
+        if (st == PlaybackState.STATE_PLAYING || st == PlaybackState.STATE_BUFFERING) {
+            pendingResume = false;
+            return;
+        }
+        MediaMetadata m = metadata();
+        String title = m == null ? "" : safeStr(m, MediaMetadata.METADATA_KEY_TITLE);
+        String artist = m == null ? "" : safeStr(m, MediaMetadata.METADATA_KEY_ARTIST);
+        String mid = (m == null || m.getDescription() == null) ? "" : m.getDescription().getMediaId();
+        pendingResumeMetaKey = (title == null ? "" : title) + "|"
+                + (artist == null ? "" : artist) + "|" + (mid == null ? "" : mid);
+        pendingResume = true;
+        pendingResumeAt = System.currentTimeMillis();
+        LogCapture.log("CUT 记录补播意图（切歌前暂停）");
+    }
+
+    /**
+     * metadata 回调里调用：新曲真正落地、且不是切歌前那首，才补一条 play。
+     * 这样 play 作用在新曲上，不会被随后落地的新曲重新置成暂停。
+     */
+    void onCutTrackLanded(String title, String artist, String mid) {
+        if (!pendingResume) return;
+        String key = (title == null ? "" : title) + "|" + (artist == null ? "" : artist)
+                + "|" + (mid == null ? "" : mid);
+        if (key.equals(pendingResumeMetaKey)) return;   // 还是旧曲（官方会重复推同一首），等真正换曲
+        pendingResume = false;
+        MediaController.TransportControls c = controls();
+        LogCapture.log("CUT 新曲落地，补播 PLAY");
+        if (c != null) c.play(); else mediaKey(KeyEvent.KEYCODE_MEDIA_PLAY);
+    }
+
+    /** 每秒兜底：官方一直不推新 metadata 时，超时也要把暂停的歌起播，别一直卡住。 */
+    void poResumeTick() {
+        if (!pendingResume) return;
+        if (System.currentTimeMillis() - pendingResumeAt < 3000L) return;
+        pendingResume = false;
+        MediaController.TransportControls c = controls();
+        LogCapture.log("CUT 补播超时兜底 PLAY");
+        if (c != null) c.play(); else mediaKey(KeyEvent.KEYCODE_MEDIA_PLAY);
     }
 
     /** 官方 App 注册的零参数 custom action（play_daily_recommend_action 等）。 */
@@ -1356,6 +1414,8 @@ class NcmSess extends MediaController.Callback {
             // 全部交给状态机：确认段忽略语音助手启动过程的旧曲目/中间态，
             // 监视段才把 mediaId 变化当作「官方切到了别的版本」。
             Ncm.I.poMetadata(title, artist, mid);
+            // 手动切歌后等新曲落地再补播：必须在这里判断，skipToNext 之后立刻读 state 是旧曲/过渡态。
+            Ncm.I.onCutTrackLanded(title, artist, mid);
         }
         Server.I.onBridgeChanged();
     }

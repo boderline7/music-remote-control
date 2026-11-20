@@ -8,8 +8,10 @@ import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import androidx.annotation.OptIn
+import com.cloudmusic.car.remote.RemoteHealth
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
@@ -66,6 +68,8 @@ data class PlaybackNotice(val kind: String, val text: String)
  */
 @OptIn(UnstableApi::class)
 object PlayerHub {
+    private const val TAG = "CloudMusic"
+
     private class UnplayableTrackException(id: Long) : IOException("no url for $id")
 
     private const val SCHEME = "cloudmusic"
@@ -74,9 +78,25 @@ object PlayerHub {
     private const val PREFETCH_RETRY_MS = 2 * 60 * 1000L
     private const val METADATA_KEY_LYRIC = "android.media.metadata.LYRIC"
 
+    private var _sessionPlayer: ForwardingPlayer? = null
+
+    /**
+     * 交给 MediaSession 的包装。方向盘 / 通知栏 / 桌面底栏的媒体键走 Player.next()，
+     * 直接落到裸 ExoPlayer 上，不经过 [next] / [previous]；这里把两条切歌入口导回本类，
+     * 才能和遥控器共用「暂停时自动起播」。其它能力全部透传，事件监听照旧转发。
+     */
+    val sessionPlayer: Player
+        get() = _sessionPlayer ?: error("PlayerHub.init 尚未调用")
+
     private var scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     lateinit var player: ExoPlayer
         private set
+
+    // 手动切歌的补播代次：每次切歌 +1，延迟任务只认自己那一代，
+    // 避免连续快切时旧任务落到新歌上。用户在这期间主动暂停也会 +1 让补播作废。
+    private var cutGeneration = 0
+    private var cutResumeJob: Job? = null
+    private const val CUT_RESUME_DELAY_MS = 220L
 
     private val tracks = ConcurrentHashMap<Long, Track>()
     private data class ResolvedUrl(val url: String, val resolvedAt: Long, val cacheKey: String)
@@ -173,6 +193,24 @@ object PlayerHub {
             .setMaxSeekToPreviousPositionMs(Long.MAX_VALUE)
             .build()
         player.addListener(listener)
+        _sessionPlayer = object : ForwardingPlayer(player) {
+            override fun next() {
+                RemoteHealth.log("媒体键 next → PlayerHub.next")
+                this@PlayerHub.next()
+            }
+            override fun previous() {
+                RemoteHealth.log("媒体键 previous → PlayerHub.previous")
+                this@PlayerHub.previous()
+            }
+            override fun seekToNextMediaItem() {
+                RemoteHealth.log("媒体键 seekToNext → PlayerHub.next")
+                this@PlayerHub.next()
+            }
+            override fun seekToPreviousMediaItem() {
+                RemoteHealth.log("媒体键 seekToPrev → PlayerHub.previous")
+                this@PlayerHub.previous()
+            }
+        }
         PlaybackSnapshotStore.init(context)
         _playMode.value = PlaybackSnapshotStore.restorePlayMode()
         applyPlayMode()
@@ -205,6 +243,7 @@ object PlayerHub {
         scope.cancel()
         runCatching { player.removeListener(listener) }
         runCatching { player.release() }
+        _sessionPlayer = null
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         fmLoading = false
         _isPlaying.value = false
@@ -436,7 +475,15 @@ object PlayerHub {
 
     fun togglePlay() {
         if (waitingMediaId != null) cancelNetworkWait()
-        if (player.isPlaying) {
+        // 用 playWhenReady 判定意图，不用 isPlaying：后者在 buffering 时会自己翻转，
+        // 切歌补播那条 play 指令撞上翻转窗口时，外层判"要播"、这里却判"在播"→ 误按暂停。
+        val wasWant = player.playWhenReady
+        RemoteHealth.log("togglePlay want=$wasWant isPlaying=${player.isPlaying} state=${player.playbackState}")
+        // 用户主动按了播放/暂停就作废进行中的切歌补播，否则补播会把刚按下的暂停冲掉。
+        if (wasWant) {
+            cutGeneration++
+            cutResumeJob?.cancel()
+            cutResumeJob = null
             player.pause()
         } else {
             consecutiveFailures = 0
@@ -446,18 +493,105 @@ object PlayerHub {
         }
     }
 
+    /**
+     * 手动切歌后起播。ExoPlayer 的 seekTo 只换 item，不动 playWhenReady：
+     * 暂停状态下点「下一首」会跳过去但继续停着。这里按「用户想听」补一次 play，
+     * 已在播放（含 buffering）时是空操作，不会打断缓冲。
+     */
+    /** 把 Media3 的 playWhenReady 变更原因翻成可读文字，写进诊断环形日志。 */
+    private fun playReason(reason: Int): String = when (reason) {
+        Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST -> "用户指令"
+        Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS -> "焦点丢失"
+        Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY -> "音频设备拔出"
+        Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE -> "远端媒体键"
+        Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM -> "播完"
+        else -> "原因$reason"
+    }
+
+    /**
+     * 手动切歌后起播。只记下「这次切歌发生在暂停态」这个意图，真正补播放到延迟任务里做。
+     *
+     * 不能紧跟 seekTo 立即 play：方向盘那条链（MediaSession 媒体键）切歌时，新 item 还在
+     * 切换/加载，紧跟着的 play 会落进这个窗口被冲掉，约一秒后仍是暂停 —— 这正是遥控器
+     * （网页端本来就在 150ms 后补一条 play）正常、方向盘不正常的原因。延迟一小段再确认，
+     * 两条链就一致了。
+     */
+    /**
+     * 切歌落地的兜底补播：这是所有切歌路径（遥控器/方向盘媒体键/助手广播/网页）
+     * 唯一的汇聚点 onMediaItemTransition 调用的，不依赖任何具体入口。
+     * 日志实测：方向盘切歌不走 next()/媒体键/助手广播，只在 onMediaItemTransition 留痕，
+     * 且落地时 playWhenReady=false、之后再无 play —— 补播必须挂在这里才不会漏。
+     */
+    private fun armCutResume() {
+        if (player.playWhenReady) {
+            cutGeneration++
+            cutResumeJob?.cancel()
+            cutResumeJob = null
+            return
+        }
+        consecutiveFailures = 0
+        _status.value = null
+        if (player.playbackState == Player.STATE_IDLE) player.prepare()
+        // 立即起播；新 item 还在加载时这一下可能被冲掉，靠下面的延迟兜底再确认一次。
+        player.play()
+        val gen = ++cutGeneration
+        cutResumeJob?.cancel()
+        cutResumeJob = scope.launch {
+            delay(CUT_RESUME_DELAY_MS)
+            if (gen != cutGeneration) return@launch
+            if (!player.playWhenReady && player.mediaItemCount > 0) {
+                RemoteHealth.log("切歌落地兜底：仍暂停，补一条 PLAY")
+                player.play()
+            }
+        }
+    }
+
+    private fun resumeIfPaused() {
+        if (player.playWhenReady) {
+            cutGeneration++
+            cutResumeJob?.cancel()
+            cutResumeJob = null
+            return
+        }
+        consecutiveFailures = 0
+        _status.value = null
+        if (player.playbackState == Player.STATE_IDLE) player.prepare()
+        // 立即起播，保证绝大多数情况无延迟
+        player.play()
+        // 延迟兜底：只认这一代、且期间用户没主动暂停（generation 没变）、且仍是暂停态才补。
+        val gen = ++cutGeneration
+        cutResumeJob?.cancel()
+        cutResumeJob = scope.launch {
+            delay(CUT_RESUME_DELAY_MS)
+            if (gen != cutGeneration) return@launch
+            if (!player.playWhenReady && player.mediaItemCount > 0) {
+                RemoteHealth.log("切歌补播：延迟确认仍暂停，补一条 PLAY")
+                player.play()
+            }
+        }
+    }
+
     fun next() {
+        RemoteHealth.log("PlayerHub.next 被调用 playWhenReady=${player.playWhenReady}")
         cancelNetworkWait()
         _status.value = null
         val index = manualNextIndex()
-        if (index != C.INDEX_UNSET) player.seekTo(index, 0) else if (_mode.value == PlayMode.FM) extendFm(true)
+        if (index != C.INDEX_UNSET) {
+            player.seekTo(index, 0)
+            resumeIfPaused()
+        } else if (_mode.value == PlayMode.FM) {
+            extendFm(true)
+            resumeIfPaused()
+        }
     }
 
     fun previous() {
+        RemoteHealth.log("PlayerHub.previous 被调用 playWhenReady=${player.playWhenReady}")
         cancelNetworkWait()
         _status.value = null
         val index = manualPreviousIndex()
         if (index != C.INDEX_UNSET) player.seekTo(index, 0) else player.seekTo(0)
+        resumeIfPaused()
     }
 
     fun seekTo(ms: Long) {
@@ -567,7 +701,7 @@ object PlayerHub {
     /**
      * 手动切歌（按键、滑动、播放失败跳过）的目标。单曲循环只管自动续播，手动切歌仍按列表循环走，
      * 否则 ExoPlayer 在单曲循环下按「不循环」导航，列表最后一首点下一首没反应。
-     * 通知栏 / 方向盘 / 桌面底栏经 MediaSession 直接调播放器，不经过这里（ForwardingPlayer 不在桌面共享库清单里）。
+     * 通知栏 / 方向盘 / 桌面底栏经 MediaSession → [sessionPlayer] 导回这里，和遥控器共用同一套切歌。
      */
     private fun manualNextIndex(): Int = manualNeighbor(forward = true)
     private fun manualPreviousIndex(): Int = manualNeighbor(forward = false)
@@ -733,9 +867,18 @@ object PlayerHub {
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            // 任何路径的切歌落地都在这里留痕：reason + 落地那一刻的播放意图。
+            // 方向盘切歌后若保持暂停，这一行能区分：是切歌时就没想播（want=false），
+            // 还是想过又随后被按停（want=true 之后紧跟一条 playWhenReady=false）。
+            RemoteHealth.log("切歌落地 reason=$reason playWhenReady=${player.playWhenReady}")
             stopPrefetch()
             cancelNetworkWait()
-            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) _status.value = null
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) {
+                _status.value = null
+                // 所有手动切歌（遥控器/方向盘/媒体键/助手广播）都汇聚到这里。
+                // 落地时若仍是暂停态，就地补播 —— 方向盘那条链不经过 next()，只有这里兜得住。
+                armCutResume()
+            }
             resetPlaybackProgress()
             onTrackChanged(finishedPrevious = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
             updateNeighbors()
@@ -743,6 +886,9 @@ object PlayerHub {
 
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            // 每次播放意图翻转都留痕，导出「音乐控制诊断」能直接看到是谁按的：
+            // 1 用户指令 / 2 焦点丢失 / 3 音频设备拔出 / 4 远端媒体键 / 5 播完 / 7 播放错误。
+            RemoteHealth.log("playWhenReady=$playWhenReady (${playReason(reason)}, state=${player.playbackState})")
             _isBuffering.value = playWhenReady && player.playbackState == Player.STATE_BUFFERING
             updatePrefetch()
             if (playWhenReady && waitingMediaId != null) cancelNetworkWait()

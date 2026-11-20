@@ -525,10 +525,12 @@ class ConnHandler implements Runnable {
                         }
                     }
                     byte[] resp = Api.handle(server, method, path, body);
-                    if ("GET".equals(method) && "/api/logs".equals(path)) {
-                        // 日志导出：带下载头，让容器 WebView 也走系统下载流程
+                    if ("GET".equals(method)
+                            && ("/api/logs".equals(path) || "/api/diag".equals(path))) {
+                        // 日志 / 诊断导出：带下载头，让容器 WebView 也走系统下载流程
+                        String name = "/api/diag".equals(path) ? "music-diag.txt" : "music-log.txt";
                         ServerIo.httpDownload(out, 200, "text/plain; charset=utf-8",
-                                "car-log.txt", resp);
+                                name, resp);
                     } else {
                         ServerIo.http(out, 200, "application/json; charset=utf-8", resp);
                     }
@@ -660,6 +662,8 @@ class Tick implements Runnable {
         // 点播状态机的超时兜底：确认阶段可能一条 metadata 都收不到，
         // 只靠回调会永远卡在 CONFIRMING，这里每秒推一次。
         try { Ncm.I.poTick(); } catch (Throwable ignored) {}
+        // 手动切歌后补播的超时兜底：官方不发新 metadata 时也要把暂停的歌起播。
+        try { Ncm.I.poResumeTick(); } catch (Throwable ignored) {}
     }
 }
 

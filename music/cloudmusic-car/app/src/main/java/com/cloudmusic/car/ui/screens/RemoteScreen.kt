@@ -25,9 +25,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -38,7 +35,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cloudmusic.car.data.Settings
 import com.cloudmusic.car.remote.OnlineDevice
-import com.cloudmusic.car.remote.RemoteHealth
 import com.cloudmusic.car.remote.RemotePrefs
 import com.cloudmusic.car.remote.RemoteServer
 import com.cloudmusic.car.remote.RemoteService
@@ -51,7 +47,6 @@ import com.cloudmusic.car.ui.components.pressable
 import com.cloudmusic.car.ui.pagePadding
 import com.cloudmusic.car.ui.theme.K
 import com.cloudmusic.car.ui.theme.LocalLandscape
-import kotlin.concurrent.thread
 
 /**
  * 手机遥控页：开关、本机地址、网页域名、在线设备与上限。
@@ -116,9 +111,6 @@ fun RemoteScreen(nav: Nav) {
                 RightCard(state, Modifier.weight(1f))
             }
         }
-
-        Spacer(Modifier.height(20.dp))
-        DiagCard(state)
 
         Spacer(Modifier.height(26.dp))
         Label(
@@ -364,85 +356,6 @@ private fun OnlineRow(device: OnlineDevice) {
         Column(Modifier.weight(1f)) {
             Label(device.name.ifEmpty { "未命名手机" }, 24.sp, c.label, FontWeight.Medium)
             Label(device.remote.ifEmpty { "—" }, 19.sp, c.secondary)
-        }
-    }
-}
-
-/**
- * 诊断卡：长期运行时唯一能「事后定位」的东西。
- *
- * 不做每秒落盘 —— 数字全在内存，只有点「导出日志」时才写一个文件，
- * 放到 `Android/data/<包名>/files/diag/`，路径直接显示在卡片里。
- */
-@Composable
-private fun DiagCard(state: RemoteUiState) {
-    val c = K.colors
-    val context = LocalContext.current
-    var exporting by remember { mutableStateOf(false) }
-    var exported by remember { mutableStateOf("") }
-    val h = state.health
-
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(c.fill, RoundedCornerShape(22.dp))
-            .padding(28.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Label("运行诊断", 28.sp, c.label, FontWeight.Bold)
-            Spacer(Modifier.weight(1f))
-            PillButton(if (exporting) "导出中…" else "导出日志", null) {
-                if (exporting) return@PillButton
-                exporting = true
-                thread(name = "diag-export", isDaemon = true) {
-                    val file = RemoteHealth.export(
-                        context,
-                        state.connected,
-                        h?.pendingFrames ?: 0,
-                        h?.pendingBytes ?: 0L,
-                    )
-                    exported = file?.absolutePath ?: "导出失败，看 logcat RemoteDiag"
-                    exporting = false
-                }
-            }
-        }
-        Spacer(Modifier.height(14.dp))
-        if (h == null) {
-            Label("还没有数据（服务开启后 2 秒内出现）", 20.sp, c.secondary)
-            return@Column
-        }
-        Label(
-            "运行 ${RemoteHealth.fmtDuration(h.uptimeMs)} · 在线 ${h.clients}/${state.maxClients} · 峰值 ${h.peakClients}",
-            20.sp, c.secondary,
-        )
-        Label(
-            "线程 ${h.threads}（遥控相关 ${h.remoteThreads}）· 累计连接 ${h.connects} / 断开 ${h.disconnects} / 拒绝 ${h.rejected}",
-            20.sp, c.secondary,
-        )
-        Label(
-            "消息 入 ${h.messagesIn} 出 ${h.messagesOut} · 队列 ${h.pendingFrames} 帧 / ${h.pendingBytes / 1024} KB",
-            20.sp,
-            if (h.pendingFrames > 80) Color(0xFFFF9500) else c.secondary,
-        )
-        Label(
-            "状态合并 ${h.stateCoalesced} · 丢状态 ${h.stateDropped} · 慢客户端断开 ${h.slowClientCloses}",
-            20.sp, c.secondary,
-        )
-        val netease = when {
-            h.neteaseCount == 0L -> "网易云请求：暂无"
-            else -> "网易云请求：最近 ${h.neteaseLastMs}ms · 平均 ${h.neteaseAvgMs}ms · 最慢 ${h.neteaseMaxMs}ms · 失败 ${h.neteaseFailures}"
-        }
-        Label(netease, 20.sp, c.secondary)
-        Label(
-            "歌单缓存 ${state.cacheEntries} / ${state.cacheLimit} 份 · ${fmtMb(state.cacheBytes)} MB",
-            20.sp,
-            if (state.cacheEntries > state.cacheLimit) Color(0xFFFF9500) else c.secondary,
-        )
-        Label("网络变化 ${h.networkChanges} 次 · mDNS 重建 ${h.mdnsRebuilds} 次", 20.sp, c.secondary)
-        h.errors.takeLast(2).forEach { Label(it, 17.sp, c.secondary) }
-        if (exported.isNotEmpty()) {
-            Spacer(Modifier.height(6.dp))
-            Label(exported, 17.sp, c.accent, maxLines = 2)
         }
     }
 }
