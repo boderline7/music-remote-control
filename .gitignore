@@ -16,6 +16,8 @@ build/
 # 从原包导出的产物
 /dex/
 /dump/
+# 原厂包里提取的配置包（--assets-config 的输入，本地自备）
+/patch/navi_configs/
 
 # ---- 本地文档与资料：只留本地，不上传 ----
 /docs/
