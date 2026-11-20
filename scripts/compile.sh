@@ -11,6 +11,7 @@ if [ -f "$HERE/config.local.sh" ]; then . "$HERE/config.local.sh"; fi
 require_env JDK_HOME BUILD_TOOLS ANDROID_JAR || exit 1
 
 JB="$JDK_HOME/bin"
+export JAVA_HOME="$JDK_HOME"   # d8.bat 靠 JAVA_HOME 找 java，别让它用系统里那个
 BUILD="src/bridge/build"
 
 rm -rf "$BUILD/out"

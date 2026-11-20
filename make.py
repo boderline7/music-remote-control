@@ -98,8 +98,22 @@ WARN = "[WARN]"
 
 
 # ------------------------------------------------------------------ 基础设施
+def child_env():
+    """子进程环境：JAVA_HOME 跟着 JB 走。
+
+    d8.bat / apktool 这类批处理靠 JAVA_HOME 找 java，系统里那个可能指向别处
+    或者已经失效，所以每次调用都显式覆盖，不依赖外部环境。
+    """
+    env = os.environ.copy()
+    if JB is not None and (JB / "bin").is_dir():
+        env["JAVA_HOME"] = str(JB)
+        env["PATH"] = str(JB / "bin") + os.pathsep + env.get("PATH", "")
+    return env
+
+
 def run(cmd, **kw):
     """跑外部命令，失败抛异常并带上最后几行输出。"""
+    kw.setdefault("env", child_env())
     p = subprocess.run([str(c) for c in cmd], capture_output=True, text=True,
                        encoding="utf-8", errors="replace", **kw)
     if p.returncode != 0:
