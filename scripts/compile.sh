@@ -7,6 +7,8 @@ ROOT=$(dirname "$HERE")
 cd "$ROOT"
 . "$HERE/config.example.sh"
 if [ -f "$HERE/config.local.sh" ]; then . "$HERE/config.local.sh"; fi
+. "$HERE/_check_env.sh"
+require_env JDK_HOME BUILD_TOOLS ANDROID_JAR || exit 1
 
 JB="$JDK_HOME/bin"
 BUILD="src/bridge/build"

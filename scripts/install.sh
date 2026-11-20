@@ -9,6 +9,8 @@ ROOT=$(dirname "$HERE")
 cd "$ROOT"
 . "$HERE/config.example.sh"
 if [ -f "$HERE/config.local.sh" ]; then . "$HERE/config.local.sh"; fi
+. "$HERE/_check_env.sh"
+require_env PLATFORM_TOOLS || exit 1
 export PATH="$PLATFORM_TOOLS:$PATH"
 export MSYS_NO_PATHCONV=1
 

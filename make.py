@@ -39,19 +39,40 @@ SRC_APK = ROOT / "apk"
 OUT = ROOT / "dist"
 TOOLS = ROOT / "patch"
 
-JB = Path(os.environ.get("JB", r"C:/Users/Administrator/.workbuddy/tools/rev/jdk-17.0.2"))
-BT = Path(os.environ.get("BT", r"C:/Users/Administrator/.workbuddy/tools/rev/android-14"))
-APKTOOL = Path(os.environ.get("APKTOOL", str(TOOLS / "apktool.jar")))
-KEYSTORE = Path(os.environ.get("KEYSTORE", str(TOOLS / "debug.keystore")))
+# 工具路径：优先环境变量，其次构建目录下的 local.env（不入库），最后才是本机默认值
+def _local_env(name, default=""):
+    """从 <工程根>/local.env 读一行 KEY=VALUE，读不到返回 default。"""
+    f = ROOT / "local.env"
+    try:
+        for line in f.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            if k.strip() == name:
+                return v.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return default
+
+
+def _tool(name, default=""):
+    return Path(os.environ.get(name) or _local_env(name, default))
+
+
+JB = _tool("JB", "")
+BT = _tool("BT", "")
+APKTOOL = _tool("APKTOOL", str(TOOLS / "apktool.jar"))
+KEYSTORE = _tool("KEYSTORE", str(TOOLS / "debug.keystore"))
 DEXKIT = TOOLS / "dexkit_classes"
 # ---- 注入部分（18766 网关 + 车控页）的源码位置 ----
 # 自包含：本工程内的 src/bridge 与 web/pages/car.html 就是唯一真相。
 # 环境变量 BRIDGE_ROOT 可覆盖，供临时对照旧工程用。
 BRIDGE_ROOT = Path(os.environ.get("BRIDGE_ROOT", str(ROOT)))
 SNAPSHOT = ROOT / "src"
-ANDROID_JAR = Path(os.environ.get("ANDROID_JAR", r"D:/android-sdk/platforms/android-35/android.jar"))
+ANDROID_JAR = _tool("ANDROID_JAR", "")
 # apktool 在中文路径下编 res 会失败，构建目录必须纯 ASCII
-ASCII = Path(os.environ.get("ASCII_BUILD", "C:/Temp/mod_build"))
+ASCII = _tool("ASCII_BUILD", "C:/Temp/mod_build")
 
 JAVA = (JB / "bin" / "java.exe") if (JB / "bin" / "java.exe").exists() else (JB / "java.exe")
 JAVAC = JAVA.with_name("javac.exe")
@@ -81,6 +102,13 @@ def run(cmd, **kw):
 
 
 def need_tools():
+    if not str(JB) or not str(BT) or not str(ANDROID_JAR):
+        raise SystemExit(
+            "缺工具路径配置。在工程根建一个 local.env（不入库），内容形如：\n"
+            "  JB=<jdk-17 目录>\n"
+            "  BT=<build-tools 目录>\n"
+            "  ANDROID_JAR=<sdk>/platforms/android-35/android.jar\n"
+            "也可以用同名环境变量临时指定。")
     miss = [p for p in (JAVA, ZIPALIGN, AAPT2, APKSIGNER, APKTOOL, KEYSTORE)
             if not Path(p).exists()]
     if miss:

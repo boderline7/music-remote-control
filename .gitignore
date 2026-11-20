@@ -8,7 +8,6 @@ build/
 
 # ---- 第三方 / 不入库 ----
 # apktool 是 24M 的第三方 jar，缺了从官方或本机其他目录拷一份进来
-/tools/apktool.jar
 /patch/apktool.jar
 
 # ---- 原厂素材：不入库 ----
@@ -28,6 +27,7 @@ build/
 # 本机路径覆盖（JDK / build-tools / android.jar / ASCII 构建目录）
 scripts/config.local.sh
 local.properties
+local.env
 
 # ---- 预览：只留假数据服务，调试脚本与截图随时重生成 ----
 /preview/*

@@ -8,6 +8,8 @@ ROOT=$(dirname "$HERE")
 cd "$ROOT"
 . "$HERE/config.example.sh"
 if [ -f "$HERE/config.local.sh" ]; then . "$HERE/config.local.sh"; fi
+. "$HERE/_check_env.sh"
+require_env JDK_HOME || exit 1
 export JAVA_HOME="$JDK_HOME"
 
 PROJ="music/cloudmusic-car"

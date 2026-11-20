@@ -15,7 +15,7 @@
     python scripts/verify_host.py                 默认检查 dex/V19.00/dex（脱壳业务码）
     python scripts/verify_host.py <解包目录>
     python scripts/verify_host.py <脱壳dex目录>
-    python scripts/verify_host.py <原厂包.apk>     用 tools/apktool.jar 自动解包（注意：加固包解不出业务类）
+    python scripts/verify_host.py <原厂包.apk>     用 patch/apktool.jar 自动解包（注意：加固包解不出业务类）
     python scripts/verify_host.py --json
 
 退出码：0 = 没有 fatal 失败；1 = 有 fatal 失败；2 = 用法错误。
@@ -32,7 +32,7 @@ import unicodedata
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-APKTOOL = ROOT / "tools" / "apktool.jar"
+APKTOOL = ROOT / "patch" / "apktool.jar"
 DEXKIT = ROOT / "patch" / "dexkit_classes"
 DEFAULT_DEX = ROOT / "dex" / "V19.00" / "dex"
 
