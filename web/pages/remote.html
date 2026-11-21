@@ -1577,9 +1577,11 @@
   var K_MUS = 'jb.musPort';
 
   var CAR_BASE = 'http://' + HOST + ':' + CAR_PORT;
+  // 记录仪页在老入口下本来就用绝对地址 18767，日志/状态同理；网关入口用相对路径走转发。
+  var DVR_BASE = GATEWAY ? '' : ('http://' + HOST + ':' + DVR_PORT);
   // 拼接时写进来的构建号：并进 iframe 地址，页面一改 URL 就变，
   // 装新包后不用手动清缓存也一定拿到新页面；同一个包重复打开仍走缓存。
-  var BUILD = 'c4f7345f';
+  var BUILD = 'fbcef677';
   // 哪个端口发下来的页，就自带哪一路，不用 iframe 套自己
   var NATIVE = String(location.port) === String(CAR_PORT) ? 'car' : 'music';
   // 统一入口：从 18766 进来，三路都走本机 + 网关转发，地址只有一个
@@ -1892,11 +1894,20 @@
     },
     dvr: {
       name: '行车记录仪',
-      base: '',
-      kvUrl: null,
-      kv: function () { return '记录仪没有独立的诊断接口。\n连接状态和设置请在「行车记录仪」页面里操作。'; },
-      segs: [], dump: false, rec: false,
-      help: '记录仪的日志由它自己的页面管理，这里不代取，也不跟另外两路混在一起。'
+      base: DVR_BASE,
+      kvUrl: '/dvr/state',
+      kv: function (d) {
+        if (!d || d.ok !== 1) return '记录仪服务（18767）没响应';
+        return '记录仪　' + (d.ip ? ('http://' + d.ip + ':80') : '未连接') + '\n'
+          + '状态　' + (d.off ? '已断开' : '就绪') + ' · 日志 ' + (d.log || 0) + ' 条';
+      },
+      segs: [
+        { key: 'log', label: '运行日志', url: '/dvr/logs', dl: '/dvr/logs', file: '行车记录仪日志', slow: 8000,
+          tip: '探测、抓目录页、缓存命中和失败原因，最新在最下面。' }
+      ],
+      dump: false, rec: false,
+      help: '这一路是行车记录仪服务（18767）的连接与抓目录日志，跟另外两路无关。<br>'
+        + '日志只在本机内存里，进程重启会清空；「下载」给的是服务器直出的 txt。'
     }
   };
 
@@ -2127,6 +2138,24 @@
       fetch(CAR_BASE + '/dump?_=' + Date.now(), withTimeout(25000))
         .then(function (r) { return r.text(); })
         .then(function (t) { deliver(name, t, '/dump.txt'); })
+        .catch(function () { toast('打包失败，先试单个「下载」'); });
+      return;
+    }
+    if (tab === 'dvr') {
+      var dname = '行车记录仪全量_' + stamp() + '.txt';
+      toast('正在打包…');
+      fetch(DVR_BASE + '/dvr/state?_=' + Date.now(), withTimeout(6000)).then(function (r) { return r.json(); })
+        .then(function (st) {
+          return fetch(DVR_BASE + '/dvr/logs?_=' + Date.now(), withTimeout(8000))
+            .then(function (r) { return r.text(); })
+            .then(function (lg) {
+              var head = '# 行车记录仪全量导出\n导出时间: ' + new Date().toLocaleString() + '\n\n'
+                + '连接状态\n'
+                + '  地址　' + (st.ip ? ('http://' + st.ip + ':80') : '未连接') + '\n'
+                + '  状态　' + (st.off ? '已断开' : '就绪') + '\n\n';
+              deliver(dname, head + lg, '');
+            });
+        })
         .catch(function () { toast('打包失败，先试单个「下载」'); });
       return;
     }

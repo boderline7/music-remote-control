@@ -44,7 +44,8 @@
     text-overflow:ellipsis;white-space:nowrap}
   .f{display:block;margin-top:2px;font-size:11.5px;color:var(--faint);overflow:hidden;
     text-overflow:ellipsis;white-space:nowrap}
-  .dl{flex:none;font-size:12px;color:var(--faint);padding-right:2px}
+  .dl{flex:none;border:0;background:none;color:var(--faint);font-size:12px;
+    padding:6px 2px;font-family:inherit;cursor:pointer}
   .fold .ic{flex:none;width:18px;text-align:center;font-size:13px;color:#f0b429}
   .nav{padding:0 18px 4px}
   .up{height:30px;padding:0 12px;border-radius:8px;border:1px solid var(--line);
@@ -64,7 +65,16 @@
   #toast{position:fixed;left:50%;bottom:32px;transform:translateX(-50%);
     background:rgba(0,0,0,.86);border:1px solid var(--line);color:#fff;
     padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;
-    transition:opacity .2s;z-index:20}
+    transition:opacity .2s;z-index:40}
+  /* 录像预览浮层：直接把 /dvr/file 喂给 video，不走新接口 */
+  .pv{position:fixed;top:0;left:0;right:0;bottom:0;z-index:30;background:rgba(0,0,0,.96);
+    display:none;flex-direction:column}
+  .pv.on{display:flex}
+  .pv .nm{padding:calc(10px + env(safe-area-inset-top)) 14px 0;font-size:12px;color:var(--dim);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pv video{flex:1;width:100%;min-height:0;object-fit:contain;background:#000}
+  .pv .bar2{display:flex;gap:8px;padding:10px 14px calc(12px + env(safe-area-inset-bottom))}
+  .pv .bar2 .btn{height:42px}
   #toast.on{opacity:1}
 </style>
 <script>
@@ -89,12 +99,21 @@ html.pane .top{display:none}
 <div class="bar">
   <button class="btn primary" id="connect">连接</button>
   <button class="btn" id="disconnect">断开</button>
-  <button class="btn" id="setip">指定 IP</button>
+  <button class="btn" id="copypath">复制当前路径</button>
 </div>
 <div class="st" id="st">未连接</div>
 
 <div id="root"><div class="empty">点「连接」读取记录仪录像。</div></div>
 <div id="toast"></div>
+
+<div class="pv" id="pv">
+  <div class="nm" id="pvName"></div>
+  <video id="pvVideo" controls playsinline></video>
+  <div class="bar2">
+    <button class="btn" id="pvClose">关闭</button>
+    <button class="btn primary" id="pvDl">下载</button>
+  </div>
+</div>
 
 <script>
 (function () {
@@ -102,6 +121,7 @@ html.pane .top{display:none}
   function el(id) { return document.getElementById(id); }
   var root = el('root'), st = el('st');
   var curIp = '';
+  var curPath = '';                               // 当前浏览的目录，供「复制当前路径」用
   var seq = 0;                                    // 连接序号：断开后旧请求的结果直接丢
 
   var TITLE = { normal: '普通录像', event: '事件录像' };
@@ -155,7 +175,7 @@ html.pane .top{display:none}
     );
   }
 
-  /* 点一行就是下载：不做预览、不做播放器 */
+  /* 下载：加 dl=1 让后端回 Content-Disposition: attachment */
   function download(dir, f) {
     var a = document.createElement('a');
     a.href = '/dvr/file?p=' + encodeURIComponent(dir + f) + '&dl=1';
@@ -165,6 +185,32 @@ html.pane .top{display:none}
     document.body.removeChild(a);
     toast('开始下载 ' + f);
   }
+
+  /* 预览：同一条 /dvr/file，只是不带 dl=1，后端就回内联视频流。
+     流式转发 + Range 透传后端已经有，这里不需要任何新接口。 */
+  var pvDir = '', pvName = '';
+  function preview(dir, f) {
+    pvDir = dir; pvName = f;
+    el('pvName').textContent = f;
+    var v = el('pvVideo');
+    v.onerror = function () { toast('这个格式车机浏览器播不了，点「下载」用播放器看'); };
+    v.src = '/dvr/file?p=' + encodeURIComponent(dir + f);
+    el('pv').className = 'pv on';
+    var p = v.play();
+    if (p && p.catch) p.catch(function () {});
+  }
+  function closePv() {
+    var v = el('pvVideo');
+    v.onerror = null;
+    try { v.pause(); } catch (e) {}
+    v.removeAttribute('src');
+    try { v.load(); } catch (e) {}
+    el('pv').className = 'pv';
+  }
+  el('pvClose').addEventListener('click', closePv);
+  el('pvDl').addEventListener('click', function () {
+    if (pvName) download(pvDir, pvName);
+  });
 
   /* 解析不出列表时，把记录仪自己的目录页代理进来 */
   function frame(dir) {
@@ -223,7 +269,7 @@ html.pane .top{display:none}
         h += '<div class="row" data-file="' + esc(it.f) + '">' +
           '<span class="li"><span class="t">' + esc(it.t || it.f) + '</span>' +
           '<span class="f">' + esc(it.f + (size ? ' · ' + size : '')) + '</span></span>' +
-          '<span class="dl">下载 ↓</span></div>';
+          '<button class="dl" data-dl="' + esc(it.f) + '">下载 ↓</button></div>';
       }
       h += '</div>';
       if (total > 5) {
@@ -247,7 +293,7 @@ html.pane .top{display:none}
       var t = ev.target;
       while (t && t !== sec && !(t.getAttribute && (t.getAttribute('data-go') ||
         t.getAttribute('data-file') || t.getAttribute('data-path') ||
-        t.getAttribute('data-more')))) {
+        t.getAttribute('data-dl') || t.getAttribute('data-more')))) {
         t = t.parentNode;
       }
       if (!t || t === sec) return;
@@ -271,8 +317,10 @@ html.pane .top{display:none}
       }
       var go = t.getAttribute('data-go');
       if (go) { opened[type] = false; load(type, go); return; }
+      var dl = t.getAttribute('data-dl');
+      if (dl) { download(sec.dataset.dir || DEF[type], dl); return; }
       var f = t.getAttribute('data-file');
-      if (f) download(sec.dataset.dir || DEF[type], f);
+      if (f) preview(sec.dataset.dir || DEF[type], f);
     });
   }
 
@@ -284,8 +332,10 @@ html.pane .top{display:none}
   function load(type, path, left) {
     if (left === undefined) left = RETRY_GAP.length - 1;
     var my = seq;
+    var target = path || DEF[type];
+    curPath = target;                             // 记下当前目录，复制按钮用它
     if (left === RETRY_GAP.length - 1) { state[type] = null; paint(type); }
-    var url = '/dvr/list?path=' + encodeURIComponent(path || DEF[type]);
+    var url = '/dvr/list?path=' + encodeURIComponent(target);
     function once() {
       return api(url).then(function (d) { return d; }, function (e) {
         return { ok: 0, err: '请求失败：' + ((e && e.message) || e) };
@@ -328,6 +378,7 @@ html.pane .top{display:none}
 
   function connect() {
     var my = ++seq;
+    closePv();
     setStatus('正在找记录仪…');
     root.innerHTML = '<div class="empty">正在连接记录仪…</div>';
     api('/dvr/probe').then(function (d) {
@@ -344,13 +395,15 @@ html.pane .top{display:none}
       notify(false);
       setStatus('没连上');
       root.innerHTML = '<div class="empty">' + esc(String((e && e.message) || e)) +
-        '<br>记录仪要和车机在同一内网；扫不到就点「指定 IP」填它的地址。</div>';
+        '<br>记录仪要和车机在同一内网。</div>';
     });
   }
 
   function disconnect() {
     seq++;
+    closePv();
     curIp = '';
+    curPath = '';
     state.normal = null; state.event = null;
     el('ip').textContent = '—';
     root.innerHTML = '<div class="empty">已断开。点「连接」重新读取记录仪。</div>';
@@ -366,14 +419,32 @@ html.pane .top{display:none}
   });
   el('connect').addEventListener('click', connect);
   el('disconnect').addEventListener('click', disconnect);
-  el('setip').addEventListener('click', function () {
-    var v = prompt('记录仪 IP（留空＝自动探测）', curIp || '192.168.1.110');
-    if (v === null) return;
-    v = v.trim();
-    api('/dvr/setip?ip=' + encodeURIComponent(v)).then(function () {
-      toast(v ? ('已指定 ' + v) : '恢复自动探测');
-      connect();
-    }).catch(function () { toast('设置失败'); });
+  /* 复制当前路径：拼成 http://<记录仪IP><目录>，粘到浏览器 80 端口直接看。
+     代理读目录慢是弱设备 + 协议回退造成的，浏览器直连反而顺，这里就方便这么干。 */
+  function copyText(s) {
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = s; ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;left:-9999px';
+      document.body.appendChild(ta);
+      ta.select(); ta.setSelectionRange(0, s.length);
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+      toast(ok ? '已复制：' + s : '复制失败，请手动复制：' + s);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(s).then(function () {
+        toast('已复制：' + s);
+      }, fallback);
+    } else fallback();
+  }
+
+  el('copypath').addEventListener('click', function () {
+    if (!curIp) { toast('先点「连接」'); return; }
+    var p = curPath || DEF.normal;
+    if (p.charAt(0) !== '/') p = '/' + p;
+    copyText('http://' + curIp + p);
   });
 
   /* 打开就是「未连接」：不自动连、不后台连。

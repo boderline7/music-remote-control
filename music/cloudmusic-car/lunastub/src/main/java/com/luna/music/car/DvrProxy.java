@@ -43,6 +43,13 @@ final class DvrProxy {
     private static final Charset UTF8 = Charset.forName("UTF-8");
     private static final char[] HEX = "0123456789ABCDEF".toCharArray();
 
+    /** DVR 操作日志：连接、目录抓取、命中/失败都记一条，网页可导出。 */
+    private static final String[] LOGBUF = new String[600];
+    private static int logHead = 0;
+    private static int logCount = 0;
+    private static final java.text.SimpleDateFormat LOGFMT =
+            new java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.US);
+
     /** 最近一次探测到的记录仪 IP */
     private static volatile String cachedIp = "";
     /** 上次成功拿到目录页用的 HTTP 版本：弱设备优先复用，省掉一次协议回退的等待 */
@@ -85,6 +92,8 @@ final class DvrProxy {
     static String stateJson() {
         return "{\"ok\":1,\"ip\":" + q(cachedIp)
                 + ",\"fixed\":" + q(fixedIp)
+                + ",\"port\":" + HTTP_PORT
+                + ",\"log\":" + logCount
                 + ",\"off\":" + (offline ? 1 : 0) + "}";
     }
 
@@ -101,12 +110,15 @@ final class DvrProxy {
     /** 点「连接」：固定 IP → 缓存 IP → 扫各网卡网段 */
     static String probe() {
         offline = false;
+        note("probe 开始" + (fixedIp.length() > 0 ? " fixed=" + fixedIp : " 自动扫描"));
         if (fixedIp.length() > 0) {
             boolean ok = reachable(fixedIp);
             if (ok) cachedIp = fixedIp;
+            note("probe fixed 结果 " + (ok ? "命中 " + fixedIp : "不通"));
             return probeJson(ok, cachedIp, "fixed");
         }
         if (cachedIp.length() > 0 && reachable(cachedIp)) {
+            note("probe cache 命中 " + cachedIp);
             return probeJson(true, cachedIp, "cache");
         }
         java.util.List<String> ips = localIps();
@@ -152,8 +164,10 @@ final class DvrProxy {
         pool.shutdownNow();
         if (hit[0] != null) {
             cachedIp = hit[0];
+            note("probe 扫描命中 " + hit[0] + "（扫了 " + cand.size() + " 个）");
             return probeJson(true, hit[0], "scan");
         }
+        note("probe 扫描无结果（扫了 " + cand.size() + " 个）");
         return "{\"ok\":0,\"err\":\"扫了所有网卡网段都没找到记录仪\","
                 + "\"local\":" + q(ips.toString()) + "}";
     }
@@ -221,7 +235,7 @@ final class DvrProxy {
         long now = System.currentTimeMillis();
         // 新鲜缓存直接用：同一个目录 45 秒内不再打记录仪，页面展开/收起也走这里
         String hit = cacheGet(key, now, CACHE_FRESH_MS);
-        if (hit != null) return hit;
+        if (hit != null) { note("browse " + dir + " 缓存命中"); return hit; }
 
         String[] page;
         synchronized (FS_LOCK) {
@@ -243,7 +257,11 @@ final class DvrProxy {
 
         // 抓空了：5 分钟内拿上次成功的列表顶上，页面标个「旧」，总比白屏强
         String stale = cacheGet(key, now, CACHE_STALE_MS);
-        if (stale != null) return stale.replace("\"ok\":1", "\"ok\":1,\"stale\":1");
+        if (stale != null) {
+            note("browse " + dir + " 抓空，用旧缓存兜底");
+            return stale.replace("\"ok\":1", "\"ok\":1,\"stale\":1");
+        }
+        note("browse " + dir + " 失败，无缓存可用");
         return "{\"ok\":0,\"src\":\"fs\",\"path\":" + q(dir)
                 + ",\"stat\":" + q(page[1])
                 + ",\"err\":\"记录仪网页没有应答\"}";
@@ -579,23 +597,80 @@ final class DvrProxy {
             os.flush();
 
             InputStream in = s.getInputStream();
-            ByteArrayOutputStream all = new ByteArrayOutputStream(16384);
-            byte[] buf = new byte[8192];
-            while (all.size() < max) {
-                int n;
-                try {
-                    n = in.read(buf);
-                } catch (java.net.SocketTimeoutException te) {
-                    if (all.size() > 0) break;
-                    throw te;
+            /*
+             * 关键：把「响应头」和「正文」分开读。
+             * 老代码 while(read>0) 一直读到服务器关连接才返回；记录仪发完 HTML 常常不关，
+             * 于是一头扎进 9 秒 soTimeout，浏览器按 Content-Length 读够就走所以顺畅。
+             * 这里拿到 Content-Length 就只读那么多字节，读满立刻返回，不再等 FIN。
+             */
+            StringBuilder headSb = new StringBuilder(1024);
+            String line;
+            int clen = -1;
+            boolean chunked = false;
+            while ((line = ServerIo.readLine(in)) != null) {
+                headSb.append(line).append("\r\n");
+                if (line.length() == 0) break;              // 空行 = 头结束
+                int colon = line.indexOf(':');
+                if (colon <= 0) continue;
+                String k = line.substring(0, colon).trim().toLowerCase();
+                String v = line.substring(colon + 1).trim();
+                if ("content-length".equals(k)) {
+                    try { clen = Integer.parseInt(v); } catch (Throwable ignored) {}
+                } else if ("transfer-encoding".equals(k) && v.toLowerCase().indexOf("chunked") >= 0) {
+                    chunked = true;
                 }
-                if (n <= 0) break;
-                all.write(buf, 0, n);
             }
+            if (headSb.length() == 0) throw new java.io.IOException("empty response");
+
+            ByteArrayOutputStream all = new ByteArrayOutputStream(
+                    headSb.length() + (clen > 0 ? Math.min(clen, 16384) : 16384));
+            all.write(headSb.toString().getBytes("ISO-8859-1"));
+            byte[] buf = new byte[8192];
+            if (clen > 0) {
+                // 有长度：读满即走。上限护一下，别让异常 Content-Length 把内存吃爆。
+                int remain = Math.min(clen, max);
+                while (remain > 0) {
+                    int n;
+                    try {
+                        n = in.read(buf, 0, Math.min(buf.length, remain));
+                    } catch (java.net.SocketTimeoutException te) {
+                        break;                              // 有部分正文就先用，别整段丢
+                    }
+                    if (n < 0) break;
+                    all.write(buf, 0, n);
+                    remain -= n;
+                }
+            } else if (!chunked) {
+                // 没有长度也没有 chunked：老办法读到关连接/超时
+                while (all.size() < max) {
+                    int n;
+                    try {
+                        n = in.read(buf);
+                    } catch (java.net.SocketTimeoutException te) {
+                        break;
+                    }
+                    if (n <= 0) break;
+                    all.write(buf, 0, n);
+                }
+            } else {
+                // chunked：读到结束块 0\r\n\r\n，避免干等 FIN
+                while (all.size() < max) {
+                    int n;
+                    try {
+                        n = in.read(buf);
+                    } catch (java.net.SocketTimeoutException te) {
+                        break;
+                    }
+                    if (n <= 0) break;
+                    all.write(buf, 0, n);
+                    if (endsChunk(all)) break;
+                }
+            }
+
             byte[] raw = all.toByteArray();
             String status = statusOf(raw);
             String text = decodeHttp(raw);
-            note("fs " + path + " [" + status + "] -> " + text.length());
+            note("fs " + path + " [" + status + "] len=" + clen + " -> " + text.length());
             return new String[] { text, status };
         } catch (Throwable t) {
             note("fs " + path + " err: " + root(t));
@@ -603,6 +678,17 @@ final class DvrProxy {
         } finally {
             closeQuiet(s);
         }
+    }
+
+    /** chunked 正文的结束块：末尾出现 0\r\n\r\n（或 0\r\n 后跟尾字段）。 */
+    private static boolean endsChunk(ByteArrayOutputStream b) {
+        byte[] a = b.toByteArray();
+        int n = a.length;
+        for (int i = n - 5; i >= 0 && i >= n - 32; i--) {
+            if (a[i] == '0' && a[i + 1] == '\r' && a[i + 2] == '\n'
+                    && (i + 4 >= n || (a[i + 3] == '\r' && a[i + 4] == '\n'))) return true;
+        }
+        return false;
     }
 
     private static String statusOf(byte[] all) {
@@ -883,7 +969,30 @@ final class DvrProxy {
         return b.append('"').toString();
     }
 
+    /** 导出 DVR 日志：时间顺序，一行一条。 */
+    static synchronized String dumpLogs() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("# 行车记录仪日志  time  event\n");
+        if (logCount == 0) {
+            sb.append("(还没有记录。点「连接」或浏览目录后会有。)\n");
+            return sb.toString();
+        }
+        sb.append("已记录 ").append(logCount).append(" 条\n");
+        int start = (logHead - logCount + LOGBUF.length) % LOGBUF.length;
+        for (int i = 0; i < logCount; i++) {
+            String line = LOGBUF[(start + i) % LOGBUF.length];
+            if (line != null) sb.append(line).append('\n');
+        }
+        return sb.toString();
+    }
+
     private static void note(String s) {
+        String line = LOGFMT.format(new java.util.Date()) + "  " + s;
+        synchronized (DvrProxy.class) {
+            LOGBUF[logHead] = line;
+            logHead = (logHead + 1) % LOGBUF.length;
+            if (logCount < LOGBUF.length) logCount++;
+        }
         Log.i(Cfg.TAG, "DVR " + s);
     }
 

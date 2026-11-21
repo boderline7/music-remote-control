@@ -634,6 +634,7 @@ final class ServerIo {
         String head = "HTTP/1.1 " + code + (code == 200 ? " OK" : " Not Found") + "\r\n"
                 + "Content-Type: " + type + "\r\n"
                 + "Content-Length: " + body.length + "\r\n"
+                + "Access-Control-Allow-Origin: *\r\n"
                 + "Connection: close\r\n"
                 + "Cache-Control: no-store\r\n\r\n";
         out.write(head.getBytes("ISO-8859-1"));
@@ -647,6 +648,7 @@ final class ServerIo {
                 + "Content-Type: " + type + "\r\n"
                 + "Content-Disposition: attachment; filename=\"" + filename + "\"\r\n"
                 + "Content-Length: " + body.length + "\r\n"
+                + "Access-Control-Allow-Origin: *\r\n"
                 + "Connection: close\r\n"
                 + "Cache-Control: no-store\r\n\r\n";
         out.write(head.getBytes("ISO-8859-1"));

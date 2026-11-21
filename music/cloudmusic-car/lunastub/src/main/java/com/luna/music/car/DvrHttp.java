@@ -38,6 +38,9 @@ final class DvrHttp {
                 json(out, DvrProxy.probe());
             } else if ("/dvr/state".equals(path)) {
                 json(out, DvrProxy.stateJson());
+            } else if ("/dvr/logs".equals(path)) {
+                ServerIo.httpDownload(out, 200, "text/plain; charset=utf-8",
+                        "dvr-log.txt", DvrProxy.dumpLogs().getBytes(UTF8));
             } else if ("/dvr/disconnect".equals(path)) {
                 json(out, DvrProxy.disconnect());
             } else if ("/dvr/setip".equals(path)) {
