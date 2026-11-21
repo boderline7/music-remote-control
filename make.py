@@ -319,6 +319,10 @@ def resolve_sig(p, src):
 def render(p, vin, sig=None):
     """按补丁描述生成完整方法文本。sig 不传用主签名。"""
     sig = sig or p["sig"]
+    # body 补丁：整方法体替换（smali 行列表），regs 用补丁指定值
+    if p.get("body") is not None:
+        desc = sig[sig.index("(") + 1:sig.index(")")]
+        return sig, p.get("regs", param_width(desc) + 1), list(p["body"]), None
     ret, val = p["ret"], p["val"]
     desc = sig[sig.index("(") + 1:sig.index(")")]
     regs = param_width(desc) + 1
@@ -390,7 +394,9 @@ def apply(decoded, vin, rows):
         lines = [f".method {flags} {sig}", f"    .registers {regs}", "",
                  f"    # [MOD] {p['tag']}"]
         lines += [f"    {b}" for b in body]
-        lines += ["", f"    {ret_ins}", ".end method", ""]
+        if ret_ins:
+            lines += ["", f"    {ret_ins}"]
+        lines += [".end method", ""]
         path.write_text(src[:m.start()] + "\n".join(lines) + src[m.end():], encoding="utf-8")
 
 
@@ -1222,7 +1228,8 @@ def cmd_build(args):
         if args.vcode is None:
             args.vcode = 25
         if args.vname is None:
-            args.vname = "18.73-mod"
+            # 跟随上游源版本：19.10-m25，拉新后自动变（右上角标题显示这个值）
+            args.vname = f"{ver}-m{args.vcode}"
 
     t0 = time.time()
     print(f"== 版本 {ver}  原包 {apk.name}  versionCode {badging['code']}")
@@ -1413,6 +1420,12 @@ def verify_apk(apk, decoded=None, quiet=False):
                 body = m.group(0)
                 # apktool 打包会把 smali 注释丢掉，所以不能靠 [MOD] 标记判断。
                 # stub 后的方法体特征：没有 invoke-、以 return 结尾、指令不超过 2 条。
+                if p.get("body") is not None:
+                    # body 补丁：重写后原方法特征串必不存在（如 Arrays;->asList）
+                    if p.get("verify_absent") and p["verify_absent"] in body:
+                        continue
+                    landed += 1
+                    continue
                 ins = [ln.strip() for ln in body.splitlines()]
                 ins = [ln for ln in ins if ln and not ln.startswith(
                     (".method", ".registers", ".locals", ".end", ".param", ".prologue", ".line", "#"))]
