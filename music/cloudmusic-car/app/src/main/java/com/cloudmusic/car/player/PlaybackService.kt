@@ -30,6 +30,7 @@ class PlaybackService : MediaSessionService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         session = MediaSession.Builder(this, PlayerHub.sessionPlayer)
+            .setId("cloudmusic.car")
             .setSessionActivity(openApp)
             .build()
         scope.launch {
@@ -64,8 +65,15 @@ class PlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        val player = PlayerHub.player
-        if (!player.playWhenReady || player.mediaItemCount == 0) stopSelf()
+        /*
+         * 故意不调 super、也不 stopSelf。
+         *
+         * 父类默认会在「没在播放 / 队列为空」时 stopSelf，会话随即释放；
+         * 车机静置很久或用户划掉任务后，方控媒体键就没有接收者了，
+         * 而手机遥控走进程内 PlayerHub，看起来会像「只有方控坏了」。
+         * 方控要随时可用，这个服务就常驻：空闲时没有前台通知，也不持 WakeLock。
+         * 连接断了由 MediaSessionKeeper 负责重建，不靠这里自杀。
+         */
     }
 
     override fun onDestroy() {

@@ -34,6 +34,7 @@ local.env
 # ---- 预览：只留假数据服务，调试脚本与截图随时重生成 ----
 /preview/*
 !/preview/mock.js
+/ui_preview/
 
 # ---- Gradle / IDE / 系统 ----
 .gradle/
