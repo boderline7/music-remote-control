@@ -1719,15 +1719,16 @@
   var K_MUS = 'jb.musPort';
 
   var CAR_BASE = 'http://' + HOST + ':' + CAR_PORT;
-  // 记录仪页在老入口下本来就用绝对地址 18767，日志/状态同理；网关入口用相对路径走转发。
-  var DVR_BASE = GATEWAY ? '' : ('http://' + HOST + ':' + DVR_PORT);
   // 拼接时写进来的构建号：并进 iframe 地址，页面一改 URL 就变，
   // 装新包后不用手动清缓存也一定拿到新页面；同一个包重复打开仍走缓存。
-  var BUILD = '2ab8a762';
+  var BUILD = '8dfa741c';
   // 哪个端口发下来的页，就自带哪一路，不用 iframe 套自己
   var NATIVE = String(location.port) === String(CAR_PORT) ? 'car' : 'music';
   // 统一入口：从 18766 进来，三路都走本机 + 网关转发，地址只有一个
   var GATEWAY = NATIVE === 'car';
+  // 记录仪页在老入口下本来就用绝对地址 18767，日志/状态同理；网关入口用相对路径走 18766 转发。
+  // 注意：必须在 GATEWAY 赋值之后算，否则网关入口也会退化成绝对地址。
+  var DVR_BASE = GATEWAY ? '' : ('http://' + HOST + ':' + DVR_PORT);
 
   var el = {};
   ['shellRoot', 'sBar', 'sDot', 'sTxt', 'sSet', 'sReload', 'sTabCar', 'sTabMusic',
@@ -1745,6 +1746,7 @@
   // 记录仪只在用户点「连接」后才连，外壳绝不主动碰 18767。
   // 这里的状态由记录仪页 iframe 用 postMessage 报上来（on/off），null = 这一页还没说话。
   var dvrOk = null;
+  var dvrSvc = null;      // 18767 服务在不在：只在进 tab / 手动重试时查一次，后台永不探
   var dvrDirect = null;   // 记录仪页探测到手机能直连 80 端口时为 true
 
   // ---------- 状态行 ----------
@@ -1758,7 +1760,8 @@
     el.sDotCar.className = 'sn' + (carOk === true ? ' on' : (carOk === false ? ' off' : ''));
     el.sDotMusic.className = 'sn' + (musOk === true ? ' on' : (musOk === false ? ' off' : ''));
     if (el.sDotDvr) el.sDotDvr.className = 'sn'
-      + (dvrOk === true ? ' on' : (dvrOk === false ? ' off' : ''));
+      + (dvrOk === true ? ' on'
+        : (dvrOk === false || dvrSvc === false ? ' off' : ''));
   }
 
   function paintStatus() {
@@ -1767,7 +1770,9 @@
       else if (carOk) setStatus('已连接 · 车机助手', 'on');
       else setStatus('车机助手未就绪 · 到车机上打开一次桌面助手', 'warn');
     } else if (tab === 'dvr') {
-      if (dvrOk === null) setStatus('记录仪未连接 · 点「连接」手动读取');
+      if (dvrSvc === null) setStatus('正在检测记录仪服务…');
+      else if (dvrSvc === false) setStatus('记录仪服务没起 · 到车机上开桥接包', 'warn');
+      else if (dvrOk === null) setStatus('记录仪未连接 · 点「连接」手动读取');
       else if (dvrOk) setStatus('记录仪已连接' + (dvrDirect ? ' · 手机直连' : ' · 经车机中转'), 'on');
       else setStatus('记录仪已断开', 'warn');
     } else {
@@ -1811,8 +1816,25 @@
       .catch(function () { if (done) return; done = true; clearTimeout(t); cb(false); });
   }
 
-  /* 记录仪不探。18767 只在用户自己点开这一页、并且点了「连接」之后才有流量：
-     外壳不做任何后台探测/预连接，避免用户明明断了还被后台重新连上。 */
+  /* 记录仪只查「服务在不在」，不代为连接。
+     /dvr/state 只是读一下 18767 的状态，不会让记录仪开始连；
+     调用时机只有三处：进 tab、手动重试、开机时停在记录仪页。后台心跳永不碰它。 */
+  function probeDvr(cb) {
+    var done = false;
+    var t = setTimeout(function () {
+      if (!done) { done = true; dvrSvc = false; cb(false); }
+    }, 1500);
+    fetch(DVR_BASE + '/dvr/state?_=' + Date.now(), withTimeout(1500))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (done) return; done = true; clearTimeout(t);
+        dvrSvc = !!(d && d.ok === 1); cb(dvrSvc);
+      })
+      .catch(function () {
+        if (done) return; done = true; clearTimeout(t);
+        dvrSvc = false; cb(false);
+      });
+  }
 
   function probeMusic(cb) {
     if (GATEWAY) { probeGateway(cb); return; }
@@ -1894,6 +1916,8 @@
       : (t === 'dvr'
         ? '确认车机上的桥接包在跑（记录仪服务 18767），<br>再点右上角的刷新。'
         : '车上跑的是第三方播放器就打开它（18765），<br>跑的是官方网易云就开桥接包（18764）。');
+    // 按钮跟着当前这一路走：点一下只重探自己，不把人甩到别的 tab
+    el.sFailGo.textContent = t === 'dvr' ? '重新检测' : '重试';
     el.sFail.className = 'sfail on';
   }
 
@@ -1924,9 +1948,12 @@
     } else {
       D.classList.add('foreign');
       var url = paneUrl(t);
-      // 已经确认这一路没在跑：别贴一个白框，直接给失败提示（和音乐那一路一致）。
-      // 记录仪不参与判断 —— 它没连是常态，页面自己会摆「点连接」。
-      var dead = (t === 'music' && GATEWAY && musOk === false);
+      // 已经确认这一路没在跑：别贴一个白框，直接给失败提示。
+      // 三路各判各的，谁的端口死了只影响谁。
+      // 记录仪看的是「服务在不在」（dvrSvc），不看连没连 —— 没连是常态，页面自己会摆「点连接」。
+      var dead = (t === 'music' && musOk === false)
+        || (t === 'car' && carOk === false)
+        || (t === 'dvr' && dvrSvc === false);
       if (!url || dead) {
         // 清掉旧 src：等这一路恢复时可以重新拉一次，不会停在空白框上
         if (el.sFrame.getAttribute('src')) el.sFrame.removeAttribute('src');
@@ -1944,7 +1971,18 @@
     if (!silent) closeSheet();
   }
 
-  el.sTabCar.addEventListener('click', function () { apply('car'); });
+  el.sTabCar.addEventListener('click', function () {
+    if (carOk === false) {
+      apply('car');              // 先把失败提示摆出来，别点了像没反应
+      probeCar(function (ok) {
+        paintDots();
+        paintStatus();
+        if (ok) apply('car');
+      });
+      return;
+    }
+    apply('car');
+  });
   el.sTabMusic.addEventListener('click', function () {
     if (musOk === false) {
       apply('music');            // 先把失败提示摆出来，别点了像没反应
@@ -1958,11 +1996,28 @@
     apply('music');
   });
   if (el.sTabDvr) el.sTabDvr.addEventListener('click', function () {
-    // 记录仪只贴页面，不探端口、不预连接：连不连由页面上的「连接 / 断开」说了算
+    // 进 tab 只查一次「18767 服务在不在」，不预连接、不代连；
+    // 连不连仍由记录仪页面上的「连接 / 断开」说了算。
     apply('dvr');
+    probeDvr(function () {
+      paintDots();
+      paintStatus();
+      if (tab === 'dvr') apply('dvr', true);
+    });
   });
 
-  el.sFailGo.addEventListener('click', function () { apply('car'); });
+  el.sFailGo.addEventListener('click', function () {
+    // 重试当前这一路，三路互不牵连
+    if (tab === 'dvr') {
+      probeDvr(function () { paintDots(); paintStatus(); apply('dvr'); });
+      return;
+    }
+    if (tab === 'music') {
+      probeMusic(function () { paintDots(); paintStatus(); apply('music'); });
+      return;
+    }
+    probeCar(function () { paintDots(); paintStatus(); apply('car'); });
+  });
 
   el.sReload.addEventListener('click', function () { location.reload(); });
 
@@ -2404,10 +2459,21 @@
   D.classList.add('ready');
   paneTop();
 
+  // 上次停在记录仪：开机补探一次服务，别一直卡在「正在检测记录仪服务…」
+  if (tab === 'dvr') {
+    probeDvr(function () {
+      paintDots();
+      paintStatus();
+      if (tab === 'dvr') apply('dvr', true);
+    });
+  }
+
   probeCar(function () {
     paintDots();
     paintStatus();
-    // 记录仪不探：它连不连由记录仪页面上的按钮决定，外壳不代为连接
+    // 车控自己没起来：把死框换成提示，别停在一个白框上
+    if (tab === 'car' && carOk === false) apply('car', true);
+    // 记录仪不在这里探：它连不连由记录仪页面上的按钮决定，外壳不代为连接
     // 第一次进来默认落音乐；音乐端没有就退回车控，别让人对着空框
     if (tab === 'music' && !stored) {
       probeMusic(function (ok) {
@@ -2420,16 +2486,21 @@
     probeMusic(function (ok) {
       paintDots();
       paintStatus();
-      // 开局那次 apply 可能还没探到端口，补一次
-      if (ok && tab !== NATIVE) apply(tab, true);
+      // 开局那次 apply 可能还没探到端口：探完按结果重摆一次（在线贴框，掉线给提示）
+      if (tab !== NATIVE) apply(tab, true);
     });
   });
 
   setInterval(function () {
     if (document.hidden) return;
-    probeCar(function () { paintDots(); paintStatus(); });
-    if (GATEWAY) probeGateway();   // 统一入口：只问音乐后端在哪个端口
-    // 老入口的音乐页自己探自己的端口；记录仪两路都不探
+    // 只巡检已经在线的模块：掉线由用户点 tab 或点刷新触发重探，
+    // 离线/未检测到的绝不自动重试。记录仪任何情况都不在后台探 ——
+    // 免得用户在记录仪页点过「断开」又被自己拉回去。
+    if (carOk === true) probeCar(function () { paintDots(); paintStatus(); });
+    if (musOk === true) {
+      if (GATEWAY) probeGateway();   // 统一入口：只问音乐后端在哪个端口
+      else probeMusic(function () { paintDots(); paintStatus(); });
+    }
   }, 15000);
 })();
 
