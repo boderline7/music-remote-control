@@ -73,6 +73,10 @@
   .pv .nm{padding:calc(10px + env(safe-area-inset-top)) 14px 0;font-size:12px;color:var(--dim);
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .pv video{flex:1;width:100%;min-height:0;object-fit:contain;background:#000}
+  .pv .pvtip{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    padding:8px 16px;border-radius:999px;background:rgba(0,0,0,.66);color:#fff;
+    font-size:12.5px;pointer-events:none;opacity:0;transition:opacity .15s}
+  .pv .pvtip.on{opacity:1}
   .pv .bar2{display:flex;gap:8px;padding:10px 14px calc(12px + env(safe-area-inset-bottom))}
   .pv .bar2 .btn{height:42px}
   #toast.on{opacity:1}
@@ -109,6 +113,7 @@ html.pane .top{display:none}
 <div class="pv" id="pv">
   <div class="nm" id="pvName"></div>
   <video id="pvVideo" controls playsinline></video>
+  <div class="pvtip" id="pvTip"></div>
   <div class="bar2">
     <button class="btn" id="pvClose">关闭</button>
     <button class="btn primary" id="pvDl">下载</button>
@@ -123,11 +128,31 @@ html.pane .top{display:none}
   var curIp = '';
   var curPath = '';                               // 当前浏览的目录，供「复制当前路径」用
   var seq = 0;                                    // 连接序号：断开后旧请求的结果直接丢
+  var direct = false;                             // 手机能直连记录仪 80 端口时，文件不走车机中转
 
   var TITLE = { normal: '普通录像', event: '事件录像' };
   var DEF = { normal: '/SD0/NOR/M_video/', event: '/SD0/EVT/M_video/' };
   var opened = { normal: false, event: false };    // 「更多」是否展开
   var state = { normal: null, event: null };       // 最近一次返回：展开/收起时本地重绘，不重发请求
+
+  /* 列表本地缓存：同一目录再打开先摆上次结果，再后台刷新。
+     记录仪慢的时候至少不是白屏转圈。 */
+  function memoRead(p) {
+    try {
+      var raw = localStorage.getItem('dvr.list.' + p);
+      if (!raw) return null;
+      var o = JSON.parse(raw);
+      if (!o || !o.d || !o.d.ok) return null;
+      o.d.stale = 1;
+      return o.d;
+    } catch (e) { return null; }
+  }
+  function memoWrite(p, d) {
+    try {
+      if (!d || !d.ok) return;
+      localStorage.setItem('dvr.list.' + p, JSON.stringify({ t: Date.now(), d: d }));
+    } catch (e) {}
+  }
 
   function toast(t) {
     var e = el('toast');
@@ -144,12 +169,35 @@ html.pane .top{display:none}
 
   /* 把「连上了 / 断开了」报给外壳，外壳只靠这条消息点亮状态点，
      自己绝不去探 18767 —— 用户点了断开之后就该一直是断开。 */
-  function notify(on) {
+  function notify(on, d) {
     try {
       if (window.parent && window.parent !== window) {
-        window.parent.postMessage({ src: 'dvr', connected: !!on }, '*');
+        window.parent.postMessage({ src: 'dvr', connected: !!on, direct: !!d }, '*');
       }
     } catch (e) {}
+  }
+
+  /* 探测手机能不能直接到记录仪的 80 端口：能就走直连，少穿一层车机 WiFi。
+     no-cors 只关心请求有没有完成，读不到内容没关系；1.6 秒不通就算中转。 */
+  function probeDirect(ip) {
+    return new Promise(function (res) {
+      if (!ip) { res(false); return; }
+      var done = false;
+      var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+      var t = setTimeout(function () {
+        if (done) return;
+        done = true;
+        if (ctrl) { try { ctrl.abort(); } catch (e) {} }
+        res(false);
+      }, 1600);
+      var opt = { mode: 'no-cors', cache: 'no-store' };
+      if (ctrl) opt.signal = ctrl.signal;
+      fetch('http://' + ip + '/?_=' + Date.now(), opt).then(function () {
+        if (!done) { done = true; clearTimeout(t); res(true); }
+      }, function () {
+        if (!done) { done = true; clearTimeout(t); res(false); }
+      });
+    });
   }
 
   function fmtSize(s) {
@@ -175,8 +223,43 @@ html.pane .top{display:none}
     );
   }
 
-  /* 下载：加 dl=1 让后端回 Content-Disposition: attachment */
+  /* 文件地址：手机能直连记录仪就直接请求它自己的路径（记录仪没有 /dvr/file 这个接口），
+     否则走车机代理 /dvr/file。 */
+  function encodePath(p) {
+    return String(p || '').split('/').map(encodeURIComponent).join('/');
+  }
+  function fileUrl(p, dl) {
+    if (direct && curIp) return 'http://' + curIp + encodePath(p);
+    return '/dvr/file?p=' + encodeURIComponent(p) + (dl ? '&dl=1' : '');
+  }
+
+  /* 原生下载：安卓 DownloadManager / iOS 系统下载。WebView 自己不会存盘，
+     a[download] 在壳里点了没反应就是这么来的。 */
+  function nativeDownload(url, name) {
+    try {
+      var abs = new URL(url, location.href).href;
+      var N = window.CarRemoteNative;
+      if (N && typeof N.download === 'function') {
+        N.download(abs, name);
+        return true;
+      }
+      var ios = window.webkit && window.webkit.messageHandlers
+        && window.webkit.messageHandlers.carRemote;
+      if (ios) {
+        ios.postMessage({ action: 'download', url: abs, name: name });
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  /* 下载：原生优先（可以用直连地址，快）；没有原生通道就用车机代理带 dl=1，
+     让浏览器拿到 Content-Disposition 真正存盘，而不是把视频打开播放。 */
   function download(dir, f) {
+    if (nativeDownload(fileUrl(dir + f, true), f)) {
+      toast('已开始下载 ' + f);
+      return;
+    }
     var a = document.createElement('a');
     a.href = '/dvr/file?p=' + encodeURIComponent(dir + f) + '&dl=1';
     a.download = f;
@@ -187,14 +270,45 @@ html.pane .top{display:none}
   }
 
   /* 预览：同一条 /dvr/file，只是不带 dl=1，后端就回内联视频流。
-     流式转发 + Range 透传后端已经有，这里不需要任何新接口。 */
-  var pvDir = '', pvName = '';
+     能直连就直接读记录仪；不能就走车机（车机会顺手缓存，第二次起本地出）。 */
+  var pvDir = '', pvName = '', pvRetried = false;
+  function pvTip(t) {
+    var e = el('pvTip');
+    e.textContent = t || '';
+    e.className = 'pvtip' + (t ? ' on' : '');
+  }
   function preview(dir, f) {
     pvDir = dir; pvName = f;
-    el('pvName').textContent = f;
+    pvRetried = false;
+    el('pvName').textContent = f
+      + (direct ? ' · 直连' : ' · 中转，慢的话点「下载」到手机看');
     var v = el('pvVideo');
-    v.onerror = function () { toast('这个格式车机浏览器播不了，点「下载」用播放器看'); };
-    v.src = '/dvr/file?p=' + encodeURIComponent(dir + f);
+    pvTip('缓冲中…');
+    v.onwaiting = function () { pvTip('缓冲中…'); };
+    v.onstalled = function () { pvTip('网络慢，正在续…'); };
+    v.onplaying = function () { pvTip(''); };
+    v.oncanplay = function () { pvTip(''); };
+    v.onprogress = function () {
+      try {
+        if (v.buffered.length && v.duration) {
+          var pct = Math.round(v.buffered.end(v.buffered.length - 1) / v.duration * 100);
+          if (pct < 99) pvTip('缓冲 ' + pct + '%');
+        }
+      } catch (e) {}
+    };
+    v.onerror = function () {
+      /* 直连探测只试了根路径，文件路径万一不通就自动退回车机中转，别让用户卡死 */
+      if (direct && !pvRetried) {
+        pvRetried = true;
+        pvTip('直连失败，改走车机中转…');
+        v.src = '/dvr/file?p=' + encodeURIComponent(dir + f);
+        var p2 = v.play();
+        if (p2 && p2.catch) p2.catch(function () {});
+        return;
+      }
+      pvTip('这个格式播不了，点「下载」用播放器看');
+    };
+    v.src = fileUrl(dir + f, false);
     el('pv').className = 'pv on';
     var p = v.play();
     if (p && p.catch) p.catch(function () {});
@@ -202,9 +316,15 @@ html.pane .top{display:none}
   function closePv() {
     var v = el('pvVideo');
     v.onerror = null;
+    v.onwaiting = null;
+    v.onstalled = null;
+    v.onplaying = null;
+    v.oncanplay = null;
+    v.onprogress = null;
     try { v.pause(); } catch (e) {}
     v.removeAttribute('src');
     try { v.load(); } catch (e) {}
+    pvTip('');
     el('pv').className = 'pv';
   }
   el('pvClose').addEventListener('click', closePv);
@@ -334,7 +454,10 @@ html.pane .top{display:none}
     var my = seq;
     var target = path || DEF[type];
     curPath = target;                             // 记下当前目录，复制按钮用它
-    if (left === RETRY_GAP.length - 1) { state[type] = null; paint(type); }
+    if (left === RETRY_GAP.length - 1) {
+      state[type] = memoRead(target);             // 有上次结果先摆出来，别白屏
+      paint(type);
+    }
     var url = '/dvr/list?path=' + encodeURIComponent(target);
     function once() {
       return api(url).then(function (d) { return d; }, function (e) {
@@ -351,6 +474,7 @@ html.pane .top{display:none}
     }).then(function (d) {
       if (my !== seq || !d) return null;
       state[type] = bad(d) ? { ok: 0, err: (d && d.err) || '空应答' } : d;
+      if (!bad(d)) memoWrite(target, d);
       paint(type);
       return state[type];
     });
@@ -372,7 +496,8 @@ html.pane .top{display:none}
     }).then(function () {
       var n = state.normal && state.normal.list ? state.normal.list.length : 0;
       var e = state.event && state.event.list ? state.event.list.length : 0;
-      setStatus('已连接 ' + (curIp || '记录仪') + ' · 普通 ' + n + ' · 事件 ' + e);
+      setStatus('已连接 ' + (curIp || '记录仪') + ' · ' + (direct ? '直连' : '中转')
+        + ' · 普通 ' + n + ' · 事件 ' + e);
     });
   }
 
@@ -386,10 +511,14 @@ html.pane .top{display:none}
       if (!d || !d.ok) throw new Error((d && d.err) || '找不到记录仪');
       curIp = d.ip || '';
       el('ip').textContent = curIp || '—';
-      notify(true);
-      setup();
-      setStatus('已连接 ' + curIp + ' · 读取目录…');
-      return loadAll();
+      return probeDirect(curIp).then(function (ok) {
+        if (my !== seq) return null;
+        direct = ok;
+        notify(true, direct);
+        setup();
+        setStatus('已连接 ' + curIp + ' · ' + (direct ? '手机直连' : '经车机中转') + ' · 读取目录…');
+        return loadAll();
+      });
     }).catch(function (e) {
       if (my !== seq) return;
       notify(false);
@@ -404,6 +533,7 @@ html.pane .top{display:none}
     closePv();
     curIp = '';
     curPath = '';
+    direct = false;
     state.normal = null; state.event = null;
     el('ip').textContent = '—';
     root.innerHTML = '<div class="empty">已断开。点「连接」重新读取记录仪。</div>';
@@ -422,6 +552,20 @@ html.pane .top{display:none}
   /* 复制当前路径：拼成 http://<记录仪IP><目录>，粘到浏览器 80 端口直接看。
      代理读目录慢是弱设备 + 协议回退造成的，浏览器直连反而顺，这里就方便这么干。 */
   function copyText(s) {
+    /* 原生剪贴板优先：http 页面拿不到 navigator.clipboard，execCommand 在壳里也不稳 */
+    try {
+      var N = window.CarRemoteNative;
+      if (N && typeof N.copy === 'function') {
+        if (N.copy(s) !== false) { toast('已复制：' + s); return; }
+      }
+      var ios = window.webkit && window.webkit.messageHandlers
+        && window.webkit.messageHandlers.carRemote;
+      if (ios) {
+        ios.postMessage({ action: 'copy', text: s });
+        toast('已复制：' + s);
+        return;
+      }
+    } catch (e) {}
     function fallback() {
       var ta = document.createElement('textarea');
       ta.value = s; ta.setAttribute('readonly', '');

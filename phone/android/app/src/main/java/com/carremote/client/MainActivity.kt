@@ -2,10 +2,14 @@ package com.carremote.client
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.DownloadManager
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ContentValues
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -27,6 +31,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -195,6 +200,59 @@ class MainActivity : Activity() {
             }
         }
         addJavascriptInterface(NativeBridge(), "CarRemoteNative")
+        // 网页里 a[download] / 「下载」按钮点了没反应，就是因为 WebView 没有下载器。
+        // 交给系统 DownloadManager：通知栏有进度，文件落到「下载」目录。
+        setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+            enqueueDownload(url, userAgent, contentDisposition, mimeType)
+        }
+    }
+
+    /**
+     * 下载交给系统：WebView 自己不会存盘。文件名优先取 Content-Disposition，
+     * 其次取 `?p=/SD0/NOR/M_video/xxx.mp4` 的最后一段，免得存成一个没后缀的 `file`。
+     */
+    private fun enqueueDownload(url: String, userAgent: String?, cd: String?, mime: String?) {
+        try {
+            val name = fileNameOf(url, cd)
+            val req = DownloadManager.Request(Uri.parse(url))
+                .setTitle(name)
+                .setDescription("车机下载")
+                .setNotificationVisibility(
+                    DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
+            } else {
+                req.setDestinationInExternalFilesDir(this, Environment.DIRECTORY_DOWNLOADS, name)
+            }
+            if (!mime.isNullOrBlank()) req.setMimeType(mime)
+            if (!userAgent.isNullOrBlank()) req.addRequestHeader("User-Agent", userAgent)
+            val dm = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+            dm.enqueue(req)
+            Toast.makeText(this, "已开始下载 $name", Toast.LENGTH_SHORT).show()
+        } catch (t: Throwable) {
+            Toast.makeText(this, "下载失败：${t.message ?: t}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun fileNameOf(url: String, cd: String?): String {
+        var name = ""
+        if (!cd.isNullOrBlank()) {
+            val m = Regex("""filename\*?=(?:UTF-8'')?"?([^";]+)"?""", RegexOption.IGNORE_CASE)
+                .find(cd)
+            name = m?.groupValues?.get(1)?.trim()?.trim('"') ?: ""
+        }
+        if (name.isEmpty()) {
+            val p = runCatching { Uri.parse(url).getQueryParameter("p") }.getOrNull()
+            if (!p.isNullOrBlank()) name = p.substringAfterLast('/')
+        }
+        if (name.isEmpty()) {
+            name = "car-" + System.currentTimeMillis()
+            val ext = runCatching { Uri.parse(url).lastPathSegment }.getOrNull()
+                ?.substringAfterLast('.', "")
+            if (!ext.isNullOrBlank() && ext.length <= 5) name += "." + ext
+        }
+        return name.replace(Regex("""[\\/:*?"<>|]"""), "_").take(120)
     }
 
     private fun buildConnectPanel(): ScrollView {
@@ -510,6 +568,30 @@ class MainActivity : Activity() {
                 }
             } catch (e: Throwable) {
                 false
+            }
+        }
+
+        /**
+         * 原生剪贴板。http 页面没有 navigator.clipboard，execCommand 在 WebView 里
+         * 又常常静默失败，日志「复制」按钮就点不动。这里直接写系统剪贴板。
+         */
+        @JavascriptInterface
+        fun copy(text: String): Boolean {
+            return try {
+                val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("车机遥控", text))
+                true
+            } catch (t: Throwable) {
+                false
+            }
+        }
+
+        /** 网页拿不到可用的下载（视频 / 日志），统一从这里转系统下载器。 */
+        @JavascriptInterface
+        fun download(url: String, name: String) {
+            runOnUiThread {
+                val cd = if (name.isBlank()) null else "filename=\"$name\""
+                enqueueDownload(url, null, cd, null)
             }
         }
     }

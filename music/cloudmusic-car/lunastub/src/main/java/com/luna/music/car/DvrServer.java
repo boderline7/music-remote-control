@@ -34,6 +34,11 @@ final class DvrServer {
     synchronized boolean start(Context c) {
         if (ss != null) return true;
         ctx = c.getApplicationContext();
+        try {
+            DvrProxy.init(ctx);
+        } catch (Throwable t) {
+            Log.w(Cfg.TAG, "dvr cache init failed", t);
+        }
         if (page == null) {
             try {
                 page = readAsset("dvr.html");

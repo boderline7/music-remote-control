@@ -3,11 +3,13 @@ package com.luna.music.car;
 import android.util.Log;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.Charset;
+import java.security.MessageDigest;
 
 /**
  * 行车记录仪代理 —— 只干一件事：把记录仪自带的文件系统网页翻成 JSON / 转发字节。
@@ -94,6 +96,8 @@ final class DvrProxy {
                 + ",\"fixed\":" + q(fixedIp)
                 + ",\"port\":" + HTTP_PORT
                 + ",\"log\":" + logCount
+                + ",\"cacheN\":" + cacheCount()
+                + ",\"cacheMB\":" + (cacheBytes() / 1024 / 1024)
                 + ",\"off\":" + (offline ? 1 : 0) + "}";
     }
 
@@ -103,6 +107,153 @@ final class DvrProxy {
 
     static int httpPort() {
         return HTTP_PORT;
+    }
+
+    // ------------------------------------------------------------- 文件磁盘缓存
+
+    /**
+     * 录像文件缓存：第一次看/下载时边转发边落盘，之后同一文件直接从车机本地出。
+     *
+     * 为什么值得缓存：手机到记录仪要穿两层无线（手机→车机热点→车机→记录仪），
+     * 每次播放、拖动进度、下载都要在弱设备上重新走一遍；缓存后第二次起只走一层，
+     * 进度条任意拖、下载立即出。目录列表缓存（DIR_CACHE）只解决"看得见"，这里解决"播得顺"。
+     *
+     * 上限 512MB，按最后访问时间淘汰；只缓存视频，不改记录仪上的任何东西。
+     */
+    private static volatile File fileCacheDir = null;
+    private static final long FILE_CACHE_MAX = 512L * 1024 * 1024;
+    private static final long PART_TTL_MS = 30L * 60 * 1000;
+
+    static void init(android.content.Context c) {
+        if (fileCacheDir != null) return;
+        File base = null;
+        try {
+            base = c.getExternalFilesDir(null);
+        } catch (Throwable ignored) {
+        }
+        if (base == null) base = c.getCacheDir();
+        File d = new File(base, "dvrfile");
+        if (!d.isDirectory() && !d.mkdirs()) {
+            d = new File(c.getCacheDir(), "dvrfile");
+            if (!d.isDirectory()) d.mkdirs();
+        }
+        fileCacheDir = d;
+        trimCache();
+        note("文件缓存 " + d.getAbsolutePath() + " 上限 " + (FILE_CACHE_MAX / 1024 / 1024) + "MB");
+    }
+
+    /** 已完成缓存的本地文件；没有就 null */
+    static File cachedFile(String path) {
+        File d = fileCacheDir;
+        if (d == null || path == null || path.length() == 0) return null;
+        File f = new File(d, cacheKey(path));
+        return (f.isFile() && f.length() > 0) ? f : null;
+    }
+
+    /** 正在写入的半成品：名字带纳秒，两个请求同时落盘也不会互相覆盖 */
+    static File cacheTemp(String path) {
+        File d = fileCacheDir;
+        if (d == null || path == null || path.length() == 0) return null;
+        return new File(d, cacheKey(path) + ".part." + System.nanoTime());
+    }
+
+    /** 完整收完才改名成正式缓存，半截文件一律不算命中 */
+    static void cacheDone(File tmp, String path) {
+        File d = fileCacheDir;
+        if (tmp == null || d == null || path == null) return;
+        try {
+            File dest = new File(d, cacheKey(path));
+            if (dest.exists()) dest.delete();
+            if (tmp.renameTo(dest)) {
+                note("文件已缓存 " + path + " (" + (dest.length() / 1024) + "KB)");
+            } else {
+                tmp.delete();
+            }
+        } catch (Throwable t) {
+            try { tmp.delete(); } catch (Throwable ignored) {}
+        }
+        trimCache();
+    }
+
+    static void cacheDrop(File tmp) {
+        if (tmp == null) return;
+        try { tmp.delete(); } catch (Throwable ignored) {}
+    }
+
+    static int cacheCount() {
+        File d = fileCacheDir;
+        if (d == null) return 0;
+        File[] fs = d.listFiles();
+        if (fs == null) return 0;
+        int n = 0;
+        for (int i = 0; i < fs.length; i++) {
+            if (fs[i].isFile() && fs[i].getName().indexOf(".part") < 0) n++;
+        }
+        return n;
+    }
+
+    static long cacheBytes() {
+        File d = fileCacheDir;
+        if (d == null) return 0;
+        File[] fs = d.listFiles();
+        if (fs == null) return 0;
+        long total = 0;
+        for (int i = 0; i < fs.length; i++) {
+            if (fs[i].isFile() && fs[i].getName().indexOf(".part") < 0) total += fs[i].length();
+        }
+        return total;
+    }
+
+    /** 单个文件太大就不落盘，免得一次把上限吃满、还把别的缓存挤掉 */
+    static boolean cacheAllows(long len) {
+        return len <= 0 || len <= 400L * 1024 * 1024;
+    }
+
+    private static String cacheKey(String path) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            byte[] b = md.digest(path.getBytes("UTF-8"));
+            StringBuilder sb = new StringBuilder(32);
+            for (int i = 0; i < b.length; i++) {
+                sb.append(HEX[(b[i] >> 4) & 15]).append(HEX[b[i] & 15]);
+            }
+            return sb.toString();
+        } catch (Throwable t) {
+            return "f" + Integer.toHexString(path.hashCode());
+        }
+    }
+
+    /** 先清半小时前留下的半截文件，再按最后访问时间淘汰到上限以内 */
+    private static void trimCache() {
+        File d = fileCacheDir;
+        if (d == null) return;
+        File[] fs = d.listFiles();
+        if (fs == null) return;
+        long now = System.currentTimeMillis();
+        long total = 0;
+        for (int i = 0; i < fs.length; i++) {
+            File f = fs[i];
+            if (!f.isFile()) continue;
+            if (f.getName().indexOf(".part") >= 0) {
+                if (now - f.lastModified() > PART_TTL_MS) f.delete();
+                continue;
+            }
+            total += f.length();
+        }
+        if (total <= FILE_CACHE_MAX) return;
+        java.util.Arrays.sort(fs, new java.util.Comparator<File>() {
+            public int compare(File a, File b) {
+                long x = a.lastModified();
+                long y = b.lastModified();
+                return x < y ? -1 : (x > y ? 1 : 0);
+            }
+        });
+        for (int i = 0; i < fs.length && total > FILE_CACHE_MAX; i++) {
+            File f = fs[i];
+            if (!f.isFile() || f.getName().indexOf(".part") >= 0) continue;
+            long len = f.length();
+            if (f.delete()) total -= len;
+        }
     }
 
     // ------------------------------------------------------------------ 发现

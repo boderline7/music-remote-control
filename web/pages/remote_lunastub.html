@@ -1723,7 +1723,7 @@
   var DVR_BASE = GATEWAY ? '' : ('http://' + HOST + ':' + DVR_PORT);
   // 拼接时写进来的构建号：并进 iframe 地址，页面一改 URL 就变，
   // 装新包后不用手动清缓存也一定拿到新页面；同一个包重复打开仍走缓存。
-  var BUILD = '632fe3d1';
+  var BUILD = '2ab8a762';
   // 哪个端口发下来的页，就自带哪一路，不用 iframe 套自己
   var NATIVE = String(location.port) === String(CAR_PORT) ? 'car' : 'music';
   // 统一入口：从 18766 进来，三路都走本机 + 网关转发，地址只有一个
@@ -1745,6 +1745,7 @@
   // 记录仪只在用户点「连接」后才连，外壳绝不主动碰 18767。
   // 这里的状态由记录仪页 iframe 用 postMessage 报上来（on/off），null = 这一页还没说话。
   var dvrOk = null;
+  var dvrDirect = null;   // 记录仪页探测到手机能直连 80 端口时为 true
 
   // ---------- 状态行 ----------
 
@@ -1767,7 +1768,7 @@
       else setStatus('车机助手未就绪 · 到车机上打开一次桌面助手', 'warn');
     } else if (tab === 'dvr') {
       if (dvrOk === null) setStatus('记录仪未连接 · 点「连接」手动读取');
-      else if (dvrOk) setStatus('记录仪已连接 · 18767', 'on');
+      else if (dvrOk) setStatus('记录仪已连接' + (dvrDirect ? ' · 手机直连' : ' · 经车机中转'), 'on');
       else setStatus('记录仪已断开', 'warn');
     } else {
       if (musOk === null) setStatus('正在找音乐端…');
@@ -1971,6 +1972,7 @@
     var d = ev.data;
     if (!d || d.src !== 'dvr' || typeof d.connected !== 'boolean') return;
     dvrOk = d.connected;
+    dvrDirect = !!d.direct;
     paintDots();
     if (tab === 'dvr') paintStatus();
   });
@@ -2041,7 +2043,8 @@
       kv: function (d) {
         if (!d || d.ok !== 1) return '记录仪服务（18767）没响应';
         return '记录仪　' + (d.ip ? ('http://' + d.ip + ':80') : '未连接') + '\n'
-          + '状态　' + (d.off ? '已断开' : '就绪') + ' · 日志 ' + (d.log || 0) + ' 条';
+          + '状态　' + (d.off ? '已断开' : '就绪') + ' · 日志 ' + (d.log || 0) + ' 条'
+          + (d.cacheN ? ('\n缓存　' + d.cacheN + ' 个文件 / ' + (d.cacheMB || 0) + ' MB') : '');
       },
       segs: [
         { key: 'log', label: '运行日志', url: '/dvr/logs', dl: '/dvr/logs', file: '行车记录仪日志', slow: 8000,
@@ -2177,7 +2180,27 @@
     }, 1600);
   }
 
+  /* 原生剪贴板：http 页面拿不到 navigator.clipboard，execCommand 在 WebView 里也不稳。
+     安卓走 CarRemoteNative.copy，iOS 走 WKWebView 的 carRemote 消息。 */
+  function nativeCopy(text) {
+    try {
+      var N = window.CarRemoteNative;
+      if (N && typeof N.copy === 'function') {
+        if (N.copy(text) !== false) { toast('已复制'); return true; }
+      }
+      var ios = window.webkit && window.webkit.messageHandlers
+        && window.webkit.messageHandlers.carRemote;
+      if (ios) {
+        ios.postMessage({ action: 'copy', text: text });
+        toast('已复制');
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
   function copyText(text) {
+    if (nativeCopy(text)) return;
     function fallback() {
       var ta = document.createElement('textarea');
       ta.value = text;
@@ -2239,21 +2262,40 @@
     return seg ? cacheKey(tab, seg) : '';
   }
 
-  /* 存盘三选一：手机端 JS 接口 → 服务端直出 txt → 浏览器 Blob。
-     三路都带的是当前 tab 那一份内容，不再混到别的服务上去。 */
-  function deliver(name, text, fallbackUrl) {
-    var N = window.CarRemoteNative;
-    if (N && typeof N.saveText === 'function') {
-      try {
+  /* 原生存盘：安卓写系统下载目录，iOS 写临时文件后弹系统分享面板（可存到「文件」）。
+     iOS 的 WKWebView 既不支持 a[download]，直接跳 txt 地址还会弹一个预览大框，所以必须走原生。 */
+  function nativeSave(name, text) {
+    try {
+      var N = window.CarRemoteNative;
+      if (N && typeof N.saveText === 'function') {
         if (N.saveText(name, text) !== false) {
           toast('已存到手机下载目录：' + name);
-          return;
+          return true;
         }
-      } catch (e) { /* 退回服务器下载 */ }
-    }
+      }
+      var ios = window.webkit && window.webkit.messageHandlers
+        && window.webkit.messageHandlers.carRemote;
+      if (ios) {
+        ios.postMessage({ action: 'save', name: name, text: text });
+        toast('已导出 ' + name + ' · 在分享面板里存到「文件」');
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  /* 存盘三选一：手机端原生通道 → 取回文本走 Blob → 浏览器 Blob。
+     三路都带的是当前 tab 那一份内容，不再混到别的服务上去。 */
+  function deliver(name, text, fallbackUrl) {
+    if (nativeSave(name, text)) return;
     if (fallbackUrl) {
-      toast('开始下载 ' + name);
-      try { location.href = fallbackUrl; return; } catch (e) { /* 退回 Blob */ }
+      // 不直接跳地址：WKWebView 会把 txt 当预览弹出来，取回文本再存反而干净
+      toast('正在准备 ' + name + '…');
+      fetch(fallbackUrl, withTimeout(15000))
+        .then(function (r) { return r.text(); })
+        .then(function (t) { saveText(t, name); })
+        .catch(function () { saveText(text, name); });
+      return;
     }
     saveText(text, name);
   }
