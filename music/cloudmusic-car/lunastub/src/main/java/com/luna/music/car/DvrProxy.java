@@ -31,6 +31,16 @@ final class DvrProxy {
     private static final int FS_MAX = 512 * 1024;
     /** 记录仪 80 端口应答慢且时好时坏，单次读取给到 9 秒 */
     private static final int FS_READ_MS = 9000;
+    /**
+     * 请求形态。浏览器能读得很顺，就照浏览器那样发：
+     * 0 = HTTP/1.1 + Connection: close
+     * 1 = HTTP/1.0（老式极简 httpd 只认这个）
+     * 2 = HTTP/1.1 不带 Connection 头（keep-alive，Chrome 的默认行为）
+     * 逐个试，第一个有正文的记住，下次直接用它。
+     */
+    private static final int MODE_CLOSE = 0;
+    private static final int MODE_10 = 1;
+    private static final int MODE_KEEP = 2;
     /** 目录列表缓存：新鲜期直接返回不打设备；读失败时用旧结果兜底 */
     private static final long CACHE_FRESH_MS = 45 * 1000;
     private static final long CACHE_STALE_MS = 5 * 60 * 1000;
@@ -54,8 +64,12 @@ final class DvrProxy {
 
     /** 最近一次探测到的记录仪 IP */
     private static volatile String cachedIp = "";
-    /** 上次成功拿到目录页用的 HTTP 版本：弱设备优先复用，省掉一次协议回退的等待 */
-    private static volatile String lastOkVer = "1.0";
+    /** 上次成功拿到目录页用的请求形态，弱设备优先复用，省掉一次试错的等待 */
+    private static volatile int lastOkMode = MODE_CLOSE;
+    /** 整轮都不应答之后的冷却：同一个 ip+path 短时间内不再重复打，避免连点把设备打穿 */
+    private static volatile String coolKey = "";
+    private static volatile long coolUntil = 0;
+    private static final long FAIL_COOL_MS = 5000;
     /** 页面「指定 IP」；留空则自动探测 */
     private static volatile String fixedIp = "";
     /** 按过「断开」后置真：此后不再往记录仪发任何字节 */
@@ -87,7 +101,9 @@ final class DvrProxy {
             DIR_CACHE.clear();
             DIR_CACHE_STAT.clear();
             DIR_CACHE_T.clear();
-            lastOkVer = "1.0";
+            lastOkMode = MODE_CLOSE;
+            coolKey = "";
+            coolUntil = 0;
         }
     }
 
@@ -103,6 +119,73 @@ final class DvrProxy {
 
     static String ip() {
         return cachedIp;
+    }
+
+    /**
+     * 诊断：一步一步告诉用户卡在哪。
+     * 7878 通不通 → 80 建连要多久 → 根路径有没有字节回、回的状态行是什么。
+     * 「连不上」和「路径不对」在页面上长得一样，这个能把它们分开。
+     */
+    static String diag() {
+        String ip = cachedIp.length() > 0 ? cachedIp : fixedIp;
+        StringBuilder sb = new StringBuilder(256);
+        sb.append("{\"ok\":1,\"ip\":").append(q(ip));
+        if (ip.length() == 0) return sb.append(",\"err\":\"还没找到记录仪\"").append('}').toString();
+
+        long markT = System.currentTimeMillis();
+        boolean mark = reachable(ip);
+        sb.append(",\"mark\":").append(mark ? 1 : 0)
+                .append(",\"markMs\":").append(System.currentTimeMillis() - markT);
+
+        Socket s = new Socket();
+        boolean open = false;
+        long t0 = System.currentTimeMillis();
+        try {
+            s.connect(new InetSocketAddress(ip, HTTP_PORT), HTTP_CONNECT_MS);
+            open = true;
+        } catch (Throwable t) {
+            sb.append(",\"port80\":0,\"port80Err\":").append(q(root(t)));
+        }
+        long connMs = System.currentTimeMillis() - t0;
+        if (!open) {
+            closeQuiet(s);
+            return sb.append('}').toString();
+        }
+        sb.append(",\"port80\":1,\"connMs\":").append(connMs);
+
+        try {
+            s.setSoTimeout(4000);
+            OutputStream os = s.getOutputStream();
+            os.write(("GET / HTTP/1.1\r\nHost: " + ip + "\r\nAccept: */*\r\n\r\n")
+                    .getBytes("ISO-8859-1"));
+            os.flush();
+            InputStream in = s.getInputStream();
+            long t1 = System.currentTimeMillis();
+            int c = in.read();
+            long ms = System.currentTimeMillis() - t1;
+            if (c < 0) {
+                sb.append(",\"root\":\"closed\",\"rootMs\":").append(ms);
+            } else {
+                StringBuilder head = new StringBuilder();
+                head.append((char) c);
+                byte[] b = new byte[512];
+                try {
+                    int n = in.read(b);
+                    if (n > 0) head.append(new String(b, 0, n, "ISO-8859-1"));
+                } catch (Throwable ignored) {}
+                String h = head.toString();
+                int e = h.indexOf("\r\n");
+                String statusLine = e > 0 ? h.substring(0, Math.min(e, 100)) : h.substring(0, Math.min(h.length(), 100));
+                sb.append(",\"root\":\"bytes\",\"rootMs\":").append(ms)
+                        .append(",\"status\":").append(q(statusLine))
+                        .append(",\"bytes\":").append(head.length());
+            }
+        } catch (Throwable t) {
+            sb.append(",\"root\":\"none\",\"rootErr\":").append(q(root(t)));
+        } finally {
+            closeQuiet(s);
+        }
+        return sb.append('}').toString();
     }
 
     static int httpPort() {
@@ -258,19 +341,70 @@ final class DvrProxy {
 
     // ------------------------------------------------------------------ 发现
 
-    /** 点「连接」：固定 IP → 缓存 IP → 扫各网卡网段 */
+    /**
+     * 探测单飞。
+     *
+     * 页面上的「连接」是可以连点的，以前每次都真起一轮全网段扫描（160 线程 × 2032 个 IP），
+     * 五次连点就是上万个 TCP 连接砸过去。记录仪是单芯片的小 HTTP 服务，
+     * 被这么打一遍之后 80 端口还接 SYN、但业务线程已经不应答了 ——
+     * 日志里「TCP 连上，请求发出去，9 秒一个字节都没回来」就是这么来的。
+     * 所以同一时刻只允许一轮扫描，后面的等它的结果。
+     */
+    private static final Object PROBE_LOCK = new Object();
+    private static boolean probing = false;
+    private static String probeLast = null;
+
     static String probe() {
+        synchronized (PROBE_LOCK) {
+            if (probing) {
+                long until = System.currentTimeMillis() + 16000;
+                while (probing && System.currentTimeMillis() < until) {
+                    try {
+                        PROBE_LOCK.wait(400);
+                    } catch (InterruptedException e) {
+                        break;
+                    }
+                }
+                if (probing) return "{\"ok\":0,\"err\":\"正在扫描记录仪，稍等再点\"}";
+                if (probeLast != null) return probeLast;
+                return "{\"ok\":0,\"err\":\"没找到记录仪\"}";
+            }
+            probing = true;
+        }
+        try {
+            probeLast = probeInner();
+            return probeLast;
+        } finally {
+            synchronized (PROBE_LOCK) {
+                probing = false;
+                PROBE_LOCK.notifyAll();
+            }
+        }
+    }
+
+    /** 点「连接」：固定 IP → 缓存 IP → 扫各网卡网段 */
+    private static String probeInner() {
         offline = false;
         note("probe 开始" + (fixedIp.length() > 0 ? " fixed=" + fixedIp : " 自动扫描"));
         if (fixedIp.length() > 0) {
-            boolean ok = reachable(fixedIp);
+            boolean mark = reachable(fixedIp);
+            boolean http = httpPortOpen(fixedIp);
+            boolean ok = mark || http;
             if (ok) cachedIp = fixedIp;
-            note("probe fixed 结果 " + (ok ? "命中 " + fixedIp : "不通"));
+            note("probe fixed 结果 " + (ok ? "命中 " + fixedIp : "不通")
+                    + "（7878 " + (mark ? "通" : "不通") + "，80 " + (http ? "通" : "不通") + "）");
             return probeJson(ok, cachedIp, "fixed");
         }
-        if (cachedIp.length() > 0 && reachable(cachedIp)) {
-            note("probe cache 命中 " + cachedIp);
-            return probeJson(true, cachedIp, "cache");
+        if (cachedIp.length() > 0) {
+            boolean mark = reachable(cachedIp);
+            boolean http = httpPortOpen(cachedIp);
+            if (mark || http) {
+                note("probe cache 命中 " + cachedIp
+                        + "（7878 " + (mark ? "通" : "不通") + "，80 " + (http ? "通" : "不通") + "）");
+                return probeJson(true, cachedIp, "cache");
+            }
+            note("probe cache 失效 " + cachedIp + "（7878/80 都不通），重新扫描");
+            cachedIp = "";
         }
         java.util.List<String> ips = localIps();
         if (ips.isEmpty()) {
@@ -287,7 +421,8 @@ final class DvrProxy {
         for (String p : prefixes) {
             for (int last = 1; last <= 254; last++) cand.add(p + last);
         }
-        final String[] hit = new String[1];
+        final java.util.List<String> marks =
+                java.util.Collections.synchronizedList(new java.util.ArrayList<String>());
         java.util.concurrent.ExecutorService pool =
                 java.util.concurrent.Executors.newFixedThreadPool(160);
         java.util.concurrent.CountDownLatch done =
@@ -297,11 +432,9 @@ final class DvrProxy {
             pool.execute(new Runnable() {
                 public void run() {
                     try {
-                        if (hit[0] == null && reachable(ip)) {
-                            synchronized (hit) {
-                                if (hit[0] == null) hit[0] = ip;
-                            }
-                        }
+                        // 只扫 7878 认设备；80 是否讲 HTTP 放到扫完之后再校，
+                        // 免得扫的过程中对同一台设备连两次、把它那点连接数吃光
+                        if (reachable(ip)) marks.add(ip);
                     } finally {
                         done.countDown();
                     }
@@ -313,10 +446,23 @@ final class DvrProxy {
         } catch (InterruptedException ignored) {
         }
         pool.shutdownNow();
-        if (hit[0] != null) {
-            cachedIp = hit[0];
-            note("probe 扫描命中 " + hit[0] + "（扫了 " + cand.size() + " 个）");
-            return probeJson(true, hit[0], "scan");
+
+        // 7878 通的可能不止一台（路由器、别的车机模块），真正能用的是 80 也接得上的那台
+        java.util.List<String> list = new java.util.ArrayList<String>(marks);
+        java.util.Collections.sort(list);
+        String hit = null;
+        for (int i = 0; i < list.size(); i++) {
+            String ip = list.get(i);
+            boolean http = httpPortOpen(ip);
+            note("probe 候选 " + ip + " 80 " + (http ? "通" : "不通"));
+            if (http) { hit = ip; break; }
+        }
+        if (hit == null && !list.isEmpty()) hit = list.get(0);   // 80 全不通就先用第一台试
+        if (hit != null) {
+            cachedIp = hit;
+            note("probe 扫描命中 " + hit + "（扫了 " + cand.size() + " 个，7878 通 "
+                    + list.size() + " 台）");
+            return probeJson(true, hit, "scan");
         }
         note("probe 扫描无结果（扫了 " + cand.size() + " 个）");
         return "{\"ok\":0,\"err\":\"扫了所有网卡网段都没找到记录仪\","
@@ -333,6 +479,20 @@ final class DvrProxy {
         Socket s = new Socket();
         try {
             s.connect(new InetSocketAddress(ip, MARK_PORT), CONNECT_MS);
+            return true;
+        } catch (Throwable t) {
+            return false;
+        } finally {
+            closeQuiet(s);
+        }
+    }
+
+    /** 80 端口能建连才算"能用"：只有 7878 通的，往往根本不是记录仪 */
+    private static boolean httpPortOpen(String ip) {
+        if (ip == null || ip.length() == 0) return false;
+        Socket s = new Socket();
+        try {
+            s.connect(new InetSocketAddress(ip, HTTP_PORT), CONNECT_MS);
             return true;
         } catch (Throwable t) {
             return false;
@@ -390,10 +550,21 @@ final class DvrProxy {
 
         String[] page;
         synchronized (FS_LOCK) {
-            // 等锁期间别的线程可能已经抓到了，双重检查
-            hit = cacheGet(key, now, CACHE_FRESH_MS);
-            if (hit != null) return hit;
+            /*
+             * 等锁期间别的线程可能已经抓到了，所以这里要复核缓存。
+             * 关键是时间戳必须取「进锁之后」的：以前沿用进锁前的 now，
+             * 等锁的那一两秒里别的线程写进来的新缓存，时间比 now 还晚，
+             * 算出来是负数、判成过期，于是每个并发请求都要再打一次设备 ——
+             * 十来路并发就变成「一秒抓一次、连抓一分钟」，记录仪直接被打软。
+             */
+            long t2 = System.currentTimeMillis();
+            hit = cacheGet(key, t2, CACHE_FRESH_MS);
+            if (hit != null) {
+                note("browse " + dir + " 合并命中");
+                return hit;
+            }
             page = httpFetch(ip, dir, FS_MAX);
+            now = t2;
         }
 
         if (page[0].length() > 0) {
@@ -708,43 +879,67 @@ final class DvrProxy {
     // ------------------------------------------------------------------ 抓页
     /**
      * 抓记录仪网页（80），返回 {body, 状态行}。
-     * 弱设备对 1.1/1.0 的接受时好时坏，且每次都先试错协议要多等一个超时。
-     * 记住上次成功的版本优先用；失败了自动换另一个版本重试一次。
+     *
+     * 这台设备有个明显的脾气：TCP 能连上，但某种请求形态它就是不吐字节，
+     * 一直挂到超时。浏览器读得顺，说明它认的是浏览器那套（HTTP/1.1 + 不给 Connection 头）。
+     * 所以按「浏览器形态 → close 形态 → HTTP/1.0」依次试，成功一次就记住；
+     * 全都没应答时打一次根路径做基线，日志里就能看出是设备整体不讲 HTTP 还是路径不对。
      */
     private static String[] httpFetch(String ip, String path, int max) {
-        String first = lastOkVer;
-        String second = "1.1".equals(first) ? "1.0" : "1.1";
-        String[] r = httpOnce(ip, path, max, first);
-        if (r[0].length() == 0) {
-            String[] r2 = httpOnce(ip, path, max, second);
-            if (r2[0].length() > 0) {
-                lastOkVer = second;
-                return r2;
-            }
-            // 都没正文，挑状态行更有信息量的那个给前端显示
-            if (r2[1].length() > r[1].length()) return r2;
-        } else {
-            lastOkVer = first;
+        String key = ip + "|" + path;
+        long now = System.currentTimeMillis();
+        if (key.equals(coolKey) && now < coolUntil) {
+            long left = (coolUntil - now + 999) / 1000;
+            note("fs " + path + " 冷却中（" + left + "s）");
+            return new String[] { "", "记录仪不应答，冷却 " + left + " 秒" };
         }
-        return r;
+
+        int[] order;
+        if (lastOkMode == MODE_10) order = new int[] { MODE_10, MODE_KEEP, MODE_CLOSE };
+        else if (lastOkMode == MODE_CLOSE) order = new int[] { MODE_CLOSE, MODE_KEEP, MODE_10 };
+        else order = new int[] { MODE_KEEP, MODE_CLOSE, MODE_10 };
+
+        String stat = "";
+        for (int i = 0; i < order.length; i++) {
+            String[] r = httpOnce(ip, path, max, order[i]);
+            if (r[0].length() > 0) {
+                lastOkMode = order[i];
+                return r;
+            }
+            stat = r[1];
+            // 连都连不上，换形态也没用，直接收工（别白等三个超时）
+            if (stat.toLowerCase().indexOf("connect") >= 0) break;
+        }
+
+        baseline(ip);
+        coolKey = key;
+        coolUntil = System.currentTimeMillis() + FAIL_COOL_MS;
+        return new String[] { "", stat.length() > 0 ? stat : "ERR 记录仪没有应答" };
     }
 
-    private static String[] httpOnce(String ip, String path, int max, String ver) {
+    private static String[] httpOnce(String ip, String path, int max, int mode) {
         Socket s = new Socket();
         try {
+            long t0 = System.currentTimeMillis();
             s.connect(new InetSocketAddress(ip, HTTP_PORT), HTTP_CONNECT_MS);
+            long tConn = System.currentTimeMillis() - t0;
             s.setSoTimeout(FS_READ_MS);
             OutputStream os = s.getOutputStream();
-            String req = "GET " + pctEncodePath(path) + " HTTP/" + ver + "\r\n"
-                    + "Host: " + ip + "\r\n"
-                    + "User-Agent: Mozilla/5.0 (Linux; Android 9; Car) AppleWebKit/537.36"
-                    + " (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36\r\n"
-                    + "Accept: text/html,application/xhtml+xml,*/*;q=0.8\r\n"
-                    + "Accept-Language: zh-CN,zh;q=0.9\r\n"
-                    + "Accept-Encoding: identity\r\n"
-                    + "Referer: http://" + ip + "/\r\n"
-                    + "Connection: close\r\n\r\n";
-            os.write(req.getBytes("ISO-8859-1"));
+
+            /*
+             * 只发浏览器必备的几个头。以前还带 Accept-Language / Accept-Encoding / Referer，
+             * 这些对正常设备无害，但对这种极简 httpd 反而可能把它的请求解析带偏 —— 越少越稳。
+             */
+            StringBuilder req = new StringBuilder(160);
+            req.append("GET ").append(pctEncodePath(path))
+                    .append(mode == MODE_10 ? " HTTP/1.0\r\n" : " HTTP/1.1\r\n");
+            if (mode != MODE_10) req.append("Host: ").append(ip).append("\r\n");
+            req.append("User-Agent: Mozilla/5.0 (Linux; Android 9; Car) AppleWebKit/537.36")
+                    .append(" (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36\r\n")
+                    .append("Accept: */*\r\n");
+            if (mode == MODE_CLOSE) req.append("Connection: close\r\n");
+            req.append("\r\n");
+            os.write(req.toString().getBytes("ISO-8859-1"));
             os.flush();
 
             InputStream in = s.getInputStream();
@@ -754,13 +949,31 @@ final class DvrProxy {
              * 于是一头扎进 9 秒 soTimeout，浏览器按 Content-Length 读够就走所以顺畅。
              * 这里拿到 Content-Length 就只读那么多字节，读满立刻返回，不再等 FIN。
              */
+            long tTx = System.currentTimeMillis();
+            String first = ServerIo.readLine(in);
+            long tFirst = System.currentTimeMillis() - tTx;
+            if (first == null || first.length() == 0) {
+                note("fs " + path + " 形态" + mode + " 失败：连上 " + tConn + "ms，等 "
+                        + tFirst + "ms 一个字节都没回");
+                return new String[] { "", "ERR 连上但没有任何应答（等 " + tFirst + "ms）" };
+            }
+
             StringBuilder headSb = new StringBuilder(1024);
+            headSb.append(first).append("\r\n");
             String line;
             int clen = -1;
             boolean chunked = false;
+            int colon0 = first.indexOf(':');
+            if (colon0 > 0) {
+                String k0 = first.substring(0, colon0).trim().toLowerCase();
+                if ("content-length".equals(k0)) {
+                    try { clen = Integer.parseInt(first.substring(colon0 + 1).trim()); }
+                    catch (Throwable ignored) {}
+                }
+            }
             while ((line = ServerIo.readLine(in)) != null) {
-                headSb.append(line).append("\r\n");
                 if (line.length() == 0) break;              // 空行 = 头结束
+                headSb.append(line).append("\r\n");
                 int colon = line.indexOf(':');
                 if (colon <= 0) continue;
                 String k = line.substring(0, colon).trim().toLowerCase();
@@ -771,7 +984,7 @@ final class DvrProxy {
                     chunked = true;
                 }
             }
-            if (headSb.length() == 0) throw new java.io.IOException("empty response");
+            headSb.append("\r\n");
 
             ByteArrayOutputStream all = new ByteArrayOutputStream(
                     headSb.length() + (clen > 0 ? Math.min(clen, 16384) : 16384));
@@ -792,7 +1005,7 @@ final class DvrProxy {
                     remain -= n;
                 }
             } else if (!chunked) {
-                // 没有长度也没有 chunked：老办法读到关连接/超时
+                // 没有长度也没有 chunked：读到 </html> 就停，没等到才靠关连接/超时
                 while (all.size() < max) {
                     int n;
                     try {
@@ -802,6 +1015,7 @@ final class DvrProxy {
                     }
                     if (n <= 0) break;
                     all.write(buf, 0, n);
+                    if (endsHtml(all)) break;
                 }
             } else {
                 // chunked：读到结束块 0\r\n\r\n，避免干等 FIN
@@ -821,18 +1035,75 @@ final class DvrProxy {
             byte[] raw = all.toByteArray();
             String status = statusOf(raw);
             String text = decodeHttp(raw);
-            note("fs " + path + " [" + status + "] len=" + clen + " -> " + text.length());
+            note("fs " + path + " [" + status + "] 形态" + mode + " 连" + tConn
+                    + "ms 首字节" + tFirst + "ms len=" + clen + " -> " + text.length());
             return new String[] { text, status };
         } catch (Throwable t) {
-            note("fs " + path + " err: " + root(t));
+            note("fs " + path + " 形态" + mode + " err: " + root(t));
             return new String[] { "", "ERR " + root(t) };
         } finally {
             closeQuiet(s);
         }
     }
 
-    /** chunked 正文的结束块：末尾出现 0\r\n\r\n（或 0\r\n 后跟尾字段）。 */
-    private static boolean endsChunk(ByteArrayOutputStream b) {
+    /**
+     * 基线：整轮都没应答之后，拿根路径按最简请求打一次（4 秒）。
+     * 只为在日志里分清两种情况：根路径也不回 → 这台设备的 80 服务不认我们；
+     * 根路径回了 → 是目录路径或请求形态的问题，不是"连不上"。
+     */
+    private static void baseline(String ip) {
+        Socket s = new Socket();
+        try {
+            s.connect(new InetSocketAddress(ip, HTTP_PORT), HTTP_CONNECT_MS);
+            s.setSoTimeout(4000);
+            OutputStream os = s.getOutputStream();
+            os.write(("GET / HTTP/1.1\r\nHost: " + ip + "\r\nAccept: */*\r\n\r\n")
+                    .getBytes("ISO-8859-1"));
+            os.flush();
+            InputStream in = s.getInputStream();
+            long t0 = System.currentTimeMillis();
+            int c = in.read();
+            long ms = System.currentTimeMillis() - t0;
+            if (c < 0) {
+                note("基线 / 对端直接关闭（0 字节，连上后立刻 FIN）");
+            } else {
+                StringBuilder sb = new StringBuilder();
+                sb.append((char) c);
+                byte[] b = new byte[256];
+                try {
+                    int n = in.read(b);
+                    if (n > 0) sb.append(new String(b, 0, n, "ISO-8859-1"));
+                } catch (Throwable ignored) {}
+                String head = sb.toString().replace("\r", " ").replace("\n", " ");
+                if (head.length() > 90) head = head.substring(0, 90);
+                note("基线 / 首字节 " + ms + "ms：" + head);
+            }
+        } catch (Throwable t) {
+            note("基线 / 失败 " + root(t));
+        } finally {
+            closeQuiet(s);
+        }
+    }
+
+    /**
+     * 目录页末尾是不是已经收完了。
+     * 这台设备的应答没有 Content-Length，也不一定主动关连接，只能等到超时；
+     * 认出 </html> 就立刻收工，一次目录抓取从「等满超时」变成「传完就走」。
+     */
+    private static boolean endsHtml(ByteArrayOutputStream b) {
+        byte[] a = b.toByteArray();
+        int n = a.length;
+        if (n < 8) return false;
+        int from = Math.max(0, n - 16);
+        for (int i = n - 7; i >= from; i--) {
+            if (a[i] == '<' && a[i + 1] == '/' && (a[i + 2] == 'h' || a[i + 2] == 'H')
+                    && (a[i + 3] == 't' || a[i + 3] == 'T') && (a[i + 4] == 'm' || a[i + 4] == 'M')
+                    && (a[i + 5] == 'l' || a[i + 5] == 'L') && a[i + 6] == '>') return true;
+        }
+        return false;
+    }
+
+    /** chunked 正文的结束块：末尾出现 0\r\n\r\n（或 0\r\n 后跟尾字段）。 */    private static boolean endsChunk(ByteArrayOutputStream b) {
         byte[] a = b.toByteArray();
         int n = a.length;
         for (int i = n - 5; i >= 0 && i >= n - 32; i--) {

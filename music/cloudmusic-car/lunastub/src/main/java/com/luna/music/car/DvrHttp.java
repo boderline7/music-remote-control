@@ -39,6 +39,8 @@ final class DvrHttp {
         try {
             if ("/dvr/probe".equals(path)) {
                 json(out, DvrProxy.probe());
+            } else if ("/dvr/diag".equals(path)) {
+                json(out, DvrProxy.diag());
             } else if ("/dvr/state".equals(path)) {
                 json(out, DvrProxy.stateJson());
             } else if ("/dvr/logs".equals(path)) {
