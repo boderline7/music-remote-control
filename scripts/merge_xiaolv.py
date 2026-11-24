@@ -201,7 +201,9 @@ def patch_manifest(dec: Path) -> None:
     assert 'android:icon="@android:drawable/ic_media_play"' in s, "application icon 不匹配"
     s = re.sub(r'android:icon="[^"]*"',
                'android:icon="@android:drawable/ic_media_play"', s, count=1)
-    s = s.replace("<application ", '<application android:theme="@style/AppTheme" ', 1)
+    s = s.replace("<application ",
+                  '<application android:requestLegacyExternalStorage="true" '
+                  'android:theme="@style/AppTheme" ', 1)
 
     # 3) 桥接页不再是入口：去掉它的 LAUNCHER，只留「设置」这条显式跳转
     m = re.search(r'(<activity[^>]*android:name="' + re.escape(PKG) + r'\.Main"[^>]*>)'
@@ -225,20 +227,39 @@ SETTINGS_BTN = ('            <TextView android:textSize="@dimen/btn_text" '
                 'android:textStyle="bold" android:textColor="@color/accent_hi" '
                 'android:gravity="center" android:background="@drawable/btn_plain" '
                 'android:paddingLeft="10.0dip" android:paddingRight="10.0dip" '
-                'android:clickable="true" android:minWidth="56.0dip" android:layout_width="wrap_content" '
-                'android:layout_height="@dimen/btn_h" android:layout_marginLeft="8.0dip" '
+                'android:clickable="true" android:minWidth="52.0dip" android:layout_width="wrap_content" '
+                'android:layout_height="@dimen/btn_h" android:layout_marginLeft="12.0dip" '
                 'android:onClick="openSettings" android:text="设置" />')
+
+UP_BTN = ('<TextView android:textSize="@dimen/btn_text" '
+          'android:textStyle="bold" android:textColor="@color/text_dim" '
+          'android:gravity="center" android:background="@drawable/btn_plain" '
+          'android:paddingLeft="10.0dip" android:paddingRight="10.0dip" '
+          'android:clickable="true" android:minWidth="52.0dip" android:layout_width="wrap_content" '
+          'android:layout_height="@dimen/btn_h" android:onClick="openParent" android:text="上级" />')
 
 
 def patch_layout(dec: Path) -> None:
-    """右上角加「设置」：跟在「换端口」「dpi」后面，同一行的最右侧。"""
+    """「设置」挪到左上品牌区（logo / 小绿传 / 开发者 6+1 那一列右边），
+    「上级」补到右上按钮组最前面（原来设置占的位置）。"""
     p = dec / "res/layout/act_main.xml"
     s = p.read_text(encoding="utf-8")
-    m = re.search(r'<TextView[^>]*android:id="@id/btn_dpi"[^>]*/>', s)
-    assert m, "没找到 dpi 按钮，布局结构变了"
-    s = s[:m.end()] + "\n" + SETTINGS_BTN + s[m.end():]
+
+    # 1) 设置：跟着「开发者 6+1」那一列走，点文字进桥接页
+    i = s.find('android:id="@id/tv_dev"')
+    assert i > 0, "没找到 tv_dev，布局结构变了"
+    j = s.find("/>", i) + 2
+    k = s.find("</LinearLayout>", j) + len("</LinearLayout>")
+    assert k > j, "没找到品牌文字容器的结束标签"
+    s = s[:k] + "\n" + SETTINGS_BTN + s[k:]
+
+    # 2) 上级：放到右上按钮组第一个，方便从 LanUpload 往上层走
+    m = re.search(r'(<TextView[^>]*android:id="@id/btn_exit")', s)
+    assert m, "没找到退出按钮，布局结构变了"
+    s = s[:m.start()] + UP_BTN + s[m.start():]
+
     p.write_text(s, encoding="utf-8")
-    log("layout", "act_main.xml 右上角加了「设置」")
+    log("layout", "「设置」移到左上品牌区，「上级」放到右上按钮组")
 
 
 OPEN_SETTINGS = """
@@ -268,6 +289,62 @@ OPEN_SETTINGS = """
 """
 
 
+OPEN_PARENT = """
+.method public openParent(Landroid/view/View;)V
+    .locals 4
+
+    iget-object v0, p0, Lcom/yuhan/xiaolvchuan/MainActivity;->saveDir:Ljava/io/File;
+
+    if-nez v0, :cond_0
+
+    return-void
+
+    :cond_0
+    invoke-virtual {v0}, Ljava/io/File;->getParentFile()Ljava/io/File;
+
+    move-result-object v1
+
+    if-nez v1, :cond_1
+
+    return-void
+
+    :cond_1
+    invoke-static {}, Landroid/os/Environment;->getExternalStorageDirectory()Ljava/io/File;
+
+    move-result-object v2
+
+    invoke-virtual {v2}, Ljava/io/File;->getAbsolutePath()Ljava/lang/String;
+
+    move-result-object v2
+
+    invoke-virtual {v1}, Ljava/io/File;->getAbsolutePath()Ljava/lang/String;
+
+    move-result-object v3
+
+    invoke-virtual {v3, v2}, Ljava/lang/String;->startsWith(Ljava/lang/String;)Z
+
+    move-result v3
+
+    if-eqz v3, :cond_2
+
+    invoke-virtual {v1}, Ljava/io/File;->isDirectory()Z
+
+    move-result v3
+
+    if-eqz v3, :cond_2
+
+    iput-object v1, p0, Lcom/yuhan/xiaolvchuan/MainActivity;->saveDir:Ljava/io/File;
+
+    const/4 v3, 0x0
+
+    invoke-direct {p0, v3}, Lcom/yuhan/xiaolvchuan/MainActivity;->refreshFiles(Ljava/lang/String;)V
+
+    :cond_2
+    return-void
+.end method
+"""
+
+
 def patch_activity(dec: Path) -> None:
     p = dec / "smali_classes2" / XLV_PKG.replace(".", "/") / "MainActivity.smali"
     s = p.read_text(encoding="utf-8", errors="surrogateescape")
@@ -278,6 +355,20 @@ def patch_activity(dec: Path) -> None:
     p.write_text(s.rstrip("\n") + "\n" + OPEN_SETTINGS,
                  encoding="utf-8", errors="surrogateescape")
     log("activity", "MainActivity 追加 openSettings()，跳 com.luna.music.car.Main")
+
+
+def patch_parent(dec: Path) -> None:
+    """车机端列表支持往上一级：saveDir 上移到父目录，限制在外部存储根以内。
+    上传落点仍由 Store.dir() 决定（固定 LanUpload），这里只改浏览位置。"""
+    p = dec / "smali_classes2" / XLV_DIR / "MainActivity.smali"
+    s = p.read_text(encoding="utf-8", errors="surrogateescape")
+    if "openParent(Landroid/view/View;)V" in s:
+        log("parent", "已经有 openParent，跳过")
+        return
+    assert s.rstrip().endswith(".end method"), "MainActivity.smali 结尾不是 .end method"
+    p.write_text(s.rstrip("\n") + "\n" + OPEN_PARENT,
+                 encoding="utf-8", errors="surrogateescape")
+    log("parent", "MainActivity 追加 openParent()，浏览上级目录")
 
 
 # ------------------------------------------------------------------ 构建
@@ -508,6 +599,10 @@ def patch_apktool_yml(dec: Path) -> None:
     # 车机上装不上时用来排查系统版本门槛：MIN_SDK=26 出一版低门槛试验包
     if MIN_SDK:
         s2 = re.sub(r"minSdkVersion:\s*\d+", f"minSdkVersion: {MIN_SDK}", s2, count=1)
+    # 上传要写 /storage/emulated/0/LanUpload。targetSdk 35 下分区存储生效，
+    # WRITE_EXTERNAL_STORAGE 等于没有权限，表现就是「下载正常、上传失败」。
+    # 降到 29 + requestLegacyExternalStorage，Android 10~14 都按旧版全盘可写处理。
+    s2 = re.sub(r"targetSdkVersion:\s*\d+", "targetSdkVersion: 29", s2, count=1)
     p.write_text(s2, encoding="utf-8")
     log("apktool.yml", f"forcedPackageId = 127" + (f"，minSdkVersion = {MIN_SDK}" if MIN_SDK else ""))
 def build_browse_dex() -> Path:
@@ -657,6 +752,7 @@ def main() -> None:
     patch_manifest(dec)
     patch_layout(dec)
     patch_activity(dec)
+    patch_parent(dec)
     patch_exit(dec)
     patch_service_toggle(dec)
     patch_apktool_yml(dec)
