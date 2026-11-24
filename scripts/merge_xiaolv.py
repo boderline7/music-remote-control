@@ -96,11 +96,23 @@ def inject_smali(dec: Path) -> int:
     # 同一个 APK 只有一个 R，小绿传编译时写死的 R 引用要指到桥接包的 R 上
     old = "L" + XLV_PKG.replace(".", "/") + "/R$"
     new = "L" + PKG.replace(".", "/") + "/R$"
+
+    # provider authority 全系统唯一：原版小绿传占着 com.yuhan.xiaolvchuan.files，
+    # 两个包同机共存时系统直接拒绝安装（INSTALL_FAILED_CONFLICTING_PROVIDER）。
+    # 连同 Store.AUTHORITY 与 uriFor() 里写死的内容 URI 前缀一起换成本包名。
+    old_auth = XLV_PKG + ".files"
+    new_auth = PKG + ".files"
+
     changed = 0
+    auth_changed = 0
     for f in dst.rglob("*.smali"):
         s = f.read_text(encoding="utf-8", errors="surrogateescape")
-        if old in s:
-            f.write_text(s.replace(old, new), encoding="utf-8", errors="surrogateescape")
+        s2 = s.replace(old, new) if old in s else s
+        if old_auth in s2:
+            s2 = s2.replace(old_auth, new_auth)
+            auth_changed += 1
+        if s2 != s:
+            f.write_text(s2, encoding="utf-8", errors="surrogateescape")
             changed += 1
 
     # 冲突自检：桥接包自己的类不能被覆盖
@@ -110,7 +122,8 @@ def inject_smali(dec: Path) -> int:
            if p.relative_to(dst).as_posix() in own]
     if dup:
         raise SystemExit(f"类冲突（{len(dup)} 个）：{dup[:5]}")
-    log("smali", f"{len(list(dst.rglob('*.smali')))} 个类，{changed} 个文件改了 R 引用")
+    log("smali", f"{len(list(dst.rglob('*.smali')))} 个类，{changed} 个文件改引用"
+                 f"（其中 authority {auth_changed} 个）")
     return changed
 
 
@@ -167,7 +180,7 @@ XLV_TAIL = f"""
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
             </intent-filter>
         </activity>
-        <provider android:name="{XLV_PKG}.FileProviderLite" android:authorities="{XLV_PKG}.files" android:exported="false" android:grantUriPermissions="true"/>
+        <provider android:name="{XLV_PKG}.FileProviderLite" android:authorities="{PKG}.files" android:exported="false" android:grantUriPermissions="true"/>
 """
 
 
