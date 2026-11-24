@@ -47,7 +47,11 @@ APKSIGNER = BT / "lib/apksigner.jar"
 # apktool 在中文路径下编资源会报 Illegal byte sequence，工作目录必须是纯 ASCII
 WORK = Path(os.environ.get("MERGE_WORK", "C:/Temp/xiaolv_merge"))
 DIST = ROOT / "dist"
-OUT_NAME = "汽水音乐_桥接包_含文件传输_v2.10.29.apk"
+# MIN_SDK 只用于排查「车机装不上是不是系统版本不够」，正常出包不要设；
+# 设了就以试验包命名，不会覆盖正式产物。
+MIN_SDK = int(os.environ.get("MIN_SDK") or 0)
+OUT_NAME = ("汽水音乐_桥接包_含文件传输_v2.10.29"
+            + (f"_min{MIN_SDK}" if MIN_SDK else "") + ".apk")
 
 # ---- 签名（与 Gradle 同一把钥匙，才能覆盖安装） ----
 KEYSTORE = ROOT / "keystore/carremote.jks"
@@ -488,8 +492,11 @@ def patch_apktool_yml(dec: Path) -> None:
     s2 = re.sub(r"forcedPackageId:\s*\d+", "forcedPackageId: 127", s, count=1)
     if s2 == s and "forcedPackageId" not in s:
         s2 = s.replace("packageInfo:", "packageInfo:\n  forcedPackageId: 127", 1)
+    # 车机上装不上时用来排查系统版本门槛：MIN_SDK=26 出一版低门槛试验包
+    if MIN_SDK:
+        s2 = re.sub(r"minSdkVersion:\s*\d+", f"minSdkVersion: {MIN_SDK}", s2, count=1)
     p.write_text(s2, encoding="utf-8")
-    log("apktool.yml", "forcedPackageId = 127")
+    log("apktool.yml", f"forcedPackageId = 127" + (f"，minSdkVersion = {MIN_SDK}" if MIN_SDK else ""))
 def build_browse_dex() -> Path:
     """小绿传的 Browse.java 是后期加的 Java 源码，原本单独编成 classes2.dex。
     smali 树里没有它，必须重新编译，否则文件浏览/下载那几条调用会 NoClassDefFoundError。

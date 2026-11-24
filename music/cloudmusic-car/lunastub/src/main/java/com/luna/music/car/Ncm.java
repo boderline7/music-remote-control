@@ -472,6 +472,13 @@ final class Ncm {
         try { return ctl.getPlaybackState(); } catch (Throwable t) { return null; }
     }
 
+    /** 给 {@link Keys} 判方控是「播」还是「暂停」用。 */
+    boolean playing() {
+        PlaybackState s = state();
+        return s != null && (s.getState() == PlaybackState.STATE_PLAYING
+                || s.getState() == PlaybackState.STATE_BUFFERING);
+    }
+
     private static String safeStr(MediaMetadata m, String key) {
         try {
             String s = m.getString(key);

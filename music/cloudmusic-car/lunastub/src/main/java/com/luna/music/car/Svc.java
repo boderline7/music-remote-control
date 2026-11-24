@@ -126,6 +126,7 @@ public class Svc extends Service {
                 // 进程还在、服务被系统回收后又起来：监听 socket 已经活着，但桥/会话可能在那次
                 // 销毁里被拆掉了（方控当时就哑了，手机遥控照常）。这里补一次，两个都是幂等的。
                 Ncm.I.init(this);
+                Keys.I.start(this);
                 Bridge.I.start(this);
                 return;
             }
@@ -176,6 +177,7 @@ public class Svc extends Service {
         }
         Server.I.yielded = false;
         Ncm.I.init(this);
+        Keys.I.start(this);
         Nsd.I.register(this);
         Bridge.I.start(this);
         foreground(true);
@@ -195,6 +197,7 @@ public class Svc extends Service {
             if (Server.I.isRunning()) {
                 active = true;
                 Ncm.I.init(this);
+                Keys.I.start(this);
                 Bridge.I.start(this);
                 return START_STICKY;
             }
@@ -216,6 +219,7 @@ public class Svc extends Service {
     @Override public void onDestroy() {
         Server.I.stop();
         Nsd.I.unregister();
+        Keys.I.stop();
         Bridge.I.stopAll();
         LogCapture.logAlways("SVC 已销毁，active=" + active + "，stopped=" + isStopped(this));
         // 用户手动停过：连心跳一起撤掉，别让它在 15 分钟后把自己拉回来抢端口。

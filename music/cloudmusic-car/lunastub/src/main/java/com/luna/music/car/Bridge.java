@@ -264,6 +264,8 @@ class Bridge {
 
     private synchronized void teardown() {
         connected = false;
+        // 会话没了这段时间方控没人接，先由 Keys 顶上，重连成功后再按官方状态让位
+        Keys.I.takeOver();
         if (ctl != null) {
             try { ctl.unregisterCallback(cb); } catch (Throwable ignored) {}
             ctl = null;
@@ -324,12 +326,15 @@ class Bridge {
 
         @Override
         public void onPlaybackStateChanged(PlaybackState state) {
+            // 官方在播就把方控交回官方，暂停/停止则桥接接管（见 Keys 的说明）
+            Keys.I.follow(state == null ? PlaybackState.STATE_NONE : state.getState());
             pushState();
         }
 
         @Override
         public void onSessionDestroyed() {
             Log.w(TAG, "官方 App 的会话没了，重连");
+            Keys.I.takeOver();
             teardown();
             scheduleReconnect("会话被销毁");
         }
@@ -433,13 +438,21 @@ class Bridge {
         }
     }
 
-    /** 兜底：type 0 播放/暂停、1 上一首、2 下一首，直接发系统媒体键给当前活跃会话。 */
+    /**
+     * 兜底：type 0 播放/暂停、1 上一首、2 下一首。
+     *
+     * <p>{@code AudioManager.dispatchMediaKeyEvent()} 需要 MEDIA_CONTENT_CONTROL（系统签名权限），
+     * 普通 App 调了也是静默失败，返回 true 只代表调用没抛异常。所以这里主要是把官方进程拉起来，
+     * 让 12s 巡检有机会重连；真正的方控收口在 {@link Keys}。
+     */
     private void fallback(int type) {
+        Ncm.I.wake();
         int key = type == 0 ? KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
                 : type == 1 ? KeyEvent.KEYCODE_MEDIA_PREVIOUS
                 : KeyEvent.KEYCODE_MEDIA_NEXT;
         boolean ok = Ncm.I.mediaKeyEvent(key);
-        LogCapture.log("方控兜底：桥接无可用会话，改发系统媒体键 " + key + " -> " + ok);
+        LogCapture.log("方控兜底：无可用会话，拉起官方进程并试发媒体键 " + key + "（调用返回 " + ok
+                + "，无系统权限时并不代表已投递）");
     }
 
     /**
