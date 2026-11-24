@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.cloudmusic.car.remote.RemoteHealth
@@ -105,7 +106,26 @@ object MediaSessionKeeper {
             if (future !== f) return@addListener
             attempt = 0
             RemoteHealth.log("媒体会话已连接")
+            main.post { warmUp(controller) }
         }, MoreExecutors.directExecutor())
+    }
+
+    /**
+     * 空队列预热。
+     *
+     * 车机助手的方控是 `AudioManager.dispatchMediaKeyEvent`，它只投给系统记录的
+     * 「当前媒体会话」，而那个记录要靠会话自己产生过一次播放状态变化才会更新。
+     * 队列非空时 `PlayerHub.restorePlayback` 已经 prepare 过；队列为空（新装、清过数据、
+     * 或上次没留下快照）时会话一直是 IDLE，系统不认，方向盘按了也没人接——但手机遥控
+     * 走 HTTP 直连，所以能用。这里对空队列调一次 prepare：立刻落到 ENDED，状态变化有了，
+     * 不出声、不联网。
+     */
+    private fun warmUp(controller: MediaController) {
+        if (!controller.isConnected) return
+        if (controller.mediaItemCount > 0) return
+        if (controller.playbackState == Player.STATE_ENDED) return
+        runCatching { controller.prepare() }
+        RemoteHealth.log("空队列预热：让系统把这个会话记为当前媒体会话")
     }
 
     private fun scheduleRetry() {
