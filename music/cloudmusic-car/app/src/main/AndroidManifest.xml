@@ -49,6 +49,20 @@
             </intent-filter>
         </service>
 
+        <!--
+            媒体键兜底：方向盘按键由车机助手用 dispatchMediaKeyEvent 注入，系统按「当前活跃
+            媒体会话」路由。进程被杀或刚开机时没有会话，按键会被直接丢弃——表现就是重启 /
+            静置后方控全无反应，而手机遥控（走 HTTP）照常。MediaButtonReceiver 是唯一能把
+            死进程叫醒并转给 PlaybackService 的入口，缺了它方控就永远叫不醒播放器。
+        -->
+        <receiver
+            android:name="androidx.media3.session.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
         <!-- 手机遥控：前台壳，防止进程被系统冻结导致连接「连上但没人应答」 -->
         <service
             android:name=".remote.RemoteService"
@@ -63,6 +77,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
     </application>
