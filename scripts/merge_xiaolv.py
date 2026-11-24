@@ -177,11 +177,13 @@ def patch_manifest(dec: Path) -> None:
     s = s.replace("    <application", add + "\n    <application", 1)
 
     # 2) application：图标 / 主题
-    #    label 保持桥接包原来的「汽水音乐」不动：车机助手按包名认音源，桌面上也该是
-    #    「汽水音乐」；小绿传界面里的品牌标题仍走它自己的 @string/app_name（=小绿传）。
+    #    label 与 icon 都保持桥接包原样：车机助手按包名认音源，桌面上也该是「汽水音乐」
+    #    和桥接包那颗图标（@android:drawable/ic_media_play）。小绿传的 mipmap/ic_launcher
+    #    照样打进去给它的界面用，但桌面图标不用它。
     assert 'android:label="汽水音乐"' in s, "application label 不匹配"
-    assert "android:icon=" in s, "application icon 不匹配"
-    s = re.sub(r'android:icon="[^"]*"', 'android:icon="@mipmap/ic_launcher"', s, count=1)
+    assert 'android:icon="@android:drawable/ic_media_play"' in s, "application icon 不匹配"
+    s = re.sub(r'android:icon="[^"]*"',
+               'android:icon="@android:drawable/ic_media_play"', s, count=1)
     s = s.replace("<application ", '<application android:theme="@style/AppTheme" ', 1)
 
     # 3) 桥接页不再是入口：去掉它的 LAUNCHER，只留「设置」这条显式跳转
