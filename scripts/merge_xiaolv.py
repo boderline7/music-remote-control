@@ -156,7 +156,7 @@ PERMS = [
 
 XLV_TAIL = f"""
         <!-- 小绿传：车机端提供 HTTP 收发文件的入口，右上角「设置」跳 .Main -->
-        <activity android:name="{XLV_PKG}.MainActivity" android:configChanges="keyboardHidden|orientation|screenSize" android:exported="true" android:label="@string/app_name" android:screenOrientation="landscape">
+        <activity android:name="{XLV_PKG}.MainActivity" android:configChanges="keyboardHidden|orientation|screenSize" android:exported="true" android:screenOrientation="landscape">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
@@ -176,9 +176,10 @@ def patch_manifest(dec: Path) -> None:
                   if x not in s)
     s = s.replace("    <application", add + "\n    <application", 1)
 
-    # 2) application：换成小绿传的图标 / 名字 / 主题
+    # 2) application：图标 / 主题
+    #    label 保持桥接包原来的「汽水音乐」不动：车机助手按包名认音源，桌面上也该是
+    #    「汽水音乐」；小绿传界面里的品牌标题仍走它自己的 @string/app_name（=小绿传）。
     assert 'android:label="汽水音乐"' in s, "application label 不匹配"
-    s = s.replace('android:label="汽水音乐"', 'android:label="@string/app_name"')
     assert "android:icon=" in s, "application icon 不匹配"
     s = re.sub(r'android:icon="[^"]*"', 'android:icon="@mipmap/ic_launcher"', s, count=1)
     s = s.replace("<application ", '<application android:theme="@style/AppTheme" ', 1)
@@ -205,7 +206,7 @@ SETTINGS_BTN = ('            <TextView android:textSize="@dimen/btn_text" '
                 'android:textStyle="bold" android:textColor="@color/accent_hi" '
                 'android:gravity="center" android:background="@drawable/btn_plain" '
                 'android:paddingLeft="10.0dip" android:paddingRight="10.0dip" '
-                'android:clickable="true" android:layout_width="wrap_content" '
+                'android:clickable="true" android:minWidth="56.0dip" android:layout_width="wrap_content" '
                 'android:layout_height="@dimen/btn_h" android:layout_marginLeft="8.0dip" '
                 'android:onClick="openSettings" android:text="设置" />')
 
@@ -280,6 +281,203 @@ def patch_exit(dec: Path) -> None:
         raise SystemExit("退出逻辑变了，先看一眼 MainActivity$21.smali")
 
 
+# ------------------------------------------------------------------ 服务开关
+XLV_DIR = XLV_PKG.replace(".", "/")
+
+
+def _u(s: str) -> str:
+    """smali 里的中文统一写成 \\uXXXX，跨工具链不依赖文件编码。"""
+    return "".join(c if ord(c) < 128 else "\\u%04x" % ord(c) for c in s)
+
+
+SVC_READ = """    # SVC_TOGGLE_V1：文件传输服务开关，状态存 SharedPreferences（默认开）
+    invoke-direct {p0}, Lcom/yuhan/xiaolvchuan/MainActivity;->prefs()Landroid/content/SharedPreferences;
+    move-result-object v0
+
+    const-string v1, "svc_on"
+
+    const/4 v2, 0x1
+
+    invoke-interface {v0, v1, v2}, Landroid/content/SharedPreferences;->getBoolean(Ljava/lang/String;Z)Z
+    move-result v0
+
+"""
+
+START_GUARD = SVC_READ + """    if-nez v0, :svc_on
+
+    # 关着：不启动 socket，只把界面刷成关闭态
+    invoke-direct {p0}, Lcom/yuhan/xiaolvchuan/MainActivity;->showAddress()V
+
+    return-void
+
+    :svc_on
+"""
+
+SHOW_GUARD = SVC_READ + """    if-nez v0, :addr_on
+
+    iget-object v0, p0, Lcom/yuhan/xiaolvchuan/MainActivity;->tvUrl:Landroid/widget/TextView;
+
+    const-string v1, "@OFF_TITLE@"
+
+    invoke-virtual {v0, v1}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
+
+    iget-object v0, p0, Lcom/yuhan/xiaolvchuan/MainActivity;->tvStatus:Landroid/widget/TextView;
+
+    const-string v1, "@OFF_HINT@"
+
+    invoke-virtual {v0, v1}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
+
+    iget-object v0, p0, Lcom/yuhan/xiaolvchuan/MainActivity;->tvStatus:Landroid/widget/TextView;
+
+    const/4 v1, 0x0
+
+    invoke-virtual {v0, v1}, Landroid/widget/TextView;->setVisibility(I)V
+
+    iget-object v0, p0, Lcom/yuhan/xiaolvchuan/MainActivity;->ivQr:Landroid/widget/ImageView;
+
+    const/4 v1, 0x0
+
+    invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setImageBitmap(Landroid/graphics/Bitmap;)V
+
+    iget-object v0, p0, Lcom/yuhan/xiaolvchuan/MainActivity;->btnExit:Landroid/widget/TextView;
+
+    const-string v1, "@BTN_OFF@"
+
+    invoke-virtual {v0, v1}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
+
+    return-void
+
+    :addr_on
+    iget-object v0, p0, Lcom/yuhan/xiaolvchuan/MainActivity;->btnExit:Landroid/widget/TextView;
+
+    const-string v1, "@BTN_ON@"
+
+    invoke-virtual {v0, v1}, Landroid/widget/TextView;->setText(Ljava/lang/CharSequence;)V
+
+"""
+
+NEW_EXIT = """\
+.method private exitApp()V
+    .locals 4
+
+    # SVC_TOGGLE_V1：这个按钮不再退出 App（进程还扛着 18764/18767 两个常驻服务），
+    # 只开关小绿传自己的文件传输服务；状态写 svc_on，下次进来照旧保持。
+    invoke-direct {p0}, Lcom/yuhan/xiaolvchuan/MainActivity;->prefs()Landroid/content/SharedPreferences;
+    move-result-object v0
+
+    const-string v1, "svc_on"
+
+    const/4 v2, 0x1
+
+    invoke-interface {v0, v1, v2}, Landroid/content/SharedPreferences;->getBoolean(Ljava/lang/String;Z)Z
+    move-result v3
+
+    invoke-interface {v0}, Landroid/content/SharedPreferences;->edit()Landroid/content/SharedPreferences$Editor;
+    move-result-object v0
+
+    const/4 v2, 0x0
+
+    if-eqz v3, :svc_open
+
+    # ---- 当前开着 → 关闭 ----
+    invoke-interface {v0, v1, v2}, Landroid/content/SharedPreferences$Editor;->putBoolean(Ljava/lang/String;Z)Landroid/content/SharedPreferences$Editor;
+    move-result-object v0
+
+    invoke-interface {v0}, Landroid/content/SharedPreferences$Editor;->apply()V
+
+    invoke-static {}, Lcom/yuhan/xiaolvchuan/Hub;->stop()V
+
+    invoke-direct {p0}, Lcom/yuhan/xiaolvchuan/MainActivity;->showAddress()V
+
+    const-string v0, "@TOAST_OFF@"
+
+    invoke-direct {p0, v0}, Lcom/yuhan/xiaolvchuan/MainActivity;->toast(Ljava/lang/String;)V
+
+    return-void
+
+    # ---- 当前关着 → 开启 ----
+    :svc_open
+    const/4 v2, 0x1
+
+    invoke-interface {v0, v1, v2}, Landroid/content/SharedPreferences$Editor;->putBoolean(Ljava/lang/String;Z)Landroid/content/SharedPreferences$Editor;
+    move-result-object v0
+
+    invoke-interface {v0}, Landroid/content/SharedPreferences$Editor;->apply()V
+
+    invoke-direct {p0}, Lcom/yuhan/xiaolvchuan/MainActivity;->startServer()V
+
+    invoke-direct {p0}, Lcom/yuhan/xiaolvchuan/MainActivity;->showAddress()V
+
+    const-string v0, "@TOAST_ON@"
+
+    invoke-direct {p0, v0}, Lcom/yuhan/xiaolvchuan/MainActivity;->toast(Ljava/lang/String;)V
+
+    return-void
+.end method
+"""
+
+NEW_CLICK = """\
+.method public onClick(Landroid/view/View;)V
+    .locals 1
+
+    iget-object p1, p0, Lcom/yuhan/xiaolvchuan/MainActivity$10;->this$0:Lcom/yuhan/xiaolvchuan/MainActivity;
+
+    # SVC_TOGGLE_V1：不再「hint + 退出」，只切服务开关
+    invoke-static {p1}, Lcom/yuhan/xiaolvchuan/MainActivity;->access$1500(Lcom/yuhan/xiaolvchuan/MainActivity;)V
+
+    return-void
+.end method
+"""
+
+
+def patch_service_toggle(dec: Path) -> None:
+    """小绿传原「退出」= Hub.stop() + finishAndRemoveTask() + killProcess。
+    合并后这个进程还要长期扛着 18764/18767，所以按钮改成「关闭服务 / 开启服务」：
+    只停它自己的文件传输 HTTP 服务，界面留着；状态记在 svc_on，默认开。"""
+    d = dec / "smali_classes2" / XLV_DIR
+    act = d / "MainActivity.smali"
+    s = act.read_text(encoding="utf-8", errors="surrogateescape")
+
+    if "SVC_TOGGLE_V1" in s:
+        log("svc", "已有服务开关补丁，跳过")
+        return
+
+    fill = lambda t: (t.replace("@OFF_TITLE@", _u("服务已关闭"))
+                       .replace("@OFF_HINT@", _u("点「开启」恢复文件传输"))
+                       .replace("@BTN_ON@", _u("关闭"))
+                       .replace("@BTN_OFF@", _u("开启"))
+                       .replace("@TOAST_ON@", _u("已开启文件传输服务"))
+                       .replace("@TOAST_OFF@", _u("已关闭文件传输服务")))
+
+    old = ".method private startServer()V\n    .locals 2\n"
+    assert old in s, "startServer 头不匹配"
+    s = s.replace(old, ".method private startServer()V\n    .locals 3\n\n" + fill(START_GUARD), 1)
+
+    old = ".method private showAddress()V\n    .locals 2\n"
+    assert old in s, "showAddress 头不匹配"
+    s = s.replace(old, ".method private showAddress()V\n    .locals 3\n\n" + fill(SHOW_GUARD), 1)
+
+    m = re.search(r"\.method private exitApp\(\)V\n.*?\n\.end method\n", s, re.S)
+    assert m, "exitApp 没找到"
+    s = s[:m.start()] + fill(NEW_EXIT) + s[m.end():]
+    act.write_text(s, encoding="utf-8", errors="surrogateescape")
+
+    b = d / "MainActivity$10.smali"
+    t = b.read_text(encoding="utf-8", errors="surrogateescape")
+    m = re.search(r"\.method public onClick\(Landroid/view/View;\)V\n.*?\n\.end method\n", t, re.S)
+    assert m, "$10 onClick 没找到"
+    b.write_text(t[:m.start()] + NEW_CLICK + t[m.end():],
+                 encoding="utf-8", errors="surrogateescape")
+
+    p = dec / "res/values/strings.xml"
+    x = p.read_text(encoding="utf-8")
+    assert '<string name="btn_exit">退出</string>' in x, "btn_exit 文案变了"
+    x = x.replace('<string name="btn_exit">退出</string>',
+                  '<string name="btn_exit">关闭</string>')
+    p.write_text(x, encoding="utf-8")
+    log("svc", "「退出」→ 关闭/开启文件传输服务（svc_on，默认开，记住状态）")
+
+
 def patch_apktool_yml(dec: Path) -> None:
     """public.xml 把 ID 钉在 0x7f01..，apktool 必须用同一个包 ID，否则 aapt2 报
     「can't assign ID 0x7f010000 ... package already has ID 7f」。小绿传原工程是 127。"""
@@ -290,8 +488,6 @@ def patch_apktool_yml(dec: Path) -> None:
         s2 = s.replace("packageInfo:", "packageInfo:\n  forcedPackageId: 127", 1)
     p.write_text(s2, encoding="utf-8")
     log("apktool.yml", "forcedPackageId = 127")
-
-
 def build_browse_dex() -> Path:
     """小绿传的 Browse.java 是后期加的 Java 源码，原本单独编成 classes2.dex。
     smali 树里没有它，必须重新编译，否则文件浏览/下载那几条调用会 NoClassDefFoundError。
@@ -377,6 +573,7 @@ def verify(final: Path) -> None:
     p = run([BT / "aapt2.exe", "dump", "badging", final])
     bad = p.stdout or ""
     want = [f"package: name='{PKG}'", "versionCode='72'", "versionName='2.10.29'",
+            "application-label:'汽水音乐'",
             f"launchable-activity: name='{XLV_PKG}.MainActivity'"]
     for w in want:
         if w not in bad:
@@ -416,6 +613,7 @@ def main() -> None:
     patch_layout(dec)
     patch_activity(dec)
     patch_exit(dec)
+    patch_service_toggle(dec)
     patch_apktool_yml(dec)
 
     raw = WORK / "unsigned.apk"
