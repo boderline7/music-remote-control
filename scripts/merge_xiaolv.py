@@ -47,7 +47,7 @@ APKSIGNER = BT / "lib/apksigner.jar"
 # apktool 在中文路径下编资源会报 Illegal byte sequence，工作目录必须是纯 ASCII
 WORK = Path(os.environ.get("MERGE_WORK", "C:/Temp/xiaolv_merge"))
 DIST = ROOT / "dist"
-OUT_NAME = "汽水音乐_桥接包_v2.10.29.apk"
+OUT_NAME = "汽水音乐_桥接包_含文件传输_v2.10.29.apk"
 
 # ---- 签名（与 Gradle 同一把钥匙，才能覆盖安装） ----
 KEYSTORE = ROOT / "keystore/carremote.jks"
