@@ -4,9 +4,16 @@ import android.content.ComponentName
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.RawResourceDataSource
+import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import com.cloudmusic.car.R
 import com.cloudmusic.car.remote.RemoteHealth
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
@@ -31,9 +38,18 @@ object MediaSessionKeeper {
 
     private const val CHECK_MS = 15_000L
 
+    /** 会话就绪后等这么久再预热，避开服务刚起来的抖动。 */
+    private const val PRIME_DELAY_MS = 1_200L
+
+    /** 静音播多久：够系统把它记成一次真实播放即可。 */
+    private const val PRIME_HOLD_MS = 700L
+
     private val main = Handler(Looper.getMainLooper())
     private val tickStarted = AtomicBoolean(false)
     private val retryScheduled = AtomicBoolean(false)
+
+    /** 每个进程预热一次就够：登记在系统侧（按 UID），进程重启也不会丢。 */
+    private var primed = false
 
     @Volatile
     private var appContext: Context? = null
@@ -106,26 +122,75 @@ object MediaSessionKeeper {
             if (future !== f) return@addListener
             attempt = 0
             RemoteHealth.log("媒体会话已连接")
-            main.post { warmUp(controller) }
+            main.post { warmUp() }
         }, MoreExecutors.directExecutor())
     }
 
     /**
-     * 空队列预热。
+     * 静音预热 —— 让系统把「本应用」记成最近播过音频的那一方。
      *
-     * 车机助手的方控是 `AudioManager.dispatchMediaKeyEvent`，它只投给系统记录的
-     * 「当前媒体会话」，而那个记录要靠会话自己产生过一次播放状态变化才会更新。
-     * 队列非空时 `PlayerHub.restorePlayback` 已经 prepare 过；队列为空（新装、清过数据、
-     * 或上次没留下快照）时会话一直是 IDLE，系统不认，方向盘按了也没人接——但手机遥控
-     * 走 HTTP 直连，所以能用。这里对空队列调一次 prepare：立刻落到 ENDED，状态变化有了，
-     * 不出声、不联网。
+     * 现场事实（2026-11-24）：开机日志里已有 `媒体会话已连接`，但方向盘要按到「点一次播放」
+     * 之后才恢复。
+     *
+     * AOSP 依据（android13-release `MediaSessionStack.updateMediaButtonSessionIfNeeded`）：
+     * 媒体键只投给 `AudioPlayerStateMonitor.getSortedAudioPlaybackClientUids()` 里
+     * **最近真的播过音频**的 UID 所对应的会话。光建会话、或者 prepare 到 PAUSED 都不算播放，
+     * UID 进不了这个货架，按键就没有落点——而手机遥控走 HTTP，所以一直正常。
+     *
+     * 一旦真的播过一次，这个 UID 会一直留在货架上：`cleanUpAudioPlaybackUids` 以媒体键会话为界，
+     * 只清理它后面的、且已不活跃的 UID，所以暂停也不会被摘掉。这也解释了为什么
+     * 「点一次播放之后就一直好了」。
+     *
+     * 做法：用一条**独立的临时播放器**播 0.5 秒内置静音（音量 0、不抢音频焦点），
+     * 播完立即释放。不碰真实队列、不改播放状态、不联网、听不到声音，
+     * 但系统侧本 UID 已经进了「最近播放」。
      */
-    private fun warmUp(controller: MediaController) {
-        if (!controller.isConnected) return
-        if (controller.mediaItemCount > 0) return
-        if (controller.playbackState == Player.STATE_ENDED) return
-        runCatching { controller.prepare() }
-        RemoteHealth.log("空队列预热：让系统把这个会话记为当前媒体会话")
+    @OptIn(UnstableApi::class)
+    private fun warmUp() {
+        if (primed) return
+        primed = true
+        val ctx = appContext ?: return
+        val delayMs = if (PlayerHub.playedSinceBoot) 300L else PRIME_DELAY_MS
+        main.postDelayed({
+            if (PlayerHub.playedSinceBoot) {
+                RemoteHealth.log("静音预热跳过：本进程已经播过，系统已登记")
+                return@postDelayed
+            }
+            val temp = runCatching {
+                ExoPlayer.Builder(ctx)
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(C.USAGE_MEDIA)
+                            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                            .build(),
+                        /* handleAudioFocus = */ false,
+                    )
+                    .setHandleAudioBecomingNoisy(false)
+                    .build()
+            }.getOrNull()
+            if (temp == null) {
+                RemoteHealth.warn("静音预热：临时播放器创建失败")
+                return@postDelayed
+            }
+            temp.volume = 0f
+            val started = runCatching {
+                temp.setMediaItem(
+                    MediaItem.fromUri(RawResourceDataSource.buildRawResourceUri(R.raw.prime_silent))
+                )
+                temp.prepare()
+                temp.play()
+            }
+            if (started.isFailure) {
+                RemoteHealth.warn("静音预热：起播失败（${started.exceptionOrNull()?.javaClass?.simpleName}）")
+                runCatching { temp.release() }
+                return@postDelayed
+            }
+            RemoteHealth.log("静音预热：播 0.5s 静音，把本 UID 记成最近播放")
+            main.postDelayed({
+                runCatching { temp.release() }
+                RemoteHealth.log("静音预热：释放临时播放器")
+            }, PRIME_HOLD_MS)
+        }, delayMs)
     }
 
     private fun scheduleRetry() {

@@ -185,6 +185,8 @@ object RemoteHealth {
         appendLine("队列策略: 合并 ${s.stateCoalesced} / 丢弃状态 ${s.stateDropped} / 溢出断开 ${s.overflowCloses}")
         appendLine("慢客户端: 断开 ${s.slowClientCloses} / 写阻塞 ${s.writeStalls}")
         appendLine("网络变化: ${s.networkChanges} 次，mDNS 重建 ${s.mdnsRebuilds} 次")
+        // 方控是系统媒体键，会话状态是唯一能判断「键会不会被送过来」的依据。
+        appendLine("媒体: " + com.cloudmusic.car.player.PlayerHub.diagLine())
         appendLine("网易云请求: ${s.neteaseCount} 次，最近 ${s.neteaseLastMs}ms，最大 ${s.neteaseMaxMs}ms，平均 ${s.neteaseAvgMs}ms，失败 ${s.neteaseFailures}")
         appendLine("最近错误:")
         s.errors.forEach { appendLine("  $it") }

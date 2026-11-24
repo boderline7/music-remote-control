@@ -3,10 +3,12 @@ package com.cloudmusic.car.player
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.cloudmusic.car.MainActivity
 import com.cloudmusic.car.api.LyricsParser
+import com.cloudmusic.car.remote.RemoteHealth
 import com.paopao.music.nowplaying.KrcSource
 import com.paopao.music.nowplaying.METADATA_KEY_KRC_LYRIC
 import com.paopao.music.nowplaying.WordLyricsParser
@@ -32,6 +34,23 @@ class PlaybackService : MediaSessionService() {
         session = MediaSession.Builder(this, PlayerHub.sessionPlayer)
             .setId("cloudmusic.car")
             .setSessionActivity(openApp)
+            .setCallback(object : MediaSession.Callback {
+                /**
+                 * 留痕用：方向盘 / 方控键只要真的落到本会话，这里就会记一条。
+                 * 导出「音乐控制诊断」时，「按键有没有到达会话」一眼可辨——
+                 * 没有这条 = 系统没把键派过来（登记问题）；有这条但没动作 = 我们的处理问题。
+                 */
+                override fun onMediaButtonEvent(
+                    session: MediaSession,
+                    controllerInfo: MediaSession.ControllerInfo,
+                    mediaButtonIntent: Intent,
+                ): Boolean {
+                    @Suppress("DEPRECATION")
+                    val event = mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT) as? KeyEvent
+                    RemoteHealth.log("收到媒体键 keyCode=${event?.keyCode} action=${event?.action}")
+                    return super.onMediaButtonEvent(session, controllerInfo, mediaButtonIntent)
+                }
+            })
             .build()
         scope.launch {
             PlayerHub.lyrics.collectLatest { lines ->

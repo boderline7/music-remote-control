@@ -92,6 +92,41 @@ object PlayerHub {
     lateinit var player: ExoPlayer
         private set
 
+    // ---- 诊断快照：只在主线程写，导出线程随便读 ----
+    // ExoPlayer 的 Player 接口要求在应用线程调用，网页导出线程不能直接摸它，
+    // 所以状态在主线程抄一份到 volatile 字段里。
+    @Volatile private var diagState: Int = Player.STATE_IDLE
+    @Volatile private var diagPlayWhenReady: Boolean = false
+    @Volatile private var diagItems: Int = 0
+    @Volatile private var diagIsPlaying: Boolean = false
+    /** 本进程是否真的进过 PLAYING：系统登记「媒体键目标会话」用的就是这个信号。 */
+    @Volatile var playedSinceBoot: Boolean = false
+        private set
+
+    private fun refreshDiagState() {
+        if (!initialized) return
+        runCatching {
+            diagState = player.playbackState
+            diagPlayWhenReady = player.playWhenReady
+            diagItems = player.mediaItemCount
+            diagIsPlaying = player.isPlaying
+            if (diagIsPlaying) playedSinceBoot = true
+        }
+    }
+
+    /** 诊断导出一行：会话侧最能说明「方控为什么没反应」的几项。 */
+    fun diagLine(): String {
+        val stateName = when (diagState) {
+            Player.STATE_IDLE -> "IDLE"
+            Player.STATE_BUFFERING -> "BUFFERING"
+            Player.STATE_READY -> "READY"
+            Player.STATE_ENDED -> "ENDED"
+            else -> "?"
+        }
+        return "state=$stateName playWhenReady=$diagPlayWhenReady playing=$diagIsPlaying " +
+            "队列=$diagItems 本进程进过播放=$playedSinceBoot"
+    }
+
     // 手动切歌的补播代次：每次切歌 +1，延迟任务只认自己那一代，
     // 避免连续快切时旧任务落到新歌上。用户在这期间主动暂停也会 +1 让补播作废。
     private var cutGeneration = 0
@@ -221,6 +256,7 @@ object PlayerHub {
                 updatePlaybackProgress()
                 persistPosition()
                 updatePrefetch()
+                refreshDiagState()
             }
         }
         // 车机助手（com.navi.tool）的「汽水音乐」通道适配，见 LunaCompat 注释：
@@ -914,6 +950,7 @@ object PlayerHub {
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             _isBuffering.value = player.playWhenReady && playbackState == Player.STATE_BUFFERING
+            refreshDiagState()
             updatePrefetch()
         }
 
