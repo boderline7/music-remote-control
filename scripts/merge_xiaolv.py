@@ -563,15 +563,38 @@ def sign(raw: Path, final: Path) -> None:
     run([ZIPALIGN, "-p", "-f", "4", raw, aligned])
     if final.exists():
         final.unlink()
+    # --min-sdk-version 必须显式给低值：apksigner 会按 APK 里的 minSdkVersion(28) 判断
+    # 「v3 已覆盖 28+」，于是只写 v3、v1/v2 全跳过。v3-only 在不少车机（Android 9 及更早
+    # 的解析器、部分国产 ROM）直接报「解析包出错 / 没有证书」，app 根本装不进去。
+    # 显式按 23 生成，就是 v1 + v2 + v3 三件套齐全，任何机器都能验。
     java("-jar", APKSIGNER, "sign",
          "--ks", KEYSTORE, "--ks-key-alias", KS_ALIAS,
          "--ks-pass", f"pass:{KS_PASS}", "--key-pass", f"pass:{KS_PASS}",
+         "--min-sdk-version", "23",
          "--v1-signing-enabled", "true", "--v2-signing-enabled", "true",
          "--v3-signing-enabled", "true", "--out", final, aligned)
 
 
 def verify(final: Path) -> None:
-    java("-jar", APKSIGNER, "verify", "--print-certs", final)
+    # 注意：apksigner verify 按 APK 里的 minSdkVersion(28) 选「最合适的那一个」方案，
+    # 所以默认输出里 v1/v2 会显示 false——那只代表「本次验证没用到它」，不代表签名块不存在。
+    # 要确认三件套都在，必须分段指定 --min-sdk-version / --max-sdk-version 去验。
+    def scheme_ok(lo: int, hi: int, needle: str) -> bool:
+        r = run([JAVA, "-jar", APKSIGNER, "verify",
+                 "--min-sdk-version", str(lo), "--max-sdk-version", str(hi),
+                 "--verbose", final])
+        line = next((l for l in (r.stdout or "").splitlines() if needle in l), "")
+        return "true" in line
+
+    checks = [(18, 23, "v1 scheme (JAR signing)", "v1"),
+              (24, 27, "v2 scheme (APK Signature Scheme v2)", "v2"),
+              (28, 35, "v3 scheme (APK Signature Scheme v3)", "v3")]
+    missing = [name for lo, hi, needle, name in checks if not scheme_ok(lo, hi, needle)]
+    if missing:
+        raise SystemExit(f"签名方案缺失：{'、'.join(missing)}——"
+                         f"v3-only 的包在 Android 9 以下和部分车机上装不上")
+    run([JAVA, "-jar", APKSIGNER, "verify", "--print-certs", final])
+    log("sign", "v1 + v2 + v3 三件套齐全")
     p = run([BT / "aapt2.exe", "dump", "badging", final])
     bad = p.stdout or ""
     want = [f"package: name='{PKG}'", "versionCode='72'", "versionName='2.10.29'",
