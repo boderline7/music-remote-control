@@ -199,7 +199,7 @@ final class Ncm {
         }
     }
 
-    private Ncm() { playlists = Cfg.DEFAULT_PLAYLISTS; }
+    private Ncm() { playlists = MusicCfg.DEFAULT_PLAYLISTS; }
 
     synchronized void init(Context c) {
         if (ctx != null) return;
@@ -227,8 +227,8 @@ final class Ncm {
         // 内置歌单先垫底：车主确认过的歌单，名字和公开页 id 一一对应，不依赖名字搜索；
         // 外部 playlists.txt 追加并覆盖同名项。
         java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<String>();
-        String[] builtin = Cfg.DEFAULT_PLAYLISTS;
-        String[] builtinIds = Cfg.DEFAULT_PLAYLIST_IDS;
+        String[] builtin = MusicCfg.DEFAULT_PLAYLISTS;
+        String[] builtinIds = MusicCfg.DEFAULT_PLAYLIST_IDS;
         if (builtin != null) {
             for (int i = 0; i < builtin.length; i++) {
                 if (builtin[i] == null || builtin[i].length() == 0) continue;
@@ -240,8 +240,8 @@ final class Ncm {
             }
         }
         // 官方榜排在自己歌单之后：id 固定、官方持续更新，车主不用维护也能一直有内容
-        String[] official = Cfg.OFFICIAL_PLAYLISTS;
-        String[] officialIds = Cfg.OFFICIAL_PLAYLIST_IDS;
+        String[] official = MusicCfg.OFFICIAL_PLAYLISTS;
+        String[] officialIds = MusicCfg.OFFICIAL_PLAYLIST_IDS;
         if (official != null) {
             for (int i = 0; i < official.length; i++) {
                 if (official[i] == null || official[i].length() == 0) continue;
@@ -295,7 +295,7 @@ final class Ncm {
             if (pid.length() > 0) playlistIds.put(name, pid);
         }
         if (!names.isEmpty()) playlists = names.toArray(new String[names.size()]);
-        playlistIds.put("我喜欢的音乐", Cfg.LIKED_PLAYLIST_ID);
+        playlistIds.put("我喜欢的音乐", MusicCfg.LIKED_PLAYLIST_ID);
         Log.i(Cfg.TAG, "playlists=" + java.util.Arrays.toString(playlists));
     }
 
@@ -325,9 +325,9 @@ final class Ncm {
         closeBrowser();
         connecting = true;
         try {
-            browser = new MediaBrowser(ctx, new ComponentName(Cfg.PKG, Cfg.AUTO_SVC), new NcmConn(), null);
+            browser = new MediaBrowser(ctx, new ComponentName(MusicCfg.PKG, MusicCfg.AUTO_SVC), new NcmConn(), null);
             browser.connect();
-            Log.i(Cfg.TAG, "MediaBrowser connecting " + Cfg.PKG + "/" + Cfg.AUTO_SVC);
+            Log.i(Cfg.TAG, "MediaBrowser connecting " + MusicCfg.PKG + "/" + MusicCfg.AUTO_SVC);
         } catch (Throwable t) {
             connecting = false;
             browser = null;
@@ -373,7 +373,7 @@ final class Ncm {
         if (now - wokeAt < 60_000L) return;
         wokeAt = now;
         try {
-            Intent i = ctx.getPackageManager().getLaunchIntentForPackage(Cfg.PKG);
+            Intent i = ctx.getPackageManager().getLaunchIntentForPackage(MusicCfg.PKG);
             if (i == null) return;
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             ctx.startActivity(i);
@@ -513,7 +513,7 @@ final class Ncm {
         J.p(d, "album", album);
         J.p(d, "positionMs", position);
         J.p(d, "durationMs", duration);
-        String mid = m == null ? "" : safeStr(m, Cfg.K_MEDIA_ID);
+        String mid = m == null ? "" : safeStr(m, MusicCfg.K_MEDIA_ID);
         J.p(d, "liked", likedOf(m, mid));
         int vol = -1, max = -1;
         try {
@@ -536,15 +536,15 @@ final class Ncm {
         if (star >= 0) return star == 1;
         int cached = Liked.I.state(mid);
         if (cached >= 0) return cached == 1;
-        return m != null && safeLong(m, Cfg.K_RATING) > 0;
+        return m != null && safeLong(m, MusicCfg.K_RATING) > 0;
     }
 
     /** lyrics.data；trackId 用官方 MEDIA_ID，页面据此判断是否换歌。 */
     JSONObject lyricsData() {
         JSONObject d = J.o();
         MediaMetadata m = metadata();
-        String tid = m == null ? "" : safeStr(m, Cfg.K_MEDIA_ID);
-        String raw = m == null ? null : safeStr(m, Cfg.K_LYRIC);
+        String tid = m == null ? "" : safeStr(m, MusicCfg.K_MEDIA_ID);
+        String raw = m == null ? null : safeStr(m, MusicCfg.K_LYRIC);
         JSONArray lines = Lrc.parse(raw);
         J.p(d, "ok", true);
         J.p(d, "trackId", tid);
@@ -734,7 +734,7 @@ final class Ncm {
             Bundle b = new Bundle();
             b.putBoolean("is_star", on);
             likeWanted = on;
-            likedId = safeStr(m, Cfg.K_MEDIA_ID);
+            likedId = safeStr(m, MusicCfg.K_MEDIA_ID);
             Star.I.set(likedId, on);
             Liked.I.mark(likedId, on);
             c.sendCustomAction("star_action", b);
@@ -749,8 +749,8 @@ final class Ncm {
     private boolean sendVoice(JSONObject payload) {
         try {
             Intent i = new Intent();
-            i.setComponent(new ComponentName(Cfg.PKG, Cfg.VOICE_SVC));
-            i.putExtra(Cfg.VOICE_EXTRA, payload.toString());
+            i.setComponent(new ComponentName(MusicCfg.PKG, MusicCfg.VOICE_SVC));
+            i.putExtra(MusicCfg.VOICE_EXTRA, payload.toString());
             ComponentName r = ctx.startService(i);
             Log.i(Cfg.TAG, "VoiceService start -> " + r + " json=" + payload);
             return r != null;
@@ -1145,10 +1145,10 @@ final class Ncm {
             fail("歌单解析", "找不到「" + displayName(id) + "」的公开页 id（可在 playlists.txt 写：歌单名|公开页id）");
         }
         // 网页列表与随机队列用同一份数据：都只保留前 TRACK_LIMIT 首，避免两边条数不一致
-        if (a != null && a.length() > Cfg.TRACK_LIMIT) {
+        if (a != null && a.length() > MusicCfg.TRACK_LIMIT) {
             int all = a.length();
             JSONArray cut = new JSONArray();
-            for (int i = 0; i < Cfg.TRACK_LIMIT; i++) {
+            for (int i = 0; i < MusicCfg.TRACK_LIMIT; i++) {
                 JSONObject o = a.optJSONObject(i);
                 if (o != null) cut.put(o);
             }
@@ -1202,7 +1202,7 @@ final class Ncm {
     private String searchPlaylistId(String name) {
         long uid = selfUid();
         try {
-            String body = httpGet(Cfg.API_SEARCH + URLEncoder.encode(name, "UTF-8")
+            String body = httpGet(MusicCfg.API_SEARCH + URLEncoder.encode(name, "UTF-8")
                     + "&type=1000&offset=0&total=true&limit=20");
             if (body == null) return null;
             JSONObject res = new JSONObject(body).optJSONObject("result");
@@ -1250,7 +1250,7 @@ final class Ncm {
         for (String pid : playlistIds.values()) {
             if (!isNumeric(pid)) continue;
             try {
-                String body = httpGet(Cfg.API_PLAYLIST_V6 + pid + "&n=1&s=0");
+                String body = httpGet(MusicCfg.API_PLAYLIST_V6 + pid + "&n=1&s=0");
                 if (body == null) continue;
                 JSONObject pl = new JSONObject(body).optJSONObject("playlist");
                 long uid = pl == null ? 0 : pl.optLong("userId", 0);
@@ -1295,9 +1295,9 @@ final class Ncm {
             conn = (HttpURLConnection) new URL(url).openConnection();
             conn.setConnectTimeout(8000);
             conn.setReadTimeout(10000);
-            conn.setRequestProperty("User-Agent", Cfg.WEB_UA);
+            conn.setRequestProperty("User-Agent", MusicCfg.WEB_UA);
             conn.setRequestProperty("Referer", "https://music.163.com/");
-            conn.setRequestProperty("Cookie", Cfg.WEB_COOKIE);
+            conn.setRequestProperty("Cookie", MusicCfg.WEB_COOKIE);
             int code = conn.getResponseCode();
             if (code != 200) {
                 fetchErr.set("HTTP " + code);
@@ -1357,7 +1357,7 @@ final class Ncm {
     /** 公开 Web API：Cookie 里带 os=pc 时返回整张歌单（实测 Borderline 37 首 / 妙妙 30 首）。 */
     private JSONArray fetchApiPlaylist(String pid) {
         try {
-            String body = httpGet(Cfg.API_PLAYLIST + pid);
+            String body = httpGet(MusicCfg.API_PLAYLIST + pid);
             if (body == null) return null;   // httpGet 已记录根因
             JSONObject root = new JSONObject(body);
             int code = root.optInt("code", 0);
@@ -1369,7 +1369,7 @@ final class Ncm {
             JSONArray tracks = res == null ? null : res.optJSONArray("tracks");
             if (tracks == null || tracks.length() == 0) return null;   // 空 → 交给 v6 / 网页兜底
             JSONArray out = new JSONArray();
-            for (int i = 0; i < tracks.length() && out.length() < Cfg.MAX_TRACKS; i++) {
+            for (int i = 0; i < tracks.length() && out.length() < MusicCfg.MAX_TRACKS; i++) {
                 JSONObject t = trackRow(tracks.optJSONObject(i), out.length());
                 if (t != null) out.put(t);
             }
@@ -1384,7 +1384,7 @@ final class Ncm {
     /** 私密 / 喜欢的音乐：v6 给全量 trackIds 但只给前 10 首详情，按 id 分批补齐歌名。 */
     private JSONArray fetchByIds(String pid) {
         try {
-            String body = httpGet(Cfg.API_PLAYLIST_V6 + pid);
+            String body = httpGet(MusicCfg.API_PLAYLIST_V6 + pid);
             if (body == null) return null;
             JSONObject pl = new JSONObject(body).optJSONObject("playlist");
             JSONArray ids = pl == null ? null : pl.optJSONArray("trackIds");
@@ -1393,9 +1393,9 @@ final class Ncm {
                 return null;
             }
             JSONArray out = new JSONArray();
-            for (int start = 0; start < ids.length() && out.length() < Cfg.MAX_TRACKS;
-                 start += Cfg.TRACK_BATCH) {
-                int end = Math.min(start + Cfg.TRACK_BATCH, ids.length());
+            for (int start = 0; start < ids.length() && out.length() < MusicCfg.MAX_TRACKS;
+                 start += MusicCfg.TRACK_BATCH) {
+                int end = Math.min(start + MusicCfg.TRACK_BATCH, ids.length());
                 StringBuilder sb = new StringBuilder("[");
                 for (int i = start; i < end; i++) {
                     if (i > start) sb.append(',');
@@ -1403,7 +1403,7 @@ final class Ncm {
                     sb.append(o == null ? ids.optLong(i, 0) : o.optLong("id", 0));
                 }
                 sb.append(']');
-                String songs = httpGet(Cfg.API_SONG_DETAIL + URLEncoder.encode(sb.toString(), "UTF-8"));
+                String songs = httpGet(MusicCfg.API_SONG_DETAIL + URLEncoder.encode(sb.toString(), "UTF-8"));
                 if (songs == null) {
                     fail("v6 接口", "曲目详情无响应");
                     break;
@@ -1413,7 +1413,7 @@ final class Ncm {
                     fail("v6 接口", "曲目详情为空");
                     break;
                 }
-                for (int i = 0; i < arr.length() && out.length() < Cfg.MAX_TRACKS; i++) {
+                for (int i = 0; i < arr.length() && out.length() < MusicCfg.MAX_TRACKS; i++) {
                     JSONObject t = trackRow(arr.optJSONObject(i), out.length());
                     if (t != null) out.put(t);
                 }
@@ -1510,8 +1510,8 @@ final class Ncm {
         if (m == null) { Log.w(Cfg.TAG, "SELFTEST metadata=null"); return; }
         java.util.Set<String> keys = m.keySet();
         Log.i(Cfg.TAG, "SELFTEST metadata keys=" + keys);
-        Log.i(Cfg.TAG, "SELFTEST lyric lines=" + Lrc.parse(safeStr(m, Cfg.K_LYRIC)).length()
-                + " rating=" + safeLong(m, Cfg.K_RATING));
+        Log.i(Cfg.TAG, "SELFTEST lyric lines=" + Lrc.parse(safeStr(m, MusicCfg.K_LYRIC)).length()
+                + " rating=" + safeLong(m, MusicCfg.K_RATING));
         PlaybackState s = state();
         Log.i(Cfg.TAG, "SELFTEST playback=" + s + " actions=" + (s == null ? -1 : s.getActions()));
         Log.i(Cfg.TAG, "SELFTEST volume=" + am.getStreamVolume(AudioManager.STREAM_MUSIC)

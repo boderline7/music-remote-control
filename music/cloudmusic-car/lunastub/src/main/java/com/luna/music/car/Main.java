@@ -1,15 +1,12 @@
 package com.luna.music.car;
 
 import android.app.Activity;
-import android.content.ClipData;
-import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.res.Resources;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -22,32 +19,24 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import java.util.Arrays;
-
 /**
- * 入口页：横屏（1920×720）优化的方块按钮 + 小状态框。
+ * 设置页。
  *
- * 音源只有两个候选：第三方自研播放器 {@code com.cloudmusic.car} 与官方网易云车机版。
- * 装了一个就直接用那一个，这里只显示结果；两个都装过才出现「官方网易云 / 第三方自研」两个
- * 切换钮（默认第三方自研，选择持久化保存，不会自动跳回去）。
+ * <p>这个包现在只做两件事：首页的文件传输（小绿传）和车控页入口。原来「启动桥接 / 切换音源 /
+ * 启动音乐」这些和官方网易云绑定的入口已经全部去掉——相关的桥接实现搬到了
+ * {@code src/parked}，默认不编译、不启动。
  *
- * 布局：按钮全部靠上，一个一个小方块（不做全屏长条）；状态文字放在按钮下方的
- * 小方框里，超高可以滚动，不再占满整屏把按钮顶到屏幕外面。
+ * <p>布局：按钮靠上的小方块，状态文字放在下面的小方框里，超高可以滚动。
  */
 public class Main extends Activity {
 
-    /** 1.x/2.4 那代独立探针，与合并包都占 18764，装着就必须卸掉。 */
-    private static final String OLD_PROBE = "com.wb.ncmremote";
-
-    /** 小方块高度（dp）。宽度由行内权重撑满，横屏不再挤在左边。 */
+    /** 小方块高度（dp）。宽度由行内权重撑满。 */
     private static final int SQUARE = 120;
 
     private TextView tvMini;
     private TextView tv;
     private TextView addrBar;
     private TextView carBar;
-    private LinearLayout switchRow;
-    private Button oldProbeBtn;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
     /** 后台探测完成后回主线程刷一次界面 */
@@ -57,7 +46,7 @@ public class Main extends Activity {
         }
     };
 
-    /** 周期刷新：切音源/服务重启后状态自动跟上，不用手动一遍遍点「刷新状态」。 */
+    /** 周期刷新：车控在线状态自动跟上，不用手动点「刷新」。 */
     private final Runnable ticker = new Runnable() {
         @Override public void run() {
             refresh();
@@ -73,15 +62,8 @@ public class Main extends Activity {
             Log.w(Cfg.TAG, "main ui failed", t);
             toast("界面初始化失败：" + t);
         }
-        try {
-            Svc.start(this);
-        } catch (Throwable t) {
-            LogCapture.error("MAIN 启动服务失败：", t);
-        }
         refresh();
         handler.post(ticker);
-        // 900ms 后再刷一次拿服务起来的真实状态；用 handler 而不是 View.postDelayed，
-        // 才能和 ticker 一起在 onDestroy 里统一移除，避免 Activity 销毁后还在碰视图。
         handler.postDelayed(new MainRefresh(this), 900);
     }
 
@@ -91,7 +73,7 @@ public class Main extends Activity {
         super.onDestroy();
     }
 
-    /** 标题行 + 小方块按钮网格（靠上）+ 状态小方框（可滚动）。 */
+    /** 标题行 + 小方块按钮 + 状态小方框（可滚动）。 */
     private void buildUi() {
         int pad = dp(14);
         LinearLayout root = new LinearLayout(this);
@@ -120,30 +102,12 @@ public class Main extends Activity {
         header.addView(tvMini);
         root.addView(header);
 
-        // 按钮网格：全部靠上，一个小方块，不拉长条
+        // 按钮网格：刷新 / 重启车控 / 车控页，下面是退出
         ScrollView scroll = new ScrollView(this);
         LinearLayout grid = new LinearLayout(this);
         grid.setOrientation(LinearLayout.VERTICAL);
-        grid.addView(row(button(1, "启动桥接"), button(6, "启动音乐")));
-        grid.addView(row(button(2, "重启"), button(5, "停止退出"), button(3, "刷新")));
-
-        switchRow = new LinearLayout(this);
-        switchRow.setOrientation(LinearLayout.HORIZONTAL);
-        switchRow.setVisibility(View.GONE);
-        switchRow.addView(square(7, "官方网易云"));
-        switchRow.addView(square(8, "第三方自研"));
-        grid.addView(switchRow);
-        for (int n = 0; n < switchRow.getChildCount(); n++) {
-            View v = switchRow.getChildAt(n);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(SQUARE), 1f);
-            lp.setMargins(dp(5), dp(5), dp(5), dp(5));
-            v.setLayoutParams(lp);
-        }
-
-        oldProbeBtn = square(9, "卸载旧版\n单遥控 APK");
-        oldProbeBtn.setVisibility(View.GONE);
-        grid.addView(oldProbeBtn, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(SQUARE)));
+        grid.addView(row(button(3, "刷新"), button(2, "重启车控"), button(10, "车控页")));
+        grid.addView(row(button(5, "退出")));
 
         // 状态小方框：放在按钮下面，超高滚动，不占整屏
         tv = new TextView(this);
@@ -155,7 +119,7 @@ public class Main extends Activity {
         LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
         body.addView(grid);
-        // 地址栏：只显示，不响应点击（车机屏幕本来就不好选中，复制没意义）
+        // 地址栏：只显示，不响应点击
         addrBar = new TextView(this);
         addrBar.setTextSize(16);
         addrBar.setTextColor(0xFF40584A);
@@ -164,7 +128,7 @@ public class Main extends Activity {
         addrBar.setPadding(dp(12), dp(8), dp(12), dp(8));
         body.addView(addrBar, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(46)));
-        // 车控地址：18766 由车机助手常驻提供，和音乐这条线互不影响
+        // 车控地址：18766 由车机助手常驻提供
         carBar = new TextView(this);
         carBar.setTextSize(16);
         carBar.setTextColor(0xFF55705F);
@@ -214,7 +178,7 @@ public class Main extends Activity {
         return card(color, 0);
     }
 
-    /** 按下变亮、松开复原：不然点了像没反应 */
+    /** 按下变亮、松开复原 */
     private Drawable tileState() {
         StateListDrawable d = new StateListDrawable();
         d.addState(new int[]{android.R.attr.state_pressed}, card(0xFFE7EEE8, 0xFFE4E7E1));
@@ -222,7 +186,7 @@ public class Main extends Activity {
         return d;
     }
 
-    /** 固定小方块按钮：短文本两行放得下，横屏也好点。 */
+    /** 固定小方块按钮 */
     private Button square(int code, String text) {
         Button b = new Button(this);
         b.setText(text);
@@ -277,106 +241,41 @@ public class Main extends Activity {
 
     void refresh() {
         if (tv == null || tvMini == null) return;
-        // 角色：本包占着 18764 就是它在服务；音源是第三方、或用户手动停过，本包都不干活
-        boolean running = Server.I.isRunning();
-        boolean yielded = Server.I.yielded;
-        boolean third = Mode.isThirdParty(this);
-        boolean stopped = Svc.isStopped(this);
-        String role = running ? "运行中"
-                : (third || yielded) ? "第三方托管"
-                : stopped ? "已停止" : "未运行";
-        tvMini.setText(Mode.name(this) + (Mode.both(this) ? "（可切换）" : "（自动）")
-                + "　音乐：" + role + "　车控：" + (CarPort.alive() ? "在线" : "离线"));
-        StringBuilder sb = new StringBuilder();
-        // 只显示一个主地址：以前把几块网卡的地址用 " / " 拼成一串，
-        // 手机上根本认不出该输哪个
+        boolean carOk = CarPort.alive();
+        tvMini.setText("车控 18766：" + (carOk ? "在线" : "离线"));
+
+        // 只显示一个主地址，手机上一个能用的就行
         String addr = Ip.local();
         if (addr == null || addr.length() == 0) {
             String[] ips = Ip.all();
             addr = ips.length > 0 ? ips[0] : "本机";
         }
-        boolean carOk = CarPort.alive();
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("车控 18766：").append(carOk ? "常驻在线（车机助手提供）" : "未响应（车机助手没起来？）").append("\n");
+        sb.append("探测：").append(CarPort.detail()).append("\n");
+        sb.append("────────────\n");
+        sb.append("文件传输：首页「文件传输」开关控制，默认开启\n");
+        sb.append("本机地址：http://").append(addr).append("\n");
+        sb.append("车控地址：").append(CarPort.url());
+        tv.setText(sb.toString());
+
+        if (addrBar != null) {
+            addrBar.setText("本机地址：" + addr);
+        }
         if (carBar != null) {
             carBar.setText("车控 18766：" + (carOk ? "在线" : "未响应") + "　" + CarPort.url());
         }
-        // 两条线各说一句：车控常驻，音乐随音源启停
-        sb.append("车控 18766：").append(carOk ? "常驻在线（车机助手提供）" : "未响应（车机助手没起来？）").append("\n");
-        sb.append("探测：").append(CarPort.detail()).append("\n");
-        sb.append("音乐 18764：").append(running ? "运行中（本包提供）" : (third || yielded) ? "第三方提供" : "未运行").append("\n");
-        sb.append("────────────\n");
-        if (!Mode.hasOfficial(this) && !Mode.hasThirdParty(this)) {
-            sb.append("车上没找到可用音源。请先安装官方网易云车机版，或第三方自研播放器。");
-        } else if (running) {
-            sb.append("服务：运行中")
-                    .append("　连接数：").append(Server.I.clientCount()).append("\n")
-                    .append(Ncm.I.describe()).append("\n")
-                    .append("地址：http://").append(addr).append(":").append(Cfg.PORT).append("\n")
-                    .append("歌单：").append(Arrays.toString(Ncm.I.playlists()));
-        } else if (third) {
-            sb.append("服务：交给第三方自研播放器\n")
-                    .append("当前音源是第三方，本包不占 18764；心跳和开机也不会再拉起它\n")
-                    .append("地址：http://").append(addr).append(":").append(Cfg.PORT)
-                    .append("（由第三方提供）");
-        } else if (stopped) {
-            sb.append("服务：已停止（你手动停的）\n")
-                    .append("心跳已撤销、18764 已关闭，不会自动拉起\n")
-                    .append("点「启动桥接」恢复桥接\n")
-                    .append("地址：http://").append(addr).append(":").append(Cfg.PORT)
-                    .append("（当前无人监听）");
-        } else if (yielded) {
-            sb.append("服务：交给第三方自研播放器\n")
-                    .append("18764 已被占用，本包自动让位，不抢端口\n")
-                    .append("地址：http://").append(addr).append(":").append(Cfg.PORT)
-                    .append("（由第三方提供）");
-        } else {
-            sb.append("服务：未运行\n")
-                    .append("地址：http://").append(addr).append(":").append(Cfg.PORT)
-                    .append("\n点「启动桥接」接管端口");
-        }
-        if (Mode.installed(this, OLD_PROBE)) {
-            sb.append("\n⚠ 车上还装着旧版单遥控 APK（com.wb.ncmremote），")
-                    .append("它和本包争同一个 18764 端口，请按下面按钮卸掉。");
-        }
-        if (addrBar != null) {
-            String base = "http://" + addr + ":" + Cfg.PORT;
-            String tag = running ? "" : ((third || yielded) ? "（第三方提供）" : "");
-            addrBar.setText("地址：" + base + tag);
-        }
-        tv.setText(sb.toString());
-        if (oldProbeBtn != null) {
-            oldProbeBtn.setVisibility(Mode.installed(this, OLD_PROBE) ? View.VISIBLE : View.GONE);
-        }
 
-        // 探测绝不在 UI 线程做：连不上时每个地址要等好几百毫秒，
-        // 放在这里会让整个界面连按下态都画不出来。
+        // 探测绝不在 UI 线程做：连不上时每个地址要等好几百毫秒
         CarPort.refreshAsync(afterProbe);
-
-        switchRow.setVisibility(Mode.both(this) ? View.VISIBLE : View.GONE);
-        // 高亮跟着「当前音源」走，不再跟「谁占着端口」走：停着的时候也看得出选的是哪个
-        for (int n = 0; n < switchRow.getChildCount(); n++) {
-            View v = switchRow.getChildAt(n);
-            if (!(v instanceof Button)) continue;
-            boolean active = (n == 0) == !third;
-            v.setBackground(active ? tileBg(0xFF40584A) : card(0xFFFFFFFF, 0xFFE4E7E1));
-            ((Button) v).setTextColor(active ? 0xFFFFFFFF : 0xFF6E7569);
-        }
     }
 
     void click(int code) {
         try {
-            if (code == 1) {
-                // 当前音源是第三方时本包不该占端口，点了也只解释一句，免得又抢回去
-                if (Mode.isThirdParty(this)) {
-                    toast("当前音源是第三方自研，音乐控制交给它（18765）；要桥接官方请先切「官方网易云」");
-                } else {
-                    Svc.startByUser(this);
-                }
-            } else if (code == 2) {
-                // 重启：音乐这边是本地重复启停，车控那边发 /restart 让车机助手重抓引擎；
-                // 18766 完全不通时再拉起车机助手（车机上没法自己清后台，只能这样兜）
-                Svc.stop(this);
-                toast("正在重启：音乐 + 车控");
-                handler.postDelayed(new MainRestart(this), 900L);
+            if (code == 2) {
+                // 车控软重启：让车机助手重抓引擎；完全不通时再拉起车机助手
+                toast("正在重启车控…");
                 CarPort.restartRemoteAsync(new Runnable() {
                     public void run() {
                         toast("车控 18766 已重启");
@@ -390,38 +289,18 @@ public class Main extends Activity {
                     }
                 });
             } else if (code == 3) {
-                // 「刷新状态」之前没有分支，点了没反应
                 CarPort.invalidate();
                 refresh();
             } else if (code == 5) {
-                // 车机没有可靠的任务管理器，退出得由 App 自己收尾：停服、关端口、移出任务栈
-                Svc.stop(this);
-                toast("已停止音乐桥接，正在退出…");
-                handler.postDelayed(new Runnable() {
-                    public void run() {
-                        try {
-                            finishAndRemoveTask();
-                        } catch (Throwable t) {
-                            finish();
-                        }
-                    }
-                }, 700L);
-                return;      // 退出中不再刷新，免得又去探测、又把界面画一遍
-            } else if (code == 6) {
-                startMusic();
+                // 只退出设置页，不动首页的文件传输
+                try {
+                    finishAndRemoveTask();
+                } catch (Throwable t) {
+                    finish();
+                }
+                return;
             } else if (code == 10) {
                 openCarPage();
-            } else if (code == 11) {
-                CarPort.invalidate();
-                refresh();
-            } else if (code == 7) {
-                switchTo(Mode.OFFICIAL);
-                return;
-            } else if (code == 8) {
-                switchTo(Mode.THIRD_PARTY);
-                return;
-            } else if (code == 9) {
-                uninstallOld();
             }
         } catch (Throwable t) {
             Log.w(Cfg.TAG, "click failed code=" + code, t);
@@ -430,90 +309,7 @@ public class Main extends Activity {
         refresh();
     }
 
-    /** 切音源：存下选择，停掉旧服务，再按新模式拉起来。选择持久化，不会自动跳回。 */
-    private void switchTo(int target) {
-        if (target == Mode.OFFICIAL && !Mode.hasOfficial(this)) {
-            toast("没装官方网易云车机版");
-            return;
-        }
-        if (target == Mode.THIRD_PARTY && !Mode.hasThirdParty(this)) {
-            toast("没装第三方自研播放器");
-            return;
-        }
-        if (Mode.current(this) == target) return;
-        Mode.save(this, target);
-        // 同步给第三方 App：它按新模式自己启停 RemoteServer
-        ModeSync.notify(this, target);
-        // 停服会撤心跳 + 立刻关 18764，端口马上还给系统
-        Svc.stop(this);
-        LogCapture.logAlways("MAIN 切换音源 → " + Mode.label(target));
-        if (target == Mode.THIRD_PARTY) {
-            // 切到第三方后本包彻底退出，不能 600ms 后又去把端口抢回来
-            toast("已切到「" + Mode.label(target) + "」，音乐服务交给它，本包不再自动拉起");
-            refresh();
-            return;
-        }
-        toast("已切回官方，桥接服务正在重新接管 18764");
-        refresh();
-        handler.postDelayed(new MainRestart(this), 600L);
-    }
-
-    /** 卸掉旧的独立探针包，避免两个包抢 18764。 */
-    private void uninstallOld() {
-        try {
-            startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + OLD_PROBE)));
-        } catch (Throwable t) {
-            toast("请在系统设置里卸载 " + OLD_PROBE);
-        }
-    }
-
-    void openMusicApp() {
-        String pkg = Mode.isOfficial(this) ? Mode.OFFICIAL_PKG : Mode.THIRD_PARTY_PKG;
-        Intent intent = getPackageManager().getLaunchIntentForPackage(pkg);
-        if (intent == null) {
-            toast("打不开：" + pkg);
-            return;
-        }
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
-        try {
-            startActivity(intent);
-        } catch (Throwable t) {
-            toast("打不开：" + pkg);
-        }
-    }
-
-    /**
-     * 启动音乐：把播放器叫到前台，再补一个播放键。
-     *
-     * 只打开 App 不够——上次是暂停状态的话，打开还是暂停。
-     * 媒体键两条线的播放器都认，比猜它的 Activity 靠谱。
-     */
-    void startMusic() {
-        openMusicApp();
-        handler.postDelayed(new Runnable() {
-            public void run() {
-                mediaPlay();
-            }
-        }, 900L);
-    }
-
-    void mediaPlay() {
-        try {
-            android.media.AudioManager am =
-                    (android.media.AudioManager) getSystemService(AUDIO_SERVICE);
-            if (am == null) {
-                return;
-            }
-            am.dispatchMediaKeyEvent(new android.view.KeyEvent(
-                    android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_MEDIA_PLAY));
-            am.dispatchMediaKeyEvent(new android.view.KeyEvent(
-                    android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_MEDIA_PLAY));
-        } catch (Throwable t) {
-            Log.w(Cfg.TAG, "mediaPlay failed", t);
-        }
-    }
-
-    /** 打开车控页：18766 由车机助手常驻提供，跟音乐模式无关。 */
+    /** 打开车控页：18766 由车机助手常驻提供。 */
     void openCarPage() {
         try {
             String ip = Ip.local();
@@ -564,19 +360,13 @@ final class CarPort {
         return alive;
     }
 
-    /** 每个地址试出来的结果，显示在状态框里：「172.16.10.4 通 · 127.0.0.1 ConnectException」 */
+    /** 每个地址试出来的结果，显示在状态框里 */
     static String detail() {
         String d = detail;
         return d == null || d.length() == 0 ? "检测中…" : d;
     }
 
-    /**
-     * 探测放后台线程。
-     *
-     * 以前是在 refresh() 里同步 connect：连不上时每个地址要等 600ms，几个地址叠起来
-     * 主线程就卡住，按钮连按下态都画不出来 —— 用户看到的就是「点了没反应」。
-     * 而且一旦 connect 抛异常（部分车机禁应用间连本机端口），同步版本只能吞成离线。
-     */
+    /** 探测放后台线程。 */
     static void refreshAsync(final Runnable onMain) {
         long now = System.currentTimeMillis();
         if (now - at < 3000L || busy) {
@@ -720,7 +510,7 @@ final class CarPort {
         }
     }
 
-    /** 通返回 null，不通返回异常简称（ConnectException / SocketTimeoutException / EACCES…） */
+    /** 通返回 null，不通返回异常简称 */
     private static String probe(String host) {
         java.net.Socket sock = null;
         try {
@@ -758,21 +548,9 @@ class MainRefresh implements Runnable {
     @Override public void run() { a.refresh(); }
 }
 
-class MainRestart implements Runnable {
-    private final Main a;
-    MainRestart(Main a) { this.a = a; }
-    @Override public void run() {
-        // 切回官方：清掉「用户停服」标记后重新接管（端口空闲才会真的绑上）
-        Svc.startByUser(a);
-        a.refresh();
-    }
-}
-
 class MainClick implements View.OnClickListener {
     private final Main a;
     private final int code;
     MainClick(Main a, int code) { this.a = a; this.code = code; }
     @Override public void onClick(View v) { a.click(code); }
 }
-
-/** 地址栏点击：把「地址：http://x.x.x.x:18764」里的完整地址复制到剪贴板。 */

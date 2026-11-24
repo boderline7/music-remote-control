@@ -82,11 +82,11 @@ final class Liked {
         InputStream in = null;
         HttpURLConnection c = null;
         try {
-            c = (HttpURLConnection) new URL(Cfg.API_LIKED).openConnection();
+            c = (HttpURLConnection) new URL(MusicCfg.API_LIKED).openConnection();
             c.setConnectTimeout(6000);
             c.setReadTimeout(8000);
-            c.setRequestProperty("User-Agent", Cfg.WEB_UA);
-            c.setRequestProperty("Cookie", Cfg.WEB_COOKIE);
+            c.setRequestProperty("User-Agent", MusicCfg.WEB_UA);
+            c.setRequestProperty("Cookie", MusicCfg.WEB_COOKIE);
             c.setRequestProperty("Referer", "https://music.163.com/");
             int code = c.getResponseCode();
             if (code != 200) throw new Exception("http " + code);

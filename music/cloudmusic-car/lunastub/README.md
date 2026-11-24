@@ -1,6 +1,12 @@
 # lunastub —— 桥接包
 
-包名 `com.luna.music.car`。车机助手（`com.navi.tool`）按包名硬编码识别音源，这个包名在它的表里对应「汽水音乐车机版」（source 5），所以装上本包，助手音源列表才会出现这一项。**本包不放音乐**，只做三件事：撑住列表项、在「官方」模式下把**官方网易云车机版**（`com.netease.cloudmusic.iot`）包装成可遥控的播放后端、在 18765 提供遥控网页。桌面名「汽水音乐」只是助手槽位名，跟字节的汽水音乐无关。
+> **2026-11-24 起：官方桥接已整块剥离。**
+> 现在主源码只有文件传输（小绿传）、设置页、行车记录仪（18767）。所有操作官方网易云的代码
+> （MediaBrowser / 方控 / 歌词爱心 / 歌单 / 18764 服务）都在 `src/parked/java/com/luna/music/car/`，
+> 不参与编译、不进 APK。下面第 1–6 节描述的是剥离前的实现，保留作为接回参考；
+> 接回步骤见 [`src/parked/README.md`](src/parked/README.md)。
+
+包名 `com.luna.music.car`。车机助手（`com.navi.tool`）按包名硬编码识别音源，这个包名在它的表里对应「汽水音乐车机版」（source 5），所以装上本包，助手音源列表才会出现这一项。桌面名「汽水音乐」只是助手槽位名，跟字节的汽水音乐无关。
 
 ## 1. 运行角色：先看模式，端口只做兜底
 
@@ -132,3 +138,19 @@ python scripts/merge_xiaolv.py --gradle   # 先跑 Gradle 再合并
 包名**不动**（仍是 `com.luna.music.car`，车机助手按它认汽水音乐车机版）；小绿传的类包名与 `FileProvider` authority 也保持原样。资源 ID 由小绿传的 `public.xml` 固定，`apktool.yml` 的 `forcedPackageId` 必须是 127。
 
 「退出」原来的最后一步 `Process.killProcess(myPid)` 被去掉：本进程还扛着 18764 / 18767 两个常驻服务，杀了会把桥接一起关掉。
+
+## 10. 官方桥接剥离（2026-11-24）
+
+链路太绕，官方桥接整块搬出编译范围，默认不引用；以后要用再自己整合回 App。
+
+**主源码**（进 APK）：`App`、`Boot`、`Cfg`（TAG / 端口 / 错误码 / `J`）、`Ip`、`ServerIo`、`LogCapture`、`Main`（设置页）、`DvrSvc/DvrServer/DvrHttp/DvrProxy`。
+
+**`src/parked/java/com/luna/music/car/`**（不编译）：`Ncm`、`Bridge`、`Keys`、`Star`、`Liked`、`MusicCfg`（含 `Lrc`）、`Mode`、`ModeSync`、`Svc`、`Server`、`Api`、`Alive`、`LaunchStub`。清单见 [`src/parked/README.md`](src/parked/README.md)。
+
+行为：
+
+- `App` / `Boot` 只拉 `DvrSvc`；不启 18764、不排心跳、不同步音源模式。
+- Manifest 删 `.Svc` 与 `.ModeSync$Receiver`，`queries` 只留 `com.navi.tool`。
+- 设置页只留「刷新 / 重启车控 / 车控页 / 退出」，文案只写车控 18766 与文件传输。
+
+校验（合并包 dex）：`MediaBrowser`、`AutomotiveService`、`MediaController`、`MediaSession`、`PLAYER_CONTROL`、`PLAYER_SYNC`、`star_action`、`playlist/detail`、`18764`、`com.netease.cloudmusic.iot` 均为 0 处；组件只剩 `Main`、`DvrSvc`、`Boot` 与小绿传 `MainActivity`。

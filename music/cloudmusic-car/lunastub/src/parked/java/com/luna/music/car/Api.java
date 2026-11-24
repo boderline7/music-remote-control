@@ -157,8 +157,6 @@ final class Api {
         boolean changed = Mode.current(c) != target;
         if (changed) {
             Mode.save(c, target);
-            // 同步给第三方 App：它按新模式自己启停 RemoteServer
-            ModeSync.notify(c, target);
         }
         J.p(d, "ok", true);
         J.p(d, "mode", target == Mode.OFFICIAL ? "official" : "third_party");
