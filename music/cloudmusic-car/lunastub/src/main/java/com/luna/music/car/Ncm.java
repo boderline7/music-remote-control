@@ -51,6 +51,24 @@ final class Ncm {
     /** 回调只能注册一次：重连时先注销旧的，否则同一个 Media ID 变化会触发多次接管。 */
     private NcmSess sess;
     private volatile boolean connected;
+
+    // ---- 连接保活 ----
+    // 以前 connect() 是「browser 非空就 return」，一次失败（冷启动官方 App 还没起来、
+    // 静置后 binder 被系统断掉）之后这辈子都不会再连：手机遥控还能靠系统媒体键兜底，
+    // 方控那条广播就彻底哑了。现在改成幂等连接 + 退避重连 + 定时巡检。
+    private volatile boolean connecting;
+    /** 连续失败次数，退避用；连上归零。 */
+    private volatile int failCount;
+    private boolean watchStarted;
+    /** 拉开官方 App 进程的时刻：60s 内只拉一次，别把车机刷成连环启动。 */
+    private volatile long wokeAt;
+    private static final long WATCH_MS = 12_000L;
+    private final Runnable retry = new Runnable() {
+        public void run() { connect(); }
+    };
+    private final Runnable watch = new Runnable() {
+        public void run() { watchOnce(); }
+    };
     private String[] playlists;
     /** 歌单名 → 公开页 id；曲目列表走公开 Web API，不碰登录态、不碰 weapi/eapi。 */
     private final ConcurrentHashMap<String, String> playlistIds = new ConcurrentHashMap<String, String>();
@@ -191,6 +209,7 @@ final class Ncm {
         loadPlaylists();
         Liked.I.warm();
         connect();
+        startWatchdog();
     }
 
     boolean isConnected() { return connected && ctl != null; }
@@ -293,20 +312,115 @@ final class Ncm {
         }
     }
 
-    private void connect() {
-        if (browser != null) return;
+    /**
+     * 幂等连接。已经有可用会话就直接返回；否则先清干净再绑一次。
+     *
+     * 旧的守卫是「browser != null 就 return」——重连时 browser 还挂在那个已经死掉的
+     * 连接上，于是永远连不回来。这就是「刚启动 / 静置很久之后方控没用」的根。
+     */
+    private synchronized void connect() {
+        if (ctx == null) return;
+        if (connected && ctl != null) return;
+        if (connecting) return;
+        closeBrowser();
+        connecting = true;
         try {
             browser = new MediaBrowser(ctx, new ComponentName(Cfg.PKG, Cfg.AUTO_SVC), new NcmConn(), null);
             browser.connect();
             Log.i(Cfg.TAG, "MediaBrowser connecting " + Cfg.PKG + "/" + Cfg.AUTO_SVC);
         } catch (Throwable t) {
+            connecting = false;
+            browser = null;
             Log.w(Cfg.TAG, "MediaBrowser connect failed", t);
             LogCapture.error("NCM 连接官方 MediaBrowser 失败：" + t, t);
+            scheduleReconnect("建连异常");
+        }
+    }
+
+    /** 放掉旧连接：browser / ctl / 回调一起清，不然下一次 connect 会被自己的守卫挡掉。 */
+    private synchronized void closeBrowser() {
+        if (sess != null && ctl != null) {
+            try { ctl.unregisterCallback(sess); } catch (Throwable ignored) {}
+        }
+        sess = null;
+        ctl = null;
+        connected = false;
+        if (browser != null) {
+            try { browser.disconnect(); } catch (Throwable ignored) {}
+            browser = null;
+        }
+    }
+
+    /** 退避重连：2s / 4s / 8s，封顶 15s；连上就归零。连续失败到第三次顺手拉一次官方进程。 */
+    void scheduleReconnect(String why) {
+        if (main == null) return;
+        int n = failCount;
+        failCount = Math.min(n + 1, 4);
+        long delay = Math.min(15_000L, 2_000L << Math.min(n, 3));
+        main.removeCallbacks(retry);
+        main.postDelayed(retry, delay);
+        LogCapture.log("NCM 断开（" + why + "），" + (delay / 1000) + "s 后重连");
+        if (n >= 2) wake();
+    }
+
+    /**
+     * 官方 App 被系统彻底回收后，bindService 是叫不醒它的（冷启动那一刻也是这样）。
+     * 用启动页显式拉一次进程，之后 bind 才连得上。
+     */
+    void wake() {
+        if (ctx == null) return;
+        long now = System.currentTimeMillis();
+        if (now - wokeAt < 60_000L) return;
+        wokeAt = now;
+        try {
+            Intent i = ctx.getPackageManager().getLaunchIntentForPackage(Cfg.PKG);
+            if (i == null) return;
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(i);
+            LogCapture.logAlways("NCM 重连多次失败，拉起官方 App 进程");
+        } catch (Throwable t) {
+            Log.w(Cfg.TAG, "wake official app failed", t);
+        }
+    }
+
+    private synchronized void startWatchdog() {
+        if (watchStarted || main == null) return;
+        watchStarted = true;
+        main.postDelayed(watch, WATCH_MS);
+    }
+
+    /** 巡检：没会话就重连，会话在但 binder 已死也重连。只有真连不上才动，正常时不打扰。 */
+    private void watchOnce() {
+        try {
+            if (ctx == null) return;
+            if (!connected || ctl == null) {
+                LogCapture.log("NCM 巡检：没有可用会话，主动重连");
+                connect();
+            } else if (!alive(ctl)) {
+                LogCapture.log("NCM 巡检：会话已失联（binder 断开），重连");
+                closeBrowser();
+                connect();
+            }
+        } catch (Throwable t) {
+            Log.w(Cfg.TAG, "watchdog failed", t);
+        } finally {
+            if (main != null) main.postDelayed(watch, WATCH_MS);
+        }
+    }
+
+    /** 读一次播放态：能读回来说明 binder 活着，抛异常就是会话已经没了。 */
+    private static boolean alive(MediaController c) {
+        try {
+            c.getPlaybackState();
+            return true;
+        } catch (Throwable t) {
+            return false;
         }
     }
 
     void onConnected() {
         try {
+            connecting = false;
             ctl = new MediaController(ctx, browser.getSessionToken());
             // 重连/服务重启会再次走到这里，旧回调不注销就会叠加：
             // 一次 metadata 变化被回调多次 → 重复接管。先注销再注册。
@@ -317,20 +431,25 @@ final class Ncm {
             ctl.registerCallback(sess, main);
             LogCapture.log("NCM 注册 MediaController 回调，tid=" + Thread.currentThread().getId());
             connected = true;
+            failCount = 0;
             Log.i(Cfg.TAG, "CONNECTED root=" + browser.getRoot() + " ctl=" + ctl);
             LogCapture.log("NCM 已连接官方 App，root=" + browser.getRoot());
             Server.I.onBridgeChanged();
         } catch (Throwable t) {
+            connecting = false;
             Log.w(Cfg.TAG, "MediaController failed", t);
             LogCapture.error("NCM 创建 MediaController 失败：" + t, t);
+            scheduleReconnect("接管失败");
         }
     }
 
     void onLost() {
-        connected = false;
+        connecting = false;
         Log.w(Cfg.TAG, "MediaBrowser suspended/failed");
         LogCapture.logAlways("NCM 与官方 App 的连接断开");
+        closeBrowser();
         Server.I.onBridgeChanged();
+        scheduleReconnect("连接被挂起/失败");
     }
 
     /** 供 UI / 自检读的摘要。 */
@@ -508,12 +627,17 @@ final class Ncm {
         return KeyEvent.KEYCODE_MEDIA_PREVIOUS;
     }
 
-    private boolean mediaKey(int code) {
+    boolean mediaKey(int code) {
         try {
             am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, code));
             am.dispatchMediaKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, code));
             return true;
         } catch (Throwable t) { return false; }
+    }
+
+    /** 给 {@link Bridge} 兜底用：官方会话没连上时，方控改走系统媒体键，不能整条哑掉。 */
+    boolean mediaKeyEvent(int code) {
+        return ctx != null && am != null && mediaKey(code);
     }
 
     private MediaController.TransportControls controls() {

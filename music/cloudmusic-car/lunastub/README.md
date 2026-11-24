@@ -117,3 +117,18 @@ QUEUE 12/37 点播 某歌 - 某歌手
 - **「我喜欢的音乐」只能整单播放**：真实收藏内容存在官方登录态里，抓不到列表；并且点它时官方 `VoiceService` 会主动给车机发一条 directive，车机助手必然播报「好的」，这一点无法从本包消除。
 - **语音搜索可能返回相似歌名**（`黄昏` → `黄昏泛舟`），状态机只能超时放弃，无法纠正搜索结果。
 - **同名不同版本的歌**：队列只存歌名+歌手，语音通道可能点错版本。
+
+## 9. 与小绿传合并（2026-11-24）
+
+车机上不再单独装「小绿传」（`com.yuhan.xiaolvchuan`），并进本包一起装：入口界面是小绿传（文件收发），右上角「设置」进本包原来的设置页。
+
+```
+python scripts/merge_xiaolv.py            # 用现有 Gradle 产物合并
+python scripts/merge_xiaolv.py --gradle   # 先跑 Gradle 再合并
+```
+
+链路：`apktool d` 本包产物 → 注入小绿传的 `smali`（落 `smali_classes2`）/`res`/`assets` → R 引用改指 `com.luna.music.car.R` → 改清单（入口、权限、FileProvider）→ 布局加「设置」+ `MainActivity.openSettings()` → `apktool b` → 补 `classes3.dex`（`Browse.java` 重新 javac+d8）→ `zipalign` → `apksigner`（`keystore/carremote.jks`，与原包同证书才能覆盖安装）。
+
+包名**不动**（仍是 `com.luna.music.car`，车机助手按它认汽水音乐车机版）；小绿传的类包名与 `FileProvider` authority 也保持原样。资源 ID 由小绿传的 `public.xml` 固定，`apktool.yml` 的 `forcedPackageId` 必须是 127。
+
+「退出」原来的最后一步 `Process.killProcess(myPid)` 被去掉：本进程还扛着 18764 / 18767 两个常驻服务，杀了会把桥接一起关掉。

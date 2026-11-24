@@ -123,6 +123,10 @@ public class Svc extends Service {
             }
             if (Server.I.isRunning()) {
                 active = true;
+                // 进程还在、服务被系统回收后又起来：监听 socket 已经活着，但桥/会话可能在那次
+                // 销毁里被拆掉了（方控当时就哑了，手机遥控照常）。这里补一次，两个都是幂等的。
+                Ncm.I.init(this);
+                Bridge.I.start(this);
                 return;
             }
             if (Server.portTaken()) {
@@ -190,6 +194,8 @@ public class Svc extends Service {
             }
             if (Server.I.isRunning()) {
                 active = true;
+                Ncm.I.init(this);
+                Bridge.I.start(this);
                 return START_STICKY;
             }
             if (Server.portTaken()) {

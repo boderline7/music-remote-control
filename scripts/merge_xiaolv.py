@@ -1,0 +1,436 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""把小绿传（com.yuhan.xiaolvchuan）并进桥接包（com.luna.music.car）。
+
+为什么不做成两个 APK 各装一次：车机上多一个包就多一个自启、多一份签名升级负担，
+而小绿传的 HTTP 服务天然该跟桥接包同生共死。包名必须保持 com.luna.music.car——
+车机助手的音源表按包名认「汽水音乐车机版」（source 5），改了就掉出候选列表。
+
+链路：
+    Gradle 出 lunastub-release.apk → apktool 解包 → 注入小绿传的 smali/res/assets
+    → 改清单（入口换成小绿传，设置跳桥接页）→ apktool 回编译 → zipalign → apksigner
+
+不重写小绿传的代码：367 个 smali 类原样搬过去，只把 R 引用从自己的包名指到
+com.luna.music.car.R（同一个 APK 里只有一个 R）。这样它的功能一行没变。
+
+用法：
+    python scripts/merge_xiaolv.py            # 用现有 Gradle 产物合并
+    python scripts/merge_xiaolv.py --gradle   # 先跑一次 Gradle 再合并
+"""
+from __future__ import annotations
+
+import os
+import re
+import shutil
+import subprocess
+import sys
+import zipfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+# ---- 输入 ----
+BASE_APK = ROOT / "music/cloudmusic-car/lunastub/build/outputs/apk/release/lunastub-release.apk"
+XIAOLV = Path(os.environ.get(
+    "XIAOLV", r"C:/Users/Administrator/WorkBuddy/2026-11-02-15-17-13/xiaolvzhuan"))
+XSRC = XIAOLV / "02-src/app"
+
+# ---- 工具 ----
+JB = Path(os.environ.get("JB", "D:/开发/tools/jdk/jdk-17.0.2"))
+BT = Path(os.environ.get("BT", "D:/开发/tools/android-sdk/build-tools/34.0.0"))
+JAVA = JB / "bin/java.exe"
+APKTOOL = ROOT / "patch/apktool.jar"
+ZIPALIGN = BT / "zipalign.exe"
+APKSIGNER = BT / "lib/apksigner.jar"
+
+# ---- 输出 ----
+# apktool 在中文路径下编资源会报 Illegal byte sequence，工作目录必须是纯 ASCII
+WORK = Path(os.environ.get("MERGE_WORK", "C:/Temp/xiaolv_merge"))
+DIST = ROOT / "dist"
+OUT_NAME = "汽水音乐_桥接包_v2.10.29.apk"
+
+# ---- 签名（与 Gradle 同一把钥匙，才能覆盖安装） ----
+KEYSTORE = ROOT / "keystore/carremote.jks"
+KS_ALIAS = "carremote"
+KS_PASS = "CarRemote2026"
+
+# 桥接包自己的包名，不能动
+PKG = "com.luna.music.car"
+# 小绿传的包名：类包名保留原样，只改 R 引用
+XLV_PKG = "com.yuhan.xiaolvchuan"
+
+
+def log(step: str, msg: str = "") -> None:
+    print(f"[{step}] {msg}" if msg else f"[{step}]")
+
+
+def run(cmd: list[str], quiet: bool = True) -> subprocess.CompletedProcess:
+    p = subprocess.run([str(c) for c in cmd], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    if p.returncode != 0:
+        print(p.stdout[-4000:] if p.stdout else "")
+        print(p.stderr[-4000:] if p.stderr else "")
+        raise SystemExit(f"命令失败({p.returncode})：{' '.join(str(c) for c in cmd)}")
+    if not quiet and p.stdout:
+        print(p.stdout[-1500:])
+    return p
+
+
+def java(*args: str) -> None:
+    run([JAVA, *args])
+
+
+# ------------------------------------------------------------------ 注入
+def inject_smali(dec: Path) -> int:
+    """小绿传的 367 个 smali 类 → smali_classes2，避免和桥接包自己的 dex 混在一起。"""
+    src = XSRC / "smali"
+    dst = dec / "smali_classes2"
+    if dst.exists():
+        shutil.rmtree(dst)
+    shutil.copytree(src, dst)
+
+    # 同一个 APK 只有一个 R，小绿传编译时写死的 R 引用要指到桥接包的 R 上
+    old = "L" + XLV_PKG.replace(".", "/") + "/R$"
+    new = "L" + PKG.replace(".", "/") + "/R$"
+    changed = 0
+    for f in dst.rglob("*.smali"):
+        s = f.read_text(encoding="utf-8", errors="surrogateescape")
+        if old in s:
+            f.write_text(s.replace(old, new), encoding="utf-8", errors="surrogateescape")
+            changed += 1
+
+    # 冲突自检：桥接包自己的类不能被覆盖
+    own = {p.relative_to(dec / "smali").as_posix()
+           for p in (dec / "smali").rglob("*.smali")}
+    dup = [p.relative_to(dst).as_posix() for p in dst.rglob("*.smali")
+           if p.relative_to(dst).as_posix() in own]
+    if dup:
+        raise SystemExit(f"类冲突（{len(dup)} 个）：{dup[:5]}")
+    log("smali", f"{len(list(dst.rglob('*.smali')))} 个类，{changed} 个文件改了 R 引用")
+    return changed
+
+
+def inject_res(dec: Path) -> None:
+    """资源整棵树搬过去。桥接包自己没有资源（只有空的 public.xml），不存在 ID 撞车。"""
+    dst_res = dec / "res"
+    copied = 0
+    for f in (XSRC / "res").rglob("*"):
+        if not f.is_file():
+            continue
+        rel = f.relative_to(XSRC / "res")
+        out = dst_res / rel
+        if out.exists() and out.name != "public.xml":
+            raise SystemExit(f"资源重名，合并会互相覆盖：{rel}")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(f, out)
+        copied += 1
+    log("res", f"{copied} 个资源文件（public.xml 固定了原来的 0x7f.. ID）")
+
+
+def inject_assets(dec: Path) -> None:
+    dst = dec / "assets"
+    dst.mkdir(parents=True, exist_ok=True)
+    copied = 0
+    for f in (XSRC / "assets").rglob("*"):
+        if not f.is_file():
+            continue
+        rel = f.relative_to(XSRC / "assets")
+        out = dst / rel
+        if out.exists():
+            raise SystemExit(f"assets 重名：{rel}")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(f, out)
+        copied += 1
+    log("assets", f"{copied} 个（web.html + 字体）")
+
+
+# ------------------------------------------------------------------ 清单
+PERMS = [
+    "android.permission.ACCESS_WIFI_STATE",
+    "android.permission.WAKE_LOCK",
+    "android.permission.READ_EXTERNAL_STORAGE",
+    "android.permission.WRITE_EXTERNAL_STORAGE",
+    "android.permission.REQUEST_INSTALL_PACKAGES",
+    "android.permission.QUERY_ALL_PACKAGES",
+]
+
+XLV_TAIL = f"""
+        <!-- 小绿传：车机端提供 HTTP 收发文件的入口，右上角「设置」跳 .Main -->
+        <activity android:name="{XLV_PKG}.MainActivity" android:configChanges="keyboardHidden|orientation|screenSize" android:exported="true" android:label="@string/app_name" android:screenOrientation="landscape">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <provider android:name="{XLV_PKG}.FileProviderLite" android:authorities="{XLV_PKG}.files" android:exported="false" android:grantUriPermissions="true"/>
+"""
+
+
+def patch_manifest(dec: Path) -> None:
+    p = dec / "AndroidManifest.xml"
+    s = p.read_text(encoding="utf-8")
+
+    # 1) 权限：小绿传原来那套（读写外置存储、装 APK、枚举已装应用）
+    add = "".join(f'    <uses-permission android:name="{x}"/>\n' for x in PERMS
+                  if x not in s)
+    s = s.replace("    <application", add + "\n    <application", 1)
+
+    # 2) application：换成小绿传的图标 / 名字 / 主题
+    assert 'android:label="汽水音乐"' in s, "application label 不匹配"
+    s = s.replace('android:label="汽水音乐"', 'android:label="@string/app_name"')
+    assert "android:icon=" in s, "application icon 不匹配"
+    s = re.sub(r'android:icon="[^"]*"', 'android:icon="@mipmap/ic_launcher"', s, count=1)
+    s = s.replace("<application ", '<application android:theme="@style/AppTheme" ', 1)
+
+    # 3) 桥接页不再是入口：去掉它的 LAUNCHER，只留「设置」这条显式跳转
+    m = re.search(r'(<activity[^>]*android:name="' + re.escape(PKG) + r'\.Main"[^>]*>)'
+                  r'\s*<intent-filter>.*?</intent-filter>\s*</activity>', s, re.S)
+    assert m, "没找到桥接页的 LAUNCHER 入口"
+    head = m.group(1)
+    if not head.endswith("/>"):
+        head = head[:-1].rstrip() + "/>"
+    s = s[:m.start()] + head + s[m.end():]
+
+    # 4) 小绿传的 Activity / FileProvider
+    assert "    </application>" in s
+    s = s.replace("    </application>", XLV_TAIL + "    </application>", 1)
+
+    p.write_text(s, encoding="utf-8")
+    log("manifest", "入口 = 小绿传 MainActivity，设置 = com.luna.music.car.Main")
+
+
+# ------------------------------------------------------------------ 设置入口
+SETTINGS_BTN = ('            <TextView android:textSize="@dimen/btn_text" '
+                'android:textStyle="bold" android:textColor="@color/accent_hi" '
+                'android:gravity="center" android:background="@drawable/btn_plain" '
+                'android:paddingLeft="10.0dip" android:paddingRight="10.0dip" '
+                'android:clickable="true" android:layout_width="wrap_content" '
+                'android:layout_height="@dimen/btn_h" android:layout_marginLeft="8.0dip" '
+                'android:onClick="openSettings" android:text="设置" />')
+
+
+def patch_layout(dec: Path) -> None:
+    """右上角加「设置」：跟在「换端口」「dpi」后面，同一行的最右侧。"""
+    p = dec / "res/layout/act_main.xml"
+    s = p.read_text(encoding="utf-8")
+    m = re.search(r'<TextView[^>]*android:id="@id/btn_dpi"[^>]*/>', s)
+    assert m, "没找到 dpi 按钮，布局结构变了"
+    s = s[:m.end()] + "\n" + SETTINGS_BTN + s[m.end():]
+    p.write_text(s, encoding="utf-8")
+    log("layout", "act_main.xml 右上角加了「设置」")
+
+
+OPEN_SETTINGS = """
+.method public openSettings(Landroid/view/View;)V
+    .locals 2
+
+    :try_start_0
+    new-instance v0, Landroid/content/Intent;
+
+    const-class v1, Lcom/luna/music/car/Main;
+
+    invoke-direct {v0, p0, v1}, Landroid/content/Intent;-><init>(Landroid/content/Context;Ljava/lang/Class;)V
+
+    invoke-virtual {p0, v0}, Landroid/app/Activity;->startActivity(Landroid/content/Intent;)V
+    :try_end_0
+    .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_0
+
+    return-void
+
+    :catch_0
+    move-exception v0
+
+    invoke-virtual {v0}, Ljava/lang/Throwable;->printStackTrace()V
+
+    return-void
+.end method
+"""
+
+
+def patch_activity(dec: Path) -> None:
+    p = dec / "smali_classes2" / XLV_PKG.replace(".", "/") / "MainActivity.smali"
+    s = p.read_text(encoding="utf-8", errors="surrogateescape")
+    if "openSettings(Landroid/view/View;)V" in s:
+        log("activity", "已经有 openSettings，跳过")
+        return
+    assert s.rstrip().endswith(".end method"), "MainActivity.smali 结尾不是 .end method"
+    p.write_text(s.rstrip("\n") + "\n" + OPEN_SETTINGS,
+                 encoding="utf-8", errors="surrogateescape")
+    log("activity", "MainActivity 追加 openSettings()，跳 com.luna.music.car.Main")
+
+
+# ------------------------------------------------------------------ 构建
+def patch_exit(dec: Path) -> None:
+    """小绿传的「退出」最后一步是 Process.killProcess(myPid)。合并后这个进程还扛着
+    18764（音乐遥控）和 18767（记录仪）两个常驻服务，杀了等于把桥接一起关掉。
+    这里只去掉那一下杀进程，Hub.stop() 和 finishAndRemoveTask() 保留——界面照旧退干净。"""
+    p = dec / "smali_classes2" / XLV_PKG.replace(".", "/") / "MainActivity$21.smali"
+    s = p.read_text(encoding="utf-8", errors="surrogateescape")
+    old = ("    invoke-static {}, Landroid/os/Process;->myPid()I\n\n"
+           "    move-result v0\n\n"
+           "    invoke-static {v0}, Landroid/os/Process;->killProcess(I)V\n")
+    if old in s:
+        s = s.replace(old, "    # 合并包：不杀进程，桥接服务要接着跑\n")
+        p.write_text(s, encoding="utf-8", errors="surrogateescape")
+        log("exit", "「退出」不再 killProcess，只退界面")
+    elif "killProcess" not in s:
+        log("exit", "已经没有 killProcess，跳过")
+    else:
+        raise SystemExit("退出逻辑变了，先看一眼 MainActivity$21.smali")
+
+
+def patch_apktool_yml(dec: Path) -> None:
+    """public.xml 把 ID 钉在 0x7f01..，apktool 必须用同一个包 ID，否则 aapt2 报
+    「can't assign ID 0x7f010000 ... package already has ID 7f」。小绿传原工程是 127。"""
+    p = dec / "apktool.yml"
+    s = p.read_text(encoding="utf-8")
+    s2 = re.sub(r"forcedPackageId:\s*\d+", "forcedPackageId: 127", s, count=1)
+    if s2 == s and "forcedPackageId" not in s:
+        s2 = s.replace("packageInfo:", "packageInfo:\n  forcedPackageId: 127", 1)
+    p.write_text(s2, encoding="utf-8")
+    log("apktool.yml", "forcedPackageId = 127")
+
+
+def build_browse_dex() -> Path:
+    """小绿传的 Browse.java 是后期加的 Java 源码，原本单独编成 classes2.dex。
+    smali 树里没有它，必须重新编译，否则文件浏览/下载那几条调用会 NoClassDefFoundError。
+    这里编成 classes3.dex（apktool 已经占了 classes.dex 和 classes2.dex）。"""
+    src_dir = XIAOLV / "02-src/java-src"
+    src = src_dir / (XLV_PKG.replace(".", "/") + "/Browse.java")
+    if not src.exists():
+        raise SystemExit(f"缺少 Browse.java：{src}")
+
+    cls = WORK / "browse_cls"
+    dex = WORK / "browse_dex"
+    shutil.rmtree(cls, ignore_errors=True)
+    shutil.rmtree(dex, ignore_errors=True)
+    cls.mkdir(parents=True)
+    dex.mkdir(parents=True)
+
+    dj = Path(os.environ.get("ANDROID_JAR",
+                             "D:/开发/tools/android-sdk/platforms/android-35/android.jar"))
+    run([JB / "bin/javac.exe", "-encoding", "UTF-8", "-source", "8", "-target", "8",
+         "-nowarn", "-bootclasspath", dj, "-classpath", dj,
+         "-d", cls, src])
+
+    env = dict(os.environ)
+    env["JAVA_HOME"] = str(JB)
+    env["PATH"] = str(JB / "bin") + os.pathsep + env.get("PATH", "")
+    # d8 8.2.2 不吃目录（报 Unsupported source file type），逐个文件传
+    classes = sorted(cls.rglob("*.class"))
+    if not classes:
+        raise SystemExit("javac 没有产出 class，Browse.java 没编过")
+    p = subprocess.run([str(BT / "d8.bat"), "--min-api", "28", "--lib", str(dj),
+                        "--output", str(dex)] + [str(c) for c in classes],
+                       capture_output=True, text=True, encoding="utf-8",
+                       errors="replace", env=env)
+    if p.returncode != 0:
+        print(p.stdout or "", p.stderr or "")
+        raise SystemExit("d8 编译 Browse 失败")
+
+    out = dex / "classes.dex"
+    if not out.exists():
+        raise SystemExit("d8 没有产出 classes.dex")
+    log("dex", f"Browse.java → classes3.dex（{out.stat().st_size:,} 字节）")
+    return out
+
+
+def add_dex(apk: Path, dex: Path, name: str = "classes3.dex") -> None:
+    """把额外 dex 塞进 APK：逐条复制原条目，最后补一条新 dex。"""
+    tmp = apk.with_suffix(".tmp.apk")
+    with zipfile.ZipFile(apk) as zin, zipfile.ZipFile(tmp, "w") as zout:
+        for zi in zin.infolist():
+            if zi.filename == name:
+                continue
+            data = zin.read(zi.filename)
+            ni = zipfile.ZipInfo(zi.filename, date_time=zi.date_time)
+            ni.compress_type = zi.compress_type
+            ni.external_attr = zi.external_attr
+            zout.writestr(ni, data)
+        ni = zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))
+        ni.compress_type = zipfile.ZIP_DEFLATED
+        zout.writestr(ni, dex.read_bytes())
+    tmp.replace(apk)
+
+
+def build(dec: Path, out: Path) -> None:
+    java("-jar", APKTOOL, "b", dec, "-o", out)
+
+
+def sign(raw: Path, final: Path) -> None:
+    aligned = WORK / "aligned.apk"
+    if aligned.exists():
+        aligned.unlink()
+    run([ZIPALIGN, "-p", "-f", "4", raw, aligned])
+    if final.exists():
+        final.unlink()
+    java("-jar", APKSIGNER, "sign",
+         "--ks", KEYSTORE, "--ks-key-alias", KS_ALIAS,
+         "--ks-pass", f"pass:{KS_PASS}", "--key-pass", f"pass:{KS_PASS}",
+         "--v1-signing-enabled", "true", "--v2-signing-enabled", "true",
+         "--v3-signing-enabled", "true", "--out", final, aligned)
+
+
+def verify(final: Path) -> None:
+    java("-jar", APKSIGNER, "verify", "--print-certs", final)
+    p = run([BT / "aapt2.exe", "dump", "badging", final])
+    bad = p.stdout or ""
+    want = [f"package: name='{PKG}'", "versionCode='72'", "versionName='2.10.29'",
+            f"launchable-activity: name='{XLV_PKG}.MainActivity'"]
+    for w in want:
+        if w not in bad:
+            raise SystemExit(f"校验失败，badging 里没有：{w}")
+    with zipfile.ZipFile(final) as z:
+        names = z.namelist()
+        for n in ("classes.dex", "classes2.dex", "classes3.dex", "assets/web.html",
+                  "assets/remote.html", "res/layout/act_main.xml"):
+            if n not in names:
+                raise SystemExit(f"校验失败，包里没有 {n}")
+    log("verify", "包名 2.10.29 / 入口小绿传 / 三个 dex / 两套页面都在")
+
+
+def main() -> None:
+    if "--gradle" in sys.argv:
+        log("gradle", "先跑一次 Gradle 出包")
+        run([ROOT / "music/cloudmusic-car/gradlew.bat", "-p",
+             ROOT / "music/cloudmusic-car", ":lunastub:assembleRelease",
+             "--offline", "-q"], quiet=False)
+
+    for f in (BASE_APK, XSRC / "smali", XSRC / "res", APKTOOL, ZIPALIGN, APKSIGNER):
+        if not Path(f).exists():
+            raise SystemExit(f"缺少输入：{f}")
+
+    if WORK.exists():
+        shutil.rmtree(WORK)
+    WORK.mkdir(parents=True)
+    dec = WORK / "dec"
+
+    log("decode", str(BASE_APK.name))
+    java("-jar", APKTOOL, "d", "-f", "-o", dec, BASE_APK)
+
+    inject_smali(dec)
+    inject_res(dec)
+    inject_assets(dec)
+    patch_manifest(dec)
+    patch_layout(dec)
+    patch_activity(dec)
+    patch_exit(dec)
+    patch_apktool_yml(dec)
+
+    raw = WORK / "unsigned.apk"
+    log("build", "apktool 回编译")
+    build(dec, raw)
+
+    add_dex(raw, build_browse_dex())
+
+    DIST.mkdir(parents=True, exist_ok=True)
+    final = DIST / OUT_NAME
+    log("sign", KEYSTORE.name)
+    sign(raw, final)
+    verify(final)
+    log("done", f"{final}  {final.stat().st_size:,} 字节")
+
+
+if __name__ == "__main__":
+    main()

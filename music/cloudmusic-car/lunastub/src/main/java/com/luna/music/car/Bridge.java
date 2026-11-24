@@ -17,6 +17,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
+import android.view.KeyEvent;
 
 /**
  * 车机助手（com.navi.tool）与车上的音乐来源之间的桥。
@@ -75,8 +76,8 @@ class Bridge {
     /** 上报间隔。必须小于助手看门狗的 1800ms，否则它会以为暂停了。 */
     private static final long TICK_MS = 1_000L;
 
-    /** 断开重连的退避。 */
-    private static final long RECONNECT_MS = 5_000L;
+    /** 巡检间隔：方控不等人，十几秒内必须自己发现会话没了。 */
+    private static final long WATCH_MS = 12_000L;
 
     static final int MODE_IDLE = 0;
     static final int MODE_OFFICIAL = Mode.OFFICIAL;
@@ -92,6 +93,23 @@ class Bridge {
 
     private boolean registered;
     private boolean ticking;
+    /** 已经拿到可用会话。ctl 非空但 binder 死了的情况靠 alive() 另判。 */
+    private volatile boolean connected;
+    private volatile boolean connecting;
+    /** 连续失败次数，退避用；连上归零。 */
+    private int failCount;
+    private boolean watchStarted;
+    /** 首连延后：冷启动时 Ncm 也在绑同一个服务，两路同时 bind 容易被官方那边打回一路。 */
+    private static final long FIRST_CONNECT_MS = 800L;
+    private final Runnable firstConnect = new Runnable() {
+        @Override public void run() { connect(); }
+    };
+    private final Runnable retry = new Runnable() {
+        @Override public void run() { connect(); }
+    };
+    private final Runnable watch = new Runnable() {
+        @Override public void run() { watchOnce(); }
+    };
 
     /** 上一次推送的「歌名|歌手」，用来发现换歌。 */
     private String lastKey = "";
@@ -127,25 +145,37 @@ class Bridge {
     }
 
     void start(Context context) {
-        if (ctx != null) return;
-        ctx = context.getApplicationContext();
+        if (ctx == null) ctx = context.getApplicationContext();
+        // 模式每次都重读：切音源后 start() 还会被调到，不能因为 ctx 已存在就沿用旧判断。
         mode = Mode.current(ctx);
         Log.i(TAG, "音源=" + Mode.label(mode));
         if (mode != MODE_OFFICIAL) return;
-        register();
-        connect();
+        // 心跳/巡检在切回官方时要能重新起来（两者都自带幂等守卫）
         startTick();
+        startWatchdog();
+        // 先挂广播再连：会话还没连上时方控也要能收得到（收了会走系统媒体键兜底）。
+        register();
+        handler.removeCallbacks(firstConnect);
+        handler.postDelayed(firstConnect, FIRST_CONNECT_MS);
     }
 
     /** 停掉桥：切音源或服务销毁时调用，之后再 start 能干净重来。 */
     void stopAll() {
         ticking = false;
-        try { handler.removeCallbacks(tick); } catch (Throwable ignored) {}
+        watchStarted = false;
+        try {
+            handler.removeCallbacks(tick);
+            handler.removeCallbacks(firstConnect);
+            handler.removeCallbacks(retry);
+            handler.removeCallbacks(watch);
+        } catch (Throwable ignored) {}
         if (registered && ctx != null) {
             try { ctx.unregisterReceiver(receiver); } catch (Throwable ignored) {}
         }
         registered = false;
         teardown();
+        connecting = false;
+        failCount = 0;
         ctx = null;
         mode = MODE_IDLE;
     }
@@ -161,8 +191,13 @@ class Bridge {
 
     // ---------- 连官方 App ----------
 
-    private void connect() {
-        if (ctx == null || browser != null) return;
+    private synchronized void connect() {
+        if (ctx == null) return;
+        if (connected && ctl != null) return;
+        if (connecting) return;
+        // 旧 browser 必须先放掉：留着它就是「一次失败之后永远不再连」的那个死结。
+        teardown();
+        connecting = true;
         try {
             browser = new MediaBrowser(ctx, new ComponentName(OFFICIAL, OFFICIAL_SERVICE), conn, null);
             browser.connect();
@@ -170,20 +205,65 @@ class Bridge {
         } catch (Throwable t) {
             Log.w(TAG, "连接失败", t);
             browser = null;
-            scheduleReconnect();
+            connecting = false;
+            scheduleReconnect("建连异常");
         }
     }
 
-    private void scheduleReconnect() {
-        handler.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                if (mode == MODE_OFFICIAL) connect();
-            }
-        }, RECONNECT_MS);
+    private void scheduleReconnect(String why) {
+        connecting = false;
+        int n = failCount;
+        failCount = Math.min(n + 1, 4);
+        long delay = Math.min(15_000L, 2_000L << Math.min(n, 3));
+        try {
+            handler.removeCallbacks(retry);
+            handler.postDelayed(retry, delay);
+        } catch (Throwable ignored) {}
+        LogCapture.log("桥接断开（" + why + "），" + (delay / 1000) + "s 后重连");
+        // 连两次都连不上，官方 App 大概率被系统回收了，借 Ncm 那条路把进程拉起来
+        if (n >= 1) Ncm.I.wake();
     }
 
-    private void teardown() {
+    private synchronized void startWatchdog() {
+        if (watchStarted) return;
+        watchStarted = true;
+        handler.postDelayed(watch, WATCH_MS);
+    }
+
+    /** 巡检：没会话 / 会话 binder 已死 → 重连。方控全靠这条通道，不能等用户来点。 */
+    private void watchOnce() {
+        try {
+            if (ctx == null) { watchStarted = false; return; }
+            if (mode != MODE_OFFICIAL) { watchStarted = false; return; }
+            if (ctl == null) {
+                if (!connecting) {
+                    LogCapture.log("桥接巡检：没有官方会话，重连");
+                    connect();
+                }
+            } else if (!alive(ctl)) {
+                LogCapture.log("桥接巡检：官方会话已失联，重连");
+                teardown();
+                connect();
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "watchdog 异常", t);
+        } finally {
+            if (ctx != null && mode == MODE_OFFICIAL) handler.postDelayed(watch, WATCH_MS);
+            else watchStarted = false;
+        }
+    }
+
+    private static boolean alive(MediaController c) {
+        try {
+            c.getPlaybackState();
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private synchronized void teardown() {
+        connected = false;
         if (ctl != null) {
             try { ctl.unregisterCallback(cb); } catch (Throwable ignored) {}
             ctl = null;
@@ -199,17 +279,22 @@ class Bridge {
         @Override
         public void onConnected() {
             try {
+                connecting = false;
                 token = browser.getSessionToken();
                 ctl = new MediaController(ctx, token);
                 ctl.registerCallback(cb, handler);
+                connected = true;
+                failCount = 0;
                 Log.i(TAG, "已接管官方 App 的 MediaSession");
+                LogCapture.log("桥接已接管官方会话");
                 // 助手可能刚发过 SYNC 而我们还连不上，这里补一次完整状态。
                 lastKey = "";
                 pushState();
                 pushFull(true);
             } catch (Throwable t) {
                 Log.w(TAG, "接管失败", t);
-                scheduleReconnect();
+                connecting = false;
+                scheduleReconnect("接管失败");
             }
         }
 
@@ -217,14 +302,14 @@ class Bridge {
         public void onConnectionSuspended() {
             Log.w(TAG, "连接被挂起");
             teardown();
-            scheduleReconnect();
+            scheduleReconnect("连接被挂起");
         }
 
         @Override
         public void onConnectionFailed() {
             Log.w(TAG, "连接失败，稍后重试");
             teardown();
-            scheduleReconnect();
+            scheduleReconnect("连接失败");
         }
     };
 
@@ -246,7 +331,7 @@ class Bridge {
         public void onSessionDestroyed() {
             Log.w(TAG, "官方 App 的会话没了，重连");
             teardown();
-            scheduleReconnect();
+            scheduleReconnect("会话被销毁");
         }
 
         @Override
@@ -299,7 +384,12 @@ class Bridge {
 
     private void control(int type) {
         MediaController.TransportControls tc = controls();
-        if (tc == null) return;
+        // 会话没连上不再直接 return：方控会整条哑掉，而手机遥控那边有系统媒体键兜底，
+        // 于是出现「遥控有用、方控没用」。这里补上同样的兜底。
+        if (tc == null && (type == 0 || type == 1 || type == 2)) {
+            fallback(type);
+            return;
+        }
         try {
             if (type == 0) {
                 if (isPlaying()) tc.pause();
@@ -309,7 +399,8 @@ class Bridge {
                 int code = Ncm.I.execute("prev", J.o());
                 if (code != 0) {
                     LogCapture.log("助手 PREV → 官方 skipToPrevious（Ncm 不可用）");
-                    tc.skipToPrevious();
+                    if (tc != null) tc.skipToPrevious();
+                    else fallback(1);
                 } else {
                     LogCapture.log("助手 PREV → Ncm 统一入口");
                 }
@@ -319,7 +410,8 @@ class Bridge {
                 int code = Ncm.I.execute("next", J.o());
                 if (code != 0) {
                     LogCapture.log("助手 NEXT → 官方 skipToNext（Ncm 不可用）");
-                    tc.skipToNext();
+                    if (tc != null) tc.skipToNext();
+                    else fallback(2);
                 } else {
                     LogCapture.log("助手 NEXT → Ncm 统一入口");
                 }
@@ -330,7 +422,24 @@ class Bridge {
             }
         } catch (Throwable t) {
             Log.w(TAG, "控制失败 controlType=" + type, t);
+            // 只有 binder 真的死了才拆会话重连；普通业务异常别把好好的会话弄掉
+            if (ctl != null && !alive(ctl)) {
+                LogCapture.log("控制失败：官方会话 binder 已死，重连");
+                teardown();
+                scheduleReconnect("控制异常");
+            }
+            // 这一下用系统媒体键救场，别让用户按了没反应
+            if (type == 0 || type == 1 || type == 2) fallback(type);
         }
+    }
+
+    /** 兜底：type 0 播放/暂停、1 上一首、2 下一首，直接发系统媒体键给当前活跃会话。 */
+    private void fallback(int type) {
+        int key = type == 0 ? KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+                : type == 1 ? KeyEvent.KEYCODE_MEDIA_PREVIOUS
+                : KeyEvent.KEYCODE_MEDIA_NEXT;
+        boolean ok = Ncm.I.mediaKeyEvent(key);
+        LogCapture.log("方控兜底：桥接无可用会话，改发系统媒体键 " + key + " -> " + ok);
     }
 
     /**

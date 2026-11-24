@@ -93,24 +93,25 @@ public class Main extends Activity {
 
     /** 标题行 + 小方块按钮网格（靠上）+ 状态小方框（可滚动）。 */
     private void buildUi() {
-        int pad = dp(12);
+        int pad = dp(14);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(pad, pad, pad, pad);
-        root.setBackgroundColor(0xFF000000);
+        root.setBackgroundColor(0xFFF7F8F5);
 
         // 标题行：左侧标题，右侧一行迷你状态
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = new TextView(this);
-        title.setText("车机遥控");
-        title.setTextSize(24);
-        title.setTextColor(0xFFFFFFFF);
+        title.setText("设置");
+        title.setTextSize(20);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        title.setTextColor(0xFF202620);
         header.addView(title);
         tvMini = new TextView(this);
-        tvMini.setTextSize(15);
-        tvMini.setTextColor(0xFF8E8E93);
+        tvMini.setTextSize(14);
+        tvMini.setTextColor(0xFF6E7569);
         tvMini.setSingleLine(true);
         LinearLayout.LayoutParams miniLp = new LinearLayout.LayoutParams(0, dp(30), 1f);
         miniLp.setMargins(dp(10), 0, 0, 0);
@@ -146,10 +147,10 @@ public class Main extends Activity {
 
         // 状态小方框：放在按钮下面，超高滚动，不占整屏
         tv = new TextView(this);
-        tv.setTextSize(16);
-        tv.setTextColor(0xFFEDEDF2);
-        tv.setBackgroundColor(0xFF141416);
-        tv.setPadding(dp(8), dp(6), dp(8), dp(6));
+        tv.setTextSize(15);
+        tv.setTextColor(0xFF3F4A42);
+        tv.setBackground(card(0xFFFFFFFF, 0xFFE4E7E1));
+        tv.setPadding(dp(12), dp(10), dp(12), dp(10));
         tv.setGravity(Gravity.TOP | Gravity.START);
         LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
@@ -157,19 +158,19 @@ public class Main extends Activity {
         // 地址栏：只显示，不响应点击（车机屏幕本来就不好选中，复制没意义）
         addrBar = new TextView(this);
         addrBar.setTextSize(16);
-        addrBar.setTextColor(0xFF3EA6FF);
+        addrBar.setTextColor(0xFF40584A);
         addrBar.setSingleLine(true);
-        addrBar.setBackgroundColor(0xFF1A1A1E);
-        addrBar.setPadding(dp(8), dp(8), dp(8), dp(8));
+        addrBar.setBackground(card(0xFFFFFFFF, 0xFFE4E7E1));
+        addrBar.setPadding(dp(12), dp(8), dp(12), dp(8));
         body.addView(addrBar, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(46)));
         // 车控地址：18766 由车机助手常驻提供，和音乐这条线互不影响
         carBar = new TextView(this);
         carBar.setTextSize(16);
-        carBar.setTextColor(0xFF7CD992);
+        carBar.setTextColor(0xFF55705F);
         carBar.setSingleLine(true);
-        carBar.setBackgroundColor(0xFF1A1A1E);
-        carBar.setPadding(dp(8), dp(8), dp(8), dp(8));
+        carBar.setBackground(card(0xFFFFFFFF, 0xFFE4E7E1));
+        carBar.setPadding(dp(12), dp(8), dp(12), dp(8));
         LinearLayout.LayoutParams carLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(46));
         carLp.setMargins(0, dp(6), 0, 0);
@@ -199,19 +200,25 @@ public class Main extends Activity {
         return r;
     }
 
+    /** 白色圆角卡片：跟小绿传一个规格（18dp 圆角 + 1dp 细描边） */
+    private Drawable card(int fill, int stroke) {
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(fill);
+        g.setCornerRadius(dp(18));
+        if (stroke != 0) g.setStroke(Math.max(1, dp(1)), stroke);
+        return g;
+    }
+
     /** 纯色圆角底 */
     private Drawable tileBg(int color) {
-        GradientDrawable g = new GradientDrawable();
-        g.setColor(color);
-        g.setCornerRadius(dp(10));
-        return g;
+        return card(color, 0);
     }
 
     /** 按下变亮、松开复原：不然点了像没反应 */
     private Drawable tileState() {
         StateListDrawable d = new StateListDrawable();
-        d.addState(new int[]{android.R.attr.state_pressed}, tileBg(0xFF4C4C54));
-        d.addState(new int[]{}, tileBg(0xFF1C1C1E));
+        d.addState(new int[]{android.R.attr.state_pressed}, card(0xFFE7EEE8, 0xFFE4E7E1));
+        d.addState(new int[]{}, card(0xFFFFFFFF, 0xFFE4E7E1));
         return d;
     }
 
@@ -219,8 +226,9 @@ public class Main extends Activity {
     private Button square(int code, String text) {
         Button b = new Button(this);
         b.setText(text);
-        b.setTextSize(22);
-        b.setTextColor(0xFFEDEDF2);
+        b.setTextSize(20);
+        b.setTextColor(0xFF2E4338);
+        b.setTypeface(null, android.graphics.Typeface.BOLD);
         b.setBackground(tileState());
         b.setGravity(Gravity.CENTER);
         b.setAllCaps(false);
@@ -349,8 +357,8 @@ public class Main extends Activity {
             View v = switchRow.getChildAt(n);
             if (!(v instanceof Button)) continue;
             boolean active = (n == 0) == !third;
-            v.setBackground(tileBg(active ? 0xFF3A3A3C : 0xFF1C1C1E));
-            ((Button) v).setTextColor(active ? 0xFFFFFFFF : 0xFF8E8E93);
+            v.setBackground(active ? tileBg(0xFF40584A) : card(0xFFFFFFFF, 0xFFE4E7E1));
+            ((Button) v).setTextColor(active ? 0xFFFFFFFF : 0xFF6E7569);
         }
     }
 
