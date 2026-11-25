@@ -33,12 +33,14 @@ final class DvrProxy {
     private static final int FS_READ_MS = 9000;
     /**
      * 首字节预算。以前一个形态一直挂到 9 秒，三个形态就是 27 秒 —— 记录仪明明活得好好的，
-     * 用户也要等半分钟。现在分开给：记住的形态给足（弱设备慢启动实测 3~6 秒），
+     * 用户也要等半分钟。现在按「记不记得这台设备」分开给：
+     * 记住的形态最值得等（实测醒着 1.0~1.3 秒，刚醒来的第一次要 7 秒），
      * 换形态试探只给短的，不对就赶紧换下一个。
      */
-    private static final int HEAD_MS = 6000;
-    private static final int HEAD_RETRY_MS = 4500;
-    private static final int HEAD_PROBE_MS = 3000;
+    private static final int HEAD_KNOWN_MS = 8000;
+    private static final int HEAD_RETRY_MS = 7000;
+    private static final int HEAD_FIRST_MS = 6000;
+    private static final int HEAD_PROBE_MS = 2500;
     /**
      * 请求形态。
      * 0 = HTTP/1.1 + Connection: close
@@ -629,6 +631,7 @@ final class DvrProxy {
         if (hit != null) { note("browse " + dir + " 缓存命中"); return hit; }
 
         String[] page;
+        String json = null;
         synchronized (FS_LOCK) {
             /*
              * 等锁期间别的线程可能已经抓到了，所以这里要复核缓存。
@@ -636,6 +639,10 @@ final class DvrProxy {
              * 等锁的那一两秒里别的线程写进来的新缓存，时间比 now 还晚，
              * 算出来是负数、判成过期，于是每个并发请求都要再打一次设备 ——
              * 十来路并发就变成「一秒抓一次、连抓一分钟」，记录仪直接被打软。
+             *
+             * 另外落缓存也必须在这把锁里：以前解析和 put 放在锁外，
+             * 后面排队的线程会在「抓完还没 put」的那几毫秒里重新抓一遍 ——
+             * 现场日志里 NOR 那个 135KB 的目录页一秒被连抓 3~8 次就是这么来的。
              */
             long t2 = System.currentTimeMillis();
             hit = cacheGet(key, t2, CACHE_FRESH_MS);
@@ -645,17 +652,20 @@ final class DvrProxy {
             }
             page = httpFetch(ip, dir, FS_MAX);
             now = t2;
+            if (page[0].length() > 0) {
+                json = parseList(page[0], dir, ip, page[1]);
+                if (page[1].indexOf("不完整") >= 0) {
+                    // 半截页先给页面用（总比白屏强），但绝不落缓存，下次重新抓完整的
+                    note("browse " + dir + " 抓到半截，本次不落缓存");
+                } else {
+                    DIR_CACHE.put(key, json);
+                    DIR_CACHE_STAT.put(key, page[1]);
+                    DIR_CACHE_T.put(key, Long.valueOf(now));
+                }
+            }
         }
 
-        if (page[0].length() > 0) {
-            String json = parseList(page[0], dir, ip, page[1]);
-            synchronized (FS_LOCK) {
-                DIR_CACHE.put(key, json);
-                DIR_CACHE_STAT.put(key, page[1]);
-                DIR_CACHE_T.put(key, Long.valueOf(now));
-            }
-            return json;
-        }
+        if (json != null) return json;
 
         // 抓空了：5 分钟内拿上次成功的列表顶上，页面标个「旧」，总比白屏强
         String stale = cacheGet(key, now, CACHE_STALE_MS);
@@ -984,10 +994,10 @@ final class DvrProxy {
         String stat = "";
         int known = modeFor(ip);
         if (known >= 0) {
-            String[] r = httpOnce(ip, path, max, known, HEAD_MS);
+            String[] r = httpOnce(ip, path, max, known, HEAD_KNOWN_MS);
             if (r[0].length() > 0) return r;
             stat = r[1];
-            // 连上了却一个字节不回：弱设备常被上一个请求拖着，同一形态再给一次
+            // 连上了却一个字节不回：设备刚醒时目录页要现生成（实测 7 秒），同一形态再给一次
             if (stat.indexOf("没有任何应答") >= 0) {
                 r = httpOnce(ip, path, max, known, HEAD_RETRY_MS);
                 if (r[0].length() > 0) return r;
@@ -1001,19 +1011,23 @@ final class DvrProxy {
                 note("形态修正 " + ip + " -> " + alt);
                 return r;
             }
-        } else {
-            int[] order = new int[] { MODE_10, MODE_KEEP, MODE_CLOSE };
-            for (int i = 0; i < order.length; i++) {
-                String[] r = httpOnce(ip, path, max, order[i], i == 0 ? HEAD_MS : HEAD_PROBE_MS);
-                if (r[0].length() > 0) {
-                    rememberMode(ip, order[i]);
-                    note("记住形态 " + ip + " -> " + order[i]);
-                    return r;
-                }
-                stat = r[1];
-                // 连都连不上，换形态也没用（别白等后面几个超时）
-                if (stat.toLowerCase().indexOf("connect") >= 0) break;
+            // 已经知道这台设备讲什么 HTTP 了，不用再打根路径做基线，省 4 秒
+            coolKey = key;
+            coolUntil = System.currentTimeMillis() + FAIL_COOL_MS;
+            return new String[] { "", stat.length() > 0 ? stat : "ERR 记录仪没有应答" };
+        }
+
+        int[] order = new int[] { MODE_10, MODE_KEEP, MODE_CLOSE };
+        for (int i = 0; i < order.length; i++) {
+            String[] r = httpOnce(ip, path, max, order[i], i == 0 ? HEAD_FIRST_MS : HEAD_PROBE_MS);
+            if (r[0].length() > 0) {
+                rememberMode(ip, order[i]);
+                note("记住形态 " + ip + " -> " + order[i]);
+                return r;
             }
+            stat = r[1];
+            // 连都连不上，换形态也没用（别白等后面几个超时）
+            if (stat.toLowerCase().indexOf("connect") >= 0) break;
         }
 
         baseline(ip);
@@ -1151,6 +1165,20 @@ final class DvrProxy {
             byte[] raw = all.toByteArray();
             String status = statusOf(raw);
             String text = decodeHttp(raw);
+            /*
+             * 断在半截的目录页不能当成功：现场日志里 NOR 第一次回的是 11680 字节
+             * （整页 135KB），解析出来会少一大截记录，还会被缓存 45 秒。
+             * 判据：有 Content-Length 就看收够没；否则看有没有 </html> / chunked 结束块。
+             */
+            int bodyLen = all.size() - headSb.length();
+            boolean complete = clen > 0
+                    ? bodyLen >= Math.min(clen, max)
+                    : (chunked ? endsChunk(all) : endsHtml(all));
+            if (!complete && text.length() > 0) {
+                status = status + "·不完整";
+                note("fs " + path + " 形态" + mode + " 正文不完整 已收 " + bodyLen
+                        + " 字节（clen=" + clen + " chunked=" + chunked + "）");
+            }
             note("fs " + path + " [" + status + "] 形态" + mode + " 连" + tConn
                     + "ms 首字节" + tFirst + "ms len=" + clen + " -> " + text.length());
             return new String[] { text, status };
