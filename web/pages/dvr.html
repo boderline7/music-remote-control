@@ -87,11 +87,16 @@
   .pv .pvtip.on{opacity:1}
   /* 自绘控制条：原生 controls 在 WebView 里状态常和真实播放状态打架 */
   .pv .pvw{position:relative;flex:1;min-height:0;display:flex}
-  .pv .pvplay{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-    width:64px;height:64px;border-radius:50%;border:1px solid rgba(255,255,255,.28);
-    background:rgba(0,0,0,.42);color:#fff;font-size:24px;line-height:1;display:none;
+  /* 悬浮层只在暂停时出现：播放中不挡画面 */
+  .pv .pvov{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);
+    display:none;align-items:center;justify-content:center;gap:26px}
+  .pv .pvov.on{display:flex}
+  .pv .pvplay{width:64px;height:64px;border-radius:50%;border:1px solid rgba(255,255,255,.28);
+    background:rgba(0,0,0,.46);color:#fff;font-size:24px;line-height:1;
     -webkit-tap-highlight-color:transparent}
-  .pv .pvplay.on{display:block}
+  .pv .pvskip{height:44px;padding:0 16px;border-radius:999px;color:#fff;font-size:13px;
+    background:rgba(0,0,0,.46);border:1px solid rgba(255,255,255,.26);
+    -webkit-tap-highlight-color:transparent}
   .pv .pvbar{display:flex;align-items:center;gap:10px;padding:6px 16px 0}
   .pv .pvbar .tt{font-size:11px;color:var(--dim);min-width:36px;text-align:center;
     font-variant-numeric:tabular-nums}
@@ -136,7 +141,11 @@ html.pane .top{display:none}
   <div class="pvw">
     <video id="pvVideo" playsinline webkit-playsinline preload="metadata"></video>
     <div class="pvtip" id="pvTip"></div>
-    <button class="pvplay" id="pvPlay">▶</button>
+    <div class="pvov" id="pvOv">
+      <button class="pvskip" id="pvBack">−10s</button>
+      <button class="pvplay" id="pvPlay">▶</button>
+      <button class="pvskip" id="pvFwd">+10s</button>
+    </div>
   </div>
   <div class="pvbar">
     <span class="tt" id="pvCur">0:00</span>
@@ -309,6 +318,7 @@ html.pane .top{display:none}
      所以不会出现「一下播放一下暂停」的抖。 */
   var pvDir = '', pvName = '';
   var pvCache = 0, pvSize = 0, pvTried = false, pvDrag = false, pvTimer = null;
+  var pvJumpTimer = null, pvWantPlay = false;
 
   function fmtT(s) {
     if (!isFinite(s) || s < 0) s = 0;
@@ -324,11 +334,13 @@ html.pane .top{display:none}
     e.textContent = t || '';
     e.className = 'pvtip' + (t ? ' on' : '');
   }
+  /* 悬浮层只在「暂停 / 播完 / 等缓存」时出现；播放中整层隐藏，不挡画面 */
   function pvPaintBtn() {
-    var v = el('pvVideo'), b = el('pvPlay');
-    if (!v || !b) return;
-    b.textContent = (v.paused || v.ended) ? '▶' : '⏸';
-    b.className = 'pvplay on';
+    var v = el('pvVideo'), b = el('pvPlay'), ov = el('pvOv');
+    if (!v || !b || !ov) return;
+    var idle = v.paused || v.ended;
+    b.textContent = v.ended ? '↻' : '▶';
+    ov.className = 'pvov' + (idle ? ' on' : '');
   }
   function pvBadge() {
     var e = el('pvCache');
@@ -351,21 +363,67 @@ html.pane .top{display:none}
       if (pvCache && !was) toast('这段已缓存到车机，下次拖动就秒到');
     }, function () {});
   }
+  function pvStopJump() {
+    if (pvJumpTimer) { clearInterval(pvJumpTimer); pvJumpTimer = null; }
+    pvWantPlay = false;
+  }
+
+  /*
+   * 跳转按标准播放器的做法：先暂停，把目标位置附近的这一段取下来，
+   * 缓冲够了再自动接着放 —— 而不是一边拖一边让弱记录仪同时应付播放和取数。
+   */
+  function pvJump(t, resume) {
+    var v = el('pvVideo');
+    if (!isFinite(v.duration) || v.duration <= 0) return;
+    t = Math.max(0, Math.min(v.duration - 0.2, t));
+    try { v.pause(); } catch (e) {}
+    pvPaintBtn();
+    pvTip('取这一段…');
+    try { v.currentTime = t; } catch (e) {}
+    pvStopJump();
+    pvWantPlay = resume !== false;
+    var until = Date.now() + 30000;
+    pvJumpTimer = setInterval(function () {
+      if (!pvName) { pvStopJump(); return; }
+      var ok = false;
+      try {
+        for (var i = 0; i < v.buffered.length; i++) {
+          if (t + 0.4 >= v.buffered.start(i) && t + 0.4 <= v.buffered.end(i)) { ok = true; break; }
+        }
+      } catch (e) {}
+      if (ok && v.readyState >= 2) {
+        var go = pvWantPlay;
+        pvStopJump();
+        pvTip('');
+        if (go) {
+          var p = v.play();
+          if (p && p.catch) p.catch(function () {});
+        }
+        return;
+      }
+      if (Date.now() > until) {
+        pvStopJump();
+        pvTip('这一段取不动，点「下载」再看');
+      }
+    }, 120);
+  }
+
   function pvSeek(to) {
     var v = el('pvVideo');
-    var d = v.duration;
-    if (!isFinite(d) || d <= 0) return;
-    var t = (to / 1000) * d;
-    var buffered = 0;
-    try { if (v.buffered.length) buffered = v.buffered.end(v.buffered.length - 1); } catch (e) {}
-    /* 没缓存又拖到还没下到的位置：说实话，别装死 */
-    pvTip(!pvCache && t > buffered + 0.3 ? '跳转中，从记录仪取这一段…' : '跳转中…');
-    try { v.currentTime = t; } catch (e) {}
-    var p = v.play();
-    if (p && p.catch) p.catch(function () {});
+    if (!isFinite(v.duration) || v.duration <= 0) return;
+    pvJump((to / 1000) * v.duration, true);
+  }
+
+  function pvSkip(delta) {
+    var v = el('pvVideo');
+    pvJump((v.currentTime || 0) + delta, true);
   }
   function pvToggle() {
     var v = el('pvVideo');
+    pvStopJump();
+    if (v.ended) {
+      try { v.currentTime = 0; } catch (e) {}
+    }
     if (v.paused || v.ended) {
       var p = v.play();
       if (p && p.catch) p.catch(function () {});
@@ -406,6 +464,8 @@ html.pane .top{display:none}
       pvTip('这段播不了（格式或网络），点「下载」用播放器看');
     });
     el('pvPlay').addEventListener('click', pvToggle);
+    el('pvBack').addEventListener('click', function () { pvSkip(-10); });
+    el('pvFwd').addEventListener('click', function () { pvSkip(10); });
     v.addEventListener('click', pvToggle);
     var bar = el('pvSeek');
     bar.addEventListener('input', function () {
@@ -421,6 +481,7 @@ html.pane .top{display:none}
   })();
 
   function preview(dir, f) {
+    pvStopJump();
     pvDir = dir; pvName = f;
     pvCache = 0; pvSize = 0; pvTried = false; pvDrag = false;
     el('pvName').textContent = f;
@@ -441,6 +502,7 @@ html.pane .top{display:none}
   }
   function closePv() {
     if (pvTimer) { clearInterval(pvTimer); pvTimer = null; }
+    pvStopJump();
     var v = el('pvVideo');
     try { v.pause(); } catch (e) {}
     v.removeAttribute('src');
