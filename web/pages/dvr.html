@@ -51,6 +51,12 @@
   .up{height:30px;padding:0 12px;border-radius:8px;border:1px solid var(--line);
     background:rgba(255,255,255,.05);color:var(--dim);font-size:12px}
   .up:active{background:rgba(250,45,72,.3);color:#fff}
+  /* 展开后的「下一页 / 收起」并排 */
+  .mrow{display:flex;gap:8px;margin:6px 18px 0}
+  .mrow .more{margin:0;flex:1;width:auto}
+  /* 展开后的「下一页 / 收起」并排 */
+  .mrow{display:flex;gap:8px;margin:6px 18px 0}
+  .mrow .more{margin:0;flex:1;width:auto}
   .more{margin:6px 18px 0;width:calc(100% - 36px);height:38px;border-radius:10px;
     border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--dim);font-size:13px}
   .more:active{background:rgba(250,45,72,.25);color:#fff}
@@ -171,7 +177,9 @@ html.pane .top{display:none}
 
   var TITLE = { normal: '普通录像', event: '事件录像' };
   var DEF = { normal: '/SD0/NOR/M_video/', event: '/SD0/EVT/M_video/' };
-  var opened = { normal: false, event: false };    // 「更多」是否展开
+  var opened = { normal: false, event: false };    // 是否已展开
+  var pages = { normal: 1, event: 1 };            // 展开后翻到第几页
+  var PAGE = 20;                                  // 展开后一页 20 条，别一次全铺开
   var state = { normal: null, event: null };       // 最近一次返回：展开/收起时本地重绘，不重发请求
   var FAILBTNS = '<div class="row2"><button data-retry="1">重试</button>' +
     '<button data-diag="1">诊断</button><button data-fixip="1">指定 IP</button></div>';
@@ -378,11 +386,12 @@ html.pane .top{display:none}
     t = Math.max(0, Math.min(v.duration - 0.2, t));
     try { v.pause(); } catch (e) {}
     pvPaintBtn();
-    pvTip('取这一段…');
+    pvTip('');
     try { v.currentTime = t; } catch (e) {}
     pvStopJump();
     pvWantPlay = resume !== false;
     var until = Date.now() + 30000;
+    var softTip = Date.now() + 1500;      // 只是慢的时候才提示，暂停本身就只留符号
     pvJumpTimer = setInterval(function () {
       if (!pvName) { pvStopJump(); return; }
       var ok = false;
@@ -401,6 +410,7 @@ html.pane .top{display:none}
         }
         return;
       }
+      if (Date.now() > softTip) pvTip('取这一段…');
       if (Date.now() > until) {
         pvStopJump();
         pvTip('这一段取不动，点「下载」再看');
@@ -566,7 +576,7 @@ html.pane .top{display:none}
     }
 
     if (total) {
-      var show = opened[type] ? total : Math.min(5, total);
+      var show = opened[type] ? Math.min(PAGE * pages[type], total) : Math.min(5, total);
       h += '<div class="list">';
       for (var k = 0; k < show; k++) {
         var it = list[k];
@@ -578,8 +588,15 @@ html.pane .top{display:none}
       }
       h += '</div>';
       if (total > 5) {
-        h += '<button class="more" data-more="1">' +
-          (opened[type] ? '收起' : '更多（共 ' + total + ' 条）') + '</button>';
+        if (!opened[type]) {
+          h += '<button class="more" data-more="1">展开（共 ' + total + ' 条）</button>';
+        } else {
+          h += '<div class="mrow">';
+          if (show < total) {
+            h += '<button class="more" data-more="1">下一页（还有 ' + (total - show) + ' 条）</button>';
+          }
+          h += '<button class="more" data-collapse="1">收起</button></div>';
+        }
       }
     } else if (!dirs.length) {
       h += '<div class="empty">这个目录里没有录像</div>' + frame(dir);
@@ -598,13 +615,25 @@ html.pane .top{display:none}
       var t = ev.target;
       while (t && t !== sec && !(t.getAttribute && (t.getAttribute('data-go') ||
         t.getAttribute('data-file') || t.getAttribute('data-path') ||
-        t.getAttribute('data-dl') || t.getAttribute('data-more')))) {
+        t.getAttribute('data-dl') || t.getAttribute('data-more') ||
+        t.getAttribute('data-collapse')))) {
         t = t.parentNode;
       }
       if (!t || t === sec) return;
 
       if (t.getAttribute('data-more')) {
-        opened[type] = !opened[type];
+        if (!opened[type]) {           // 首次展开：一页 20 条
+          opened[type] = true;
+          pages[type] = 1;
+        } else {
+          pages[type]++;               // 再点就是下一页
+        }
+        paint(type);
+        return;
+      }
+      if (t.getAttribute('data-collapse')) {
+        opened[type] = false;
+        pages[type] = 1;
         paint(type);
         return;
       }
@@ -617,11 +646,12 @@ html.pane .top{display:none}
         if (nv.charAt(0) !== '/') nv = '/' + nv;
         if (nv.charAt(nv.length - 1) !== '/') nv += '/';
         opened[type] = false;
+        pages[type] = 1;
         load(type, nv);
         return;
       }
       var go = t.getAttribute('data-go');
-      if (go) { opened[type] = false; load(type, go); return; }
+      if (go) { opened[type] = false; pages[type] = 1; load(type, go); return; }
       var dl = t.getAttribute('data-dl');
       if (dl) { download(sec.dataset.dir || DEF[type], dl); return; }
       var f = t.getAttribute('data-file');
@@ -636,6 +666,7 @@ html.pane .top{display:none}
   var RETRY_GAP = [0];
   function load(type, path, left) {
     if (left === undefined) left = RETRY_GAP.length - 1;
+    opened[type] = false; pages[type] = 1;      // 换了目录就回到「5 条 + 展开」
     var my = seq;
     var target = path || DEF[type];
     curPath = target;                             // 记下当前目录，复制按钮用它
