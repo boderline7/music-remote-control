@@ -85,6 +85,19 @@
     padding:8px 16px;border-radius:999px;background:rgba(0,0,0,.66);color:#fff;
     font-size:12.5px;pointer-events:none;opacity:0;transition:opacity .15s}
   .pv .pvtip.on{opacity:1}
+  /* 自绘控制条：原生 controls 在 WebView 里状态常和真实播放状态打架 */
+  .pv .pvw{position:relative;flex:1;min-height:0;display:flex}
+  .pv .pvplay{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:64px;height:64px;border-radius:50%;border:1px solid rgba(255,255,255,.28);
+    background:rgba(0,0,0,.42);color:#fff;font-size:24px;line-height:1;display:none;
+    -webkit-tap-highlight-color:transparent}
+  .pv .pvplay.on{display:block}
+  .pv .pvbar{display:flex;align-items:center;gap:10px;padding:6px 16px 0}
+  .pv .pvbar .tt{font-size:11px;color:var(--dim);min-width:36px;text-align:center;
+    font-variant-numeric:tabular-nums}
+  .pv .pvbar input[type=range]{flex:1;height:24px;accent-color:var(--primary)}
+  .pv .pvcache{flex:1;font-size:11px;color:var(--dim);align-self:center;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .pv .bar2{display:flex;gap:8px;padding:10px 14px calc(12px + env(safe-area-inset-bottom))}
   .pv .bar2 .btn{height:42px}
   #toast.on{opacity:1}
@@ -120,9 +133,18 @@ html.pane .top{display:none}
 
 <div class="pv" id="pv">
   <div class="nm" id="pvName"></div>
-  <video id="pvVideo" controls playsinline></video>
-  <div class="pvtip" id="pvTip"></div>
+  <div class="pvw">
+    <video id="pvVideo" playsinline webkit-playsinline preload="metadata"></video>
+    <div class="pvtip" id="pvTip"></div>
+    <button class="pvplay" id="pvPlay">▶</button>
+  </div>
+  <div class="pvbar">
+    <span class="tt" id="pvCur">0:00</span>
+    <input type="range" id="pvSeek" min="0" max="1000" step="1" value="0">
+    <span class="tt" id="pvDur">0:00</span>
+  </div>
   <div class="bar2">
+    <span class="pvcache" id="pvCache">—</span>
     <button class="btn" id="pvClose">关闭</button>
     <button class="btn primary" id="pvDl">下载</button>
   </div>
@@ -238,8 +260,9 @@ html.pane .top{display:none}
   function encodePath(p) {
     return String(p || '').split('/').map(encodeURIComponent).join('/');
   }
+  /* 一律走车机中转：只有这条路有本地缓存（命中就整段秒出、拖动秒到）。
+     手机能直连记录仪时不走缓存、弱设备一拖就卡，所以不再默认直连。 */
   function fileUrl(p, dl) {
-    if (direct && curIp) return 'http://' + curIp + encodePath(p);
     return '/dvr/file?p=' + encodeURIComponent(p) + (dl ? '&dl=1' : '');
   }
 
@@ -279,12 +302,21 @@ html.pane .top{display:none}
     toast('开始下载 ' + f);
   }
 
-  /* 预览：同一条 /dvr/file，只是不带 dl=1，后端就回内联视频流。
-     能直连就直接读记录仪；不能就走车机（车机会顺手缓存，第二次起本地出）。 */
-  var pvDir = '', pvName = '', pvRetried = false;
-  /* 提示只在「真的没画面可看」时出。
-     画面已经在动、缓冲也够（readyState>=3），任何「缓冲中/缓冲 42%」都收掉 ——
-     一边播一边压着缓存提示，看着就是自相矛盾。 */
+  /* 预览：走 /dvr/file（车机中转），这样才有本地缓存。
+     缓存命中 = 整段在车机本地，随便拖都秒到；没命中 = 边播边存，
+     拖到还没下到的位置会如实提示「跳转中」。
+     播放/暂停一律由 video 事件驱动按钮图标，不再自己改文案，
+     所以不会出现「一下播放一下暂停」的抖。 */
+  var pvDir = '', pvName = '';
+  var pvCache = 0, pvSize = 0, pvTried = false, pvDrag = false, pvTimer = null;
+
+  function fmtT(s) {
+    if (!isFinite(s) || s < 0) s = 0;
+    s = Math.round(s);
+    var m = Math.floor(s / 60), r = s % 60;
+    return m + ':' + (r < 10 ? '0' : '') + r;
+  }
+  /* 提示只在「真的没画面可看」时出 */
   function pvTip(t) {
     var e = el('pvTip');
     var v = el('pvVideo');
@@ -292,54 +324,129 @@ html.pane .top{display:none}
     e.textContent = t || '';
     e.className = 'pvtip' + (t ? ' on' : '');
   }
-  function preview(dir, f) {
-    pvDir = dir; pvName = f;
-    pvRetried = false;
-    el('pvName').textContent = f + (direct ? ' · 直连' : ' · 中转');
+  function pvPaintBtn() {
+    var v = el('pvVideo'), b = el('pvPlay');
+    if (!v || !b) return;
+    b.textContent = (v.paused || v.ended) ? '▶' : '⏸';
+    b.className = 'pvplay on';
+  }
+  function pvBadge() {
+    var e = el('pvCache');
+    if (!e) return;
+    if (pvCache) {
+      var mb = pvSize > 0 ? (Math.round(pvSize / 104857.6) / 10) + ' MB · ' : '';
+      e.textContent = '已缓存 · ' + mb + '拖动秒到';
+    } else {
+      e.textContent = '未缓存 · 边播边存，拖太快会等一下';
+    }
+  }
+  function pvInfo() {
+    if (!pvName) return;
+    api('/dvr/info?p=' + encodeURIComponent(pvDir + pvName), 6000).then(function (d) {
+      if (!d || !d.ok) return;
+      var was = pvCache;
+      pvCache = d.cached ? 1 : 0;
+      pvSize = d.size || 0;
+      pvBadge();
+      if (pvCache && !was) toast('这段已缓存到车机，下次拖动就秒到');
+    }, function () {});
+  }
+  function pvSeek(to) {
     var v = el('pvVideo');
-    pvTip('缓冲中…');
-    v.onwaiting = function () { pvTip('缓冲中…'); };
-    v.onstalled = function () { pvTip('网络慢，正在续…'); };
-    v.onplaying = function () { pvTip(''); };
-    v.oncanplay = function () { pvTip(''); };
-    v.onprogress = function () {
-      try {
-        if (v.buffered.length && v.duration) {
-          var pct = Math.round(v.buffered.end(v.buffered.length - 1) / v.duration * 100);
-          if (pct < 99) pvTip('缓冲 ' + pct + '%');
-          else pvTip('');
-        }
-      } catch (e) {}
-    };
-    v.onerror = function () {
-      /* 直连探测只试了根路径，文件路径万一不通就自动退回车机中转，别让用户卡死 */
-      if (direct && !pvRetried) {
-        pvRetried = true;
-        pvTip('直连失败，改走车机中转…');
-        v.src = '/dvr/file?p=' + encodeURIComponent(dir + f);
-        var p2 = v.play();
-        if (p2 && p2.catch) p2.catch(function () {});
-        return;
-      }
-      pvTip('这个格式播不了，点「下载」用播放器看');
-    };
-    v.src = fileUrl(dir + f, false);
-    el('pv').className = 'pv on';
+    var d = v.duration;
+    if (!isFinite(d) || d <= 0) return;
+    var t = (to / 1000) * d;
+    var buffered = 0;
+    try { if (v.buffered.length) buffered = v.buffered.end(v.buffered.length - 1); } catch (e) {}
+    /* 没缓存又拖到还没下到的位置：说实话，别装死 */
+    pvTip(!pvCache && t > buffered + 0.3 ? '跳转中，从记录仪取这一段…' : '跳转中…');
+    try { v.currentTime = t; } catch (e) {}
     var p = v.play();
     if (p && p.catch) p.catch(function () {});
   }
-  function closePv() {
+  function pvToggle() {
     var v = el('pvVideo');
-    v.onerror = null;
-    v.onwaiting = null;
-    v.onstalled = null;
-    v.onplaying = null;
-    v.oncanplay = null;
-    v.onprogress = null;
+    if (v.paused || v.ended) {
+      var p = v.play();
+      if (p && p.catch) p.catch(function () {});
+    } else {
+      v.pause();
+    }
+  }
+
+  (function bindPv() {
+    var v = el('pvVideo');
+    v.addEventListener('play', pvPaintBtn);
+    v.addEventListener('pause', pvPaintBtn);
+    v.addEventListener('ended', function () { pvPaintBtn(); pvTip('播完了，再点一次重播'); });
+    v.addEventListener('playing', function () { pvTip(''); pvPaintBtn(); });
+    v.addEventListener('canplay', function () { pvTip(''); });
+    v.addEventListener('waiting', function () { pvTip('缓冲中…'); });
+    v.addEventListener('stalled', function () { pvTip('网络慢，正在续…'); });
+    v.addEventListener('loadedmetadata', function () {
+      el('pvDur').textContent = fmtT(v.duration);
+      el('pvSeek').value = 0;
+    });
+    v.addEventListener('timeupdate', function () {
+      if (pvDrag) return;
+      var d = v.duration;
+      if (isFinite(d) && d > 0) el('pvSeek').value = Math.round(v.currentTime / d * 1000);
+      el('pvCur').textContent = fmtT(v.currentTime);
+    });
+    v.addEventListener('error', function () {
+      /* 只在「还没播起来」时换源，播到一半不折腾 */
+      if (!pvTried && direct && pvName && curIp) {
+        pvTried = true;
+        pvTip('车机中转失败，改直连…');
+        v.src = 'http://' + curIp + encodePath(pvDir + pvName);
+        var p = v.play();
+        if (p && p.catch) p.catch(function () {});
+        return;
+      }
+      pvTip('这段播不了（格式或网络），点「下载」用播放器看');
+    });
+    el('pvPlay').addEventListener('click', pvToggle);
+    v.addEventListener('click', pvToggle);
+    var bar = el('pvSeek');
+    bar.addEventListener('input', function () {
+      pvDrag = true;
+      var d = v.duration;
+      if (isFinite(d) && d > 0) el('pvCur').textContent = fmtT(parseInt(bar.value, 10) / 1000 * d);
+    });
+    bar.addEventListener('change', function () {
+      pvDrag = false;
+      pvSeek(parseInt(bar.value, 10));
+    });
+    pvPaintBtn();
+  })();
+
+  function preview(dir, f) {
+    pvDir = dir; pvName = f;
+    pvCache = 0; pvSize = 0; pvTried = false; pvDrag = false;
+    el('pvName').textContent = f;
+    el('pvCur').textContent = '0:00';
+    el('pvDur').textContent = '0:00';
+    el('pvSeek').value = 0;
+    pvBadge();
+    pvTip('缓冲中…');
+    var v = el('pvVideo');
+    v.src = '/dvr/file?p=' + encodeURIComponent(dir + f);
+    el('pv').className = 'pv on';
+    pvPaintBtn();
+    var p = v.play();
+    if (p && p.catch) p.catch(function () {});
+    pvInfo();
+    if (pvTimer) clearInterval(pvTimer);
+    pvTimer = setInterval(pvInfo, 6000);
+  }
+  function closePv() {
+    if (pvTimer) { clearInterval(pvTimer); pvTimer = null; }
+    var v = el('pvVideo');
     try { v.pause(); } catch (e) {}
     v.removeAttribute('src');
     try { v.load(); } catch (e) {}
     pvTip('');
+    pvName = '';
     el('pv').className = 'pv';
   }
   el('pvClose').addEventListener('click', closePv);

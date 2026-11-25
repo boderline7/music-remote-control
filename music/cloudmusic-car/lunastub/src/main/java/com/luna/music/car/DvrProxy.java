@@ -355,6 +355,14 @@ final class DvrProxy {
         }
     }
 
+    /** 文件缓存状态：cached=1 表示整段已在车机本地，size 是字节数 */
+    static String fileInfo(String path) {
+        File f = cachedFile(path);
+        long n = f == null ? 0 : f.length();
+        return "{\"ok\":1,\"cached\":" + (f != null ? 1 : 0)
+                + ",\"size\":" + n + ",\"p\":" + q(path) + "}";
+    }
+
     /** 已完成缓存的本地文件；没有就 null */
     static File cachedFile(String path) {
         File d = fileCacheDir;

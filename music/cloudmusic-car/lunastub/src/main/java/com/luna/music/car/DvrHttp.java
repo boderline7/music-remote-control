@@ -61,6 +61,13 @@ final class DvrHttp {
                 json(out, DvrProxy.browse(p));
             } else if ("/dvr/fs".equals(path)) {
                 html(out, DvrProxy.page(param(query, "p")));
+            } else if ("/dvr/info".equals(path)) {
+                String p = safePath(param(query, "p"));
+                if (p == null) {
+                    json(out, "{\"ok\":0,\"err\":\"bad path\"}");
+                    return;
+                }
+                json(out, DvrProxy.fileInfo(p));
             } else if ("/dvr/file".equals(path)) {
                 String p = safePath(param(query, "p"));
                 if (p == null) {
@@ -104,8 +111,12 @@ final class DvrHttp {
             return;
         }
         String range = headers == null ? null : headers.get("range");
-        // 只认「从头要整段」：bytes=0-。bytes=0-1023 是探长度，bytes=5000- 是拖进度，都不落盘。
-        boolean fromZero = range == null || "bytes=0-".equals(range.trim().toLowerCase());
+        // 只要从 0 开始的请求都算「从头」，都值得落盘：
+        // bytes=0-（整段）、bytes=0-1023（探长度）、bytes=0-<总长>（ExoPlayer 常见）。
+        // bytes=5000- 这种才是拖进度，落不落无所谓，直接透传。
+        String rangeLow = range == null ? "" : range.trim().toLowerCase();
+        boolean fromZero = range == null || rangeLow.length() == 0
+                || rangeLow.startsWith("bytes=0-");
 
         Socket up = new Socket();
         File tmp = null;
@@ -185,12 +196,23 @@ final class DvrHttp {
             if ("HEAD".equals(method)) return;
 
             byte[] buf = new byte[32768];
+            boolean[] gone = new boolean[] { false };
+            // 播放器一拖进度就把连接断了。以前这里跟着退出，缓存永远半截；
+            // 现在只要还在落盘就继续把它下完（最多再花 3 分钟），下次就整段本地出。
+            long keepUntil = System.currentTimeMillis() + 180_000L;
             if (chunked) {
-                got = copyChunked(uin, out, fos, buf);
+                got = copyChunked(uin, out, fos, buf, gone);
             } else {
                 int n;
                 while ((n = uin.read(buf)) > 0) {
-                    out.write(buf, 0, n);
+                    if (!gone[0]) {
+                        try {
+                            out.write(buf, 0, n);
+                        } catch (Throwable t) {
+                            gone[0] = true;
+                            DvrProxy.note("文件 " + fileNameOf(resource) + " 客户端断开，继续落缓存");
+                        }
+                    }
                     if (fos != null) {
                         try {
                             fos.write(buf, 0, n);
@@ -205,9 +227,13 @@ final class DvrHttp {
                         }
                     }
                     got += n;
+                    if (gone[0]) {
+                        if (fos == null) break;                       // 没在缓存就别白读
+                        if (System.currentTimeMillis() > keepUntil) break;
+                    }
                 }
             }
-            out.flush();
+            if (!gone[0]) out.flush();
             complete = true;
         } finally {
             if (fos != null) {
@@ -226,7 +252,7 @@ final class DvrHttp {
 
     /** 分片应答（Transfer-Encoding: chunked）去帧后转发：客户端读到连接关闭为止 */
     private static long copyChunked(InputStream in, OutputStream out, FileOutputStream fos,
-                                    byte[] buf) throws Exception {
+                                    byte[] buf, boolean[] gone) throws Exception {
         long total = 0;
         while (true) {
             String line = ServerIo.readLine(in);
@@ -248,7 +274,13 @@ final class DvrHttp {
                 int want = (int) Math.min(buf.length, left);
                 int n = in.read(buf, 0, want);
                 if (n <= 0) throw new Exception("chunk eof");
-                out.write(buf, 0, n);
+                if (!gone[0]) {
+                    try {
+                        out.write(buf, 0, n);
+                    } catch (Throwable t) {
+                        gone[0] = true;
+                    }
+                }
                 if (fos != null) fos.write(buf, 0, n);
                 left -= n;
                 total += n;
