@@ -101,6 +101,7 @@ final class DvrProxy {
         fixedIp = ip == null ? "" : ip.trim();
         cachedIp = "";
         offline = true;              // 改地址后要重新点「连接」
+        DvrCmd.close();
         clearCache();
         note("fixedIp=" + (fixedIp.length() == 0 ? "(auto)" : fixedIp));
     }
@@ -112,6 +113,7 @@ final class DvrProxy {
         }
         lastDisconnectT = now;
         offline = true;
+        DvrCmd.close();
         clearCache();
         note("disconnect (ip=" + cachedIp + ")");
         return stateJson();
@@ -632,6 +634,21 @@ final class DvrProxy {
         String hit = cacheGet(key, now, CACHE_FRESH_MS);
         if (hit != null) { note("browse " + dir + " 缓存命中"); return hit; }
 
+        /*
+         * 先走 7878 控制口 —— 原厂 App 的列表就是这么拿的（msg_id 268435458）。
+         * 应答只有几十字节 JSON，不用等记录仪现生成 135KB 网页，网页服务卡死也不影响。
+         * 拿不到再回落到抓网页，行为跟以前一样。
+         */
+        String viaCmd = browseByCmd(ip, dir);
+        if (viaCmd != null) {
+            synchronized (FS_LOCK) {
+                DIR_CACHE.put(key, viaCmd);
+                DIR_CACHE_STAT.put(key, "cmd");
+                DIR_CACHE_T.put(key, Long.valueOf(System.currentTimeMillis()));
+            }
+            return viaCmd;
+        }
+
         String[] page;
         String json = null;
         synchronized (FS_LOCK) {
@@ -683,6 +700,44 @@ final class DvrProxy {
         return "{\"ok\":0,\"src\":\"fs\",\"path\":" + q(dir)
                 + ",\"stat\":" + q(page[1])
                 + ",\"err\":" + q(hint) + "}";
+    }
+
+    /**
+     * 7878 控制口取目录。成功返回与 parseList 同构的 JSON，失败返回 null（让调用方抓网页）。
+     * 这里只回文件名，大小那栏留空、时间从文件名里认 —— 页面照样能用。
+     */
+    private static String browseByCmd(String ip, String dir) {
+        String type = dir.toUpperCase().indexOf("/EVT/") >= 0 ? "event" : "normal";
+        String[] names = DvrCmd.list(ip, type);
+        if (names == null) {
+            note("browse " + dir + " 7878 不可用，回落网页");
+            return null;
+        }
+        java.util.List<String> files = new java.util.ArrayList<String>();
+        for (int i = 0; i < names.length; i++) {
+            if (names[i] != null && isVideo(names[i])) files.add(names[i]);
+        }
+        if (files.isEmpty()) {
+            note("browse " + dir + " 7878 回 " + names.length + " 条，没有可认的录像名，回落网页");
+            return null;
+        }
+        java.util.Collections.sort(files, java.util.Collections.<String>reverseOrder());
+        StringBuilder ff = new StringBuilder("[");
+        for (int i = 0; i < files.size(); i++) {
+            if (i > 0) ff.append(',');
+            String n = files.get(i);
+            ff.append("{\"f\":").append(q(n))
+                    .append(",\"s\":\"\"")
+                    .append(",\"t\":").append(q(timeFromName(n))).append('}');
+        }
+        ff.append(']');
+        note("browse " + dir + " 7878 列表 " + files.size() + " 条，如 " + files.get(0));
+        return "{\"ok\":1,\"src\":\"cmd\",\"ip\":" + q(ip)
+                + ",\"path\":" + q(dir)
+                + ",\"parent\":" + q(parentOf(dir))
+                + ",\"dirs\":[],\"list\":" + ff
+                + ",\"n\":" + files.size()
+                + ",\"stat\":\"cmd\"}";
     }
 
     /** 取缓存；expire 内的原样返回，超出返回 null */
@@ -1559,7 +1614,7 @@ final class DvrProxy {
         return sb.toString();
     }
 
-    private static void note(String s) {
+    static void note(String s) {
         String line = LOGFMT.format(new java.util.Date()) + "  " + s;
         synchronized (DvrProxy.class) {
             LOGBUF[logHead] = line;
