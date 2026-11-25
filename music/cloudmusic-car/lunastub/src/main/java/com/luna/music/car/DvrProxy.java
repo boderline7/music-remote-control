@@ -24,6 +24,12 @@ final class DvrProxy {
 
     /** 认设备用：7878 通了就是记录仪 */
     private static final int MARK_PORT = 7878;
+    /**
+     * 扫描用的建连预算。热点里活着的主机 SYN 回得极快（<50ms），
+     * 以前每个地址等 1500ms，2032 个地址扫下来要 12 秒 —— 用户以为卡死，连点「连接/断开」。
+     * 现在 600ms 一个 + 一命中就收工，正常 1~3 秒出结果。
+     */
+    private static final int SCAN_MS = 600;
     private static final int HTTP_PORT = 80;
     private static final int CONNECT_MS = 1500;
     private static final int HTTP_CONNECT_MS = 3500;
@@ -170,6 +176,42 @@ final class DvrProxy {
         }
     }
 
+    // -------------------------------------------- 上次成功的地址（落盘）
+
+    private static File lastFile;
+    /** 上次连上的记录仪地址：App 重启后先试它，省掉一次全网段扫描 */
+    private static volatile String lastIp = "";
+
+    private static String prefixOf(String ip) {
+        if (ip == null) return "";
+        int dot = ip.lastIndexOf('.');
+        return dot > 0 ? ip.substring(0, dot + 1) : "";
+    }
+
+    private static void loadLast() {
+        if (lastFile == null || !lastFile.isFile()) return;
+        try {
+            java.io.BufferedReader r = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(new java.io.FileInputStream(lastFile), "UTF-8"));
+            String line = r.readLine();
+            r.close();
+            if (line != null) lastIp = line.trim();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void saveLast(String ip) {
+        if (ip == null || ip.length() == 0) return;
+        lastIp = ip;
+        if (lastFile == null) return;
+        try {
+            java.io.FileOutputStream o = new java.io.FileOutputStream(lastFile);
+            o.write(ip.getBytes("UTF-8"));
+            o.close();
+        } catch (Throwable ignored) {
+        }
+    }
+
     /** 这台设备记住的形态；没记录返回 -1 */
     private static int modeFor(String ip) {
         synchronized (MODE_BY_IP) {
@@ -307,6 +349,8 @@ final class DvrProxy {
         try {
             modeFile = new File(c.getFilesDir(), "dvr_mode.txt");
             loadModes();
+            lastFile = new File(c.getFilesDir(), "dvr_last.txt");
+            loadLast();
         } catch (Throwable ignored) {
         }
     }
@@ -468,7 +512,7 @@ final class DvrProxy {
         }
     }
 
-    /** 点「连接」：固定 IP → 缓存 IP → 扫各网卡网段 */
+    /** 点「连接」：固定 IP → 内存地址 → 快查（上次地址 / ARP / 常见网关位）→ 全网段扫描 */
     private static String probeInner() {
         offline = false;
         note("probe 开始" + (fixedIp.length() > 0 ? " fixed=" + fixedIp : " 自动扫描"));
@@ -481,76 +525,99 @@ final class DvrProxy {
                     + "（7878 " + (mark ? "通" : "不通") + "，80 " + (http ? "通" : "不通") + "）");
             return probeJson(ok, cachedIp, "fixed");
         }
+
+        java.util.List<String> ips = localIps();
+        if (ips.isEmpty()) {
+            return "{\"ok\":0,\"err\":\"车机没有可用的内网 IPv4 地址\"}";
+        }
+        java.util.LinkedHashSet<String> prefixes = new java.util.LinkedHashSet<String>();
+        java.util.HashSet<String> self = new java.util.HashSet<String>();
+        for (int i = 0; i < ips.size(); i++) {
+            String one = ips.get(i);
+            String ip = one.substring(one.indexOf(':') + 1);
+            self.add(ip);
+            int dot = ip.lastIndexOf('.');
+            if (dot > 0) prefixes.add(ip.substring(0, dot + 1));
+        }
+
+        // 1) 内存里记着的地址：先花 1.2 秒确认一下，通了就不用扫
         if (cachedIp.length() > 0) {
-            boolean mark = reachable(cachedIp);
-            boolean http = httpPortOpen(cachedIp);
+            boolean mark = reachable(cachedIp, SCAN_MS * 2);
+            boolean http = mark || httpPortOpen(cachedIp);
             if (mark || http) {
                 note("probe cache 命中 " + cachedIp
                         + "（7878 " + (mark ? "通" : "不通") + "，80 " + (http ? "通" : "不通") + "）");
                 return probeJson(true, cachedIp, "cache");
             }
-            note("probe cache 失效 " + cachedIp + "（7878/80 都不通），重新扫描");
+            note("probe cache 失效 " + cachedIp + "（7878/80 都不通），重新找");
             cachedIp = "";
         }
-        java.util.List<String> ips = localIps();
-        if (ips.isEmpty()) {
-            return "{\"ok\":0,\"err\":\"车机没有可用的内网 IPv4 地址\"}";
+
+        /*
+         * 2) 快查：上次成功的地址（落过盘）+ ARP 邻居 + 各网段常见网关位
+         *    + 车机自己地址前后三个。热点下就一两台设备，这一圈通常几百毫秒就命中，
+         *    扫 254×N 个地址只是兜底。
+         */
+        java.util.LinkedHashSet<String> quick = new java.util.LinkedHashSet<String>();
+        if (lastIp.length() > 0 && prefixes.contains(prefixOf(lastIp))) quick.add(lastIp);
+        quick.addAll(arpNeighbours(prefixes));
+        for (String p : prefixes) {
+            quick.add(p + "1");
+            quick.add(p + "2");
+            quick.add(p + "15");
+            quick.add(p + "16");
+            quick.add(p + "254");
         }
-        final java.util.LinkedHashSet<String> prefixes = new java.util.LinkedHashSet<String>();
         for (int i = 0; i < ips.size(); i++) {
-            String s = ips.get(i);
-            String ip = s.substring(s.indexOf(':') + 1);
+            String one = ips.get(i);
+            String ip = one.substring(one.indexOf(':') + 1);
             int dot = ip.lastIndexOf('.');
-            if (dot > 0) prefixes.add(ip.substring(0, dot + 1));
+            if (dot <= 0) continue;
+            String base = ip.substring(0, dot + 1);
+            int last;
+            try {
+                last = Integer.parseInt(ip.substring(dot + 1));
+            } catch (Throwable t) {
+                continue;
+            }
+            for (int d = -3; d <= 3; d++) {
+                int v = last + d;
+                if (v > 0 && v < 255) quick.add(base + v);
+            }
         }
-        final java.util.List<String> cand = new java.util.ArrayList<String>();
+        quick.removeAll(self);
+        if (!quick.isEmpty()) {
+            long t0 = System.currentTimeMillis();
+            String fast = firstReachable(new java.util.ArrayList<String>(quick), SCAN_MS);
+            if (fast != null) {
+                boolean http = httpPortOpen(fast);
+                cachedIp = fast;
+                saveLast(fast);
+                note("probe 快查命中 " + fast + "（试了 " + quick.size() + " 个，"
+                        + (System.currentTimeMillis() - t0) + "ms，80 " + (http ? "通" : "不通") + "）");
+                return probeJson(true, fast, "quick");
+            }
+            note("probe 快查没命中（" + quick.size() + " 个，"
+                    + (System.currentTimeMillis() - t0) + "ms），开始扫网段");
+        }
+
+        // 3) 兜底：全网段扫，一命中就收工
+        java.util.List<String> cand = new java.util.ArrayList<String>();
         for (String p : prefixes) {
             for (int last = 1; last <= 254; last++) cand.add(p + last);
         }
-        final java.util.List<String> marks =
-                java.util.Collections.synchronizedList(new java.util.ArrayList<String>());
-        java.util.concurrent.ExecutorService pool =
-                java.util.concurrent.Executors.newFixedThreadPool(160);
-        java.util.concurrent.CountDownLatch done =
-                new java.util.concurrent.CountDownLatch(cand.size());
-        for (int i = 0; i < cand.size(); i++) {
-            final String ip = cand.get(i);
-            pool.execute(new Runnable() {
-                public void run() {
-                    try {
-                        // 只扫 7878 认设备；80 是否讲 HTTP 放到扫完之后再校，
-                        // 免得扫的过程中对同一台设备连两次、把它那点连接数吃光
-                        if (reachable(ip)) marks.add(ip);
-                    } finally {
-                        done.countDown();
-                    }
-                }
-            });
-        }
-        try {
-            done.await(12, java.util.concurrent.TimeUnit.SECONDS);
-        } catch (InterruptedException ignored) {
-        }
-        pool.shutdownNow();
-
-        // 7878 通的可能不止一台（路由器、别的车机模块），真正能用的是 80 也接得上的那台
-        java.util.List<String> list = new java.util.ArrayList<String>(marks);
-        java.util.Collections.sort(list);
-        String hit = null;
-        for (int i = 0; i < list.size(); i++) {
-            String ip = list.get(i);
-            boolean http = httpPortOpen(ip);
-            note("probe 候选 " + ip + " 80 " + (http ? "通" : "不通"));
-            if (http) { hit = ip; break; }
-        }
-        if (hit == null && !list.isEmpty()) hit = list.get(0);   // 80 全不通就先用第一台试
+        cand.removeAll(self);
+        long t1 = System.currentTimeMillis();
+        String hit = firstReachable(cand, SCAN_MS);
         if (hit != null) {
             cachedIp = hit;
-            note("probe 扫描命中 " + hit + "（扫了 " + cand.size() + " 个，7878 通 "
-                    + list.size() + " 台）");
+            saveLast(hit);
+            note("probe 扫描命中 " + hit + "（扫了 " + cand.size() + " 个，"
+                    + (System.currentTimeMillis() - t1) + "ms）");
             return probeJson(true, hit, "scan");
         }
-        note("probe 扫描无结果（扫了 " + cand.size() + " 个）");
+        note("probe 扫描无结果（扫了 " + cand.size() + " 个，"
+                + (System.currentTimeMillis() - t1) + "ms）");
         return "{\"ok\":0,\"err\":\"扫了所有网卡网段都没找到记录仪\","
                 + "\"local\":" + q(ips.toString()) + "}";
     }
@@ -562,9 +629,13 @@ final class DvrProxy {
     }
 
     private static boolean reachable(String ip) {
+        return reachable(ip, CONNECT_MS);
+    }
+
+    private static boolean reachable(String ip, int ms) {
         Socket s = new Socket();
         try {
-            s.connect(new InetSocketAddress(ip, MARK_PORT), CONNECT_MS);
+            s.connect(new InetSocketAddress(ip, MARK_PORT), ms);
             return true;
         } catch (Throwable t) {
             return false;
@@ -572,6 +643,71 @@ final class DvrProxy {
             closeQuiet(s);
         }
     }
+
+    /**
+     * 并行探 7878，任意一个通了立刻返回；全都不通则等扫完返回 null。
+     * 目的：热点下记录仪通常就一两台，没必要等 2032 个地址全扫完。
+     */
+    private static String firstReachable(java.util.List<String> ips, int connectMs) {
+        if (ips == null || ips.isEmpty()) return null;
+        final java.util.concurrent.atomic.AtomicReference<String> hit =
+                new java.util.concurrent.atomic.AtomicReference<String>();
+        int threads = Math.min(96, ips.size());
+        java.util.concurrent.ExecutorService pool =
+                java.util.concurrent.Executors.newFixedThreadPool(threads);
+        final java.util.concurrent.CountDownLatch done =
+                new java.util.concurrent.CountDownLatch(ips.size());
+        for (int i = 0; i < ips.size(); i++) {
+            final String ip = ips.get(i);
+            pool.execute(new Runnable() {
+                public void run() {
+                    try {
+                        if (hit.get() == null && reachable(ip, connectMs)) hit.compareAndSet(null, ip);
+                    } finally {
+                        done.countDown();
+                    }
+                }
+            });
+        }
+        try {
+            while (hit.get() == null && !done.await(120, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                // 轮询等：命中就立刻收工，不等剩下那一千多个地址
+            }
+        } catch (InterruptedException ignored) {
+        }
+        pool.shutdownNow();
+        return hit.get();
+    }
+
+    /**
+     * ARP 表里已经认识的邻居 —— 记录仪刚连过热点时必然在表里，读一下就是几十毫秒的事。
+     * 只有 2.x 之后的系统才可能读不到，读不到就当没有。
+     */
+    private static java.util.List<String> arpNeighbours(java.util.Set<String> prefixes) {
+        java.util.List<String> out = new java.util.ArrayList<String>();
+        try {
+            java.io.BufferedReader r = new java.io.BufferedReader(
+                    new java.io.FileReader("/proc/net/arp"));
+            String line;
+            boolean first = true;
+            while ((line = r.readLine()) != null) {
+                if (first) { first = false; continue; }
+                String[] f = line.trim().split("\\s+");
+                if (f.length < 4) continue;
+                String ip = f[0];
+                if (ip == null || ip.indexOf('.') < 0) continue;
+                int dot = ip.lastIndexOf('.');
+                if (dot <= 0) continue;
+                if (prefixes != null && !prefixes.contains(ip.substring(0, dot + 1))) continue;
+                if ("00:00:00:00:00:00".equals(f[3])) continue;
+                out.add(ip);
+            }
+            r.close();
+        } catch (Throwable ignored) {
+        }
+        return out;
+    }
+
 
     /** 80 端口能建连才算"能用"：只有 7878 通的，往往根本不是记录仪 */
     private static boolean httpPortOpen(String ip) {

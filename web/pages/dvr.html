@@ -199,7 +199,7 @@ html.pane .top{display:none}
         done = true;
         if (ctrl) { try { ctrl.abort(); } catch (e) {} }
         res(false);
-      }, 1600);
+      }, 900);
       var opt = { mode: 'no-cors', cache: 'no-store' };
       if (ctrl) opt.signal = ctrl.signal;
       fetch('http://' + ip + '/?_=' + Date.now(), opt).then(function () {
@@ -520,7 +520,7 @@ html.pane .top{display:none}
   function connect() {
     var my = ++seq;
     closePv();
-    setStatus('正在找记录仪…');
+    setStatus('正在找记录仪（先快查，通常 1~3 秒）…');
     root.innerHTML = '<div class="empty">正在连接记录仪…</div>';
     api('/dvr/probe').then(function (d) {
       if (my !== seq) return null;
