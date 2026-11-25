@@ -142,8 +142,8 @@ html.pane .top{display:none}
   var DEF = { normal: '/SD0/NOR/M_video/', event: '/SD0/EVT/M_video/' };
   var opened = { normal: false, event: false };    // 「更多」是否展开
   var state = { normal: null, event: null };       // 最近一次返回：展开/收起时本地重绘，不重发请求
-  var FAILBTNS = '<div class="row2"><button data-diag="1">诊断</button>' +
-    '<button data-fixip="1">指定 IP</button></div>';
+  var FAILBTNS = '<div class="row2"><button data-retry="1">重试</button>' +
+    '<button data-diag="1">诊断</button><button data-fixip="1">指定 IP</button></div>';
 
   /* 列表本地缓存：同一目录再打开先摆上次结果，再后台刷新。
      记录仪慢的时候至少不是白屏转圈。 */
@@ -460,13 +460,11 @@ html.pane .top{display:none}
     });
   }
 
-  /* 记录仪网页服务很弱：刚连上第一次常抓空（返回 ok:0 或空应答），
-     ok:0 是正常 HTTP 应答走 then，catch 兜不住。
-     失败自动重试 2 次，间隔递增长一点，给设备缓过来的时间；
-     断开了(seq 变了)就不再回填。后端还会用上次成功的列表兜底(带 stale)。 */
-  /* 后端一个回合最长十几秒（记忆形态 6s + 补试 4.5s + 换形态 3s），
-     间隔太密只会在冷却里空转，拉长到 3.5s / 7s。 */
-  var RETRY_GAP = [0, 3500, 7000];
+  /* 记录仪是单线程小 httpd：它一次只伺候一个请求，135KB 的目录页要现生成。
+     以前失败就自动重试 2 次，等于连着掐断它正在干的活，越重试越卡死（09:07 那份日志
+     四分钟 99 次全超时就是这么来的）。现在前端只发一次请求，后端一次等满 18 秒；
+     真要再来一次，用失败面板上的「重试」，由人决定节奏。 */
+  var RETRY_GAP = [0];
   function load(type, path, left) {
     if (left === undefined) left = RETRY_GAP.length - 1;
     var my = seq;
@@ -478,14 +476,14 @@ html.pane .top{display:none}
     }
     var url = '/dvr/list?path=' + encodeURIComponent(target);
     function once() {
-      return api(url).then(function (d) { return d; }, function (e) {
+      return api(url, 35000).then(function (d) { return d; }, function (e) {
         return { ok: 0, err: '请求失败：' + ((e && e.message) || e) };
       });
     }
     function bad(d) { return !d || d.ok !== 1; }
     return once().then(function (d) {
       if (bad(d) && left > 0 && my === seq) {
-        return new Promise(function (res) { setTimeout(res, RETRY_GAP[3 - left]); })
+        return new Promise(function (res) { setTimeout(res, RETRY_GAP[0]); })
           .then(function () { return my === seq ? load(type, path, left - 1) : null; });
       }
       return d;
@@ -617,10 +615,11 @@ html.pane .top{display:none}
   root.addEventListener('click', function (ev) {
     var t = ev.target;
     while (t && t !== root && !(t.getAttribute && (t.getAttribute('data-diag') ||
-      t.getAttribute('data-fixip')))) {
+      t.getAttribute('data-fixip') || t.getAttribute('data-retry')))) {
       t = t.parentNode;
     }
     if (!t || t === root) return;
+    if (t.getAttribute('data-retry')) { connect(); return; }
     if (t.getAttribute('data-diag')) { runDiag(); return; }
     if (t.getAttribute('data-fixip')) fixIp();
   });

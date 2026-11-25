@@ -30,17 +30,18 @@ final class DvrProxy {
     /** 目录页上限：一页几十 KB，给 512KB 足够，别让它把内存吃掉 */
     private static final int FS_MAX = 512 * 1024;
     /** 正文读取预算：记录仪吐 130KB 的目录页要几秒 */
-    private static final int FS_READ_MS = 9000;
+    private static final int FS_READ_MS = 12000;
     /**
-     * 首字节预算。以前一个形态一直挂到 9 秒，三个形态就是 27 秒 —— 记录仪明明活得好好的，
-     * 用户也要等半分钟。现在按「记不记得这台设备」分开给：
-     * 记住的形态最值得等（实测醒着 1.0~1.3 秒，刚醒来的第一次要 7 秒），
-     * 换形态试探只给短的，不对就赶紧换下一个。
+     * 首字节预算。09:07 那份日志证明「短超时」是帮倒忙：2.5 秒 / 6 秒就掐断连接，
+     * 记录仪那头还在吭哧吭哧生成 135KB 的目录页，被掐一次就卡死在写死连接上，
+     * 后面所有连接都只能排队（连上 3ms，但永远等不到状态行），四分钟一个都没成。
+     *
+     * 所以：这台设备（单线程小 httpd）只给它**一次**机会，但给足 —— 18 秒。
+     * 宁可贵一次等久，也不要连着掐十几次把它彻底打死。
      */
-    private static final int HEAD_KNOWN_MS = 8000;
-    private static final int HEAD_RETRY_MS = 7000;
-    private static final int HEAD_FIRST_MS = 6000;
-    private static final int HEAD_PROBE_MS = 2500;
+    private static final int HEAD_SLOW_MS = 18000;
+    /** 活体探测 GET / 的预算：设备活着时 11~20ms 就回 */
+    private static final int PING_MS = 3000;
     /**
      * 请求形态。
      * 0 = HTTP/1.1 + Connection: close
@@ -83,7 +84,7 @@ final class DvrProxy {
     /** 整轮都不应答之后的冷却：同一个 ip+path 短时间内不再重复打，避免连点把设备打穿 */
     private static volatile String coolKey = "";
     private static volatile long coolUntil = 0;
-    private static final long FAIL_COOL_MS = 3000;
+    private static final long FAIL_COOL_MS = 15000;
     /** 连点「断开」的合并窗口：日志里一次能刷十几条，顺手把记忆的形态也清了 */
     private static volatile long lastDisconnectT = 0;
     /** 页面「指定 IP」；留空则自动探测 */
@@ -256,6 +257,7 @@ final class DvrProxy {
                 sb.append(",\"root\":\"bytes\",\"rootMs\":").append(ms)
                         .append(",\"status\":").append(q(statusLine))
                         .append(",\"bytes\":").append(head.length());
+                drain(s, in);       // 诊断也别把设备噎住
             }
         } catch (Throwable t) {
             sb.append(",\"root\":\"none\",\"rootErr\":").append(q(root(t)));
@@ -674,8 +676,9 @@ final class DvrProxy {
             return stale.replace("\"ok\":1", "\"ok\":1,\"stale\":1");
         }
         note("browse " + dir + " 失败，无缓存可用");
-        String hint = page[1].indexOf("没有任何应答") >= 0
-                ? "记录仪没应答（多半在休眠）：再点一次「连接」，或先打开原厂记录仪 App 再关掉"
+        // 失败原因在 httpFetch 里已经分好类（整个卡死 / 只是目录页慢），原样给人看
+        String hint = page[1].startsWith("ERR ")
+                ? page[1].substring(4)
                 : "记录仪网页没有应答";
         return "{\"ok\":0,\"src\":\"fs\",\"path\":" + q(dir)
                 + ",\"stat\":" + q(page[1])
@@ -973,15 +976,19 @@ final class DvrProxy {
     /**
      * 抓记录仪网页（80），返回 {body, 状态行}。
      *
-     * 这台设备有个明显的脾气：TCP 能连上，但某种请求形态它就是不吐字节，一直挂到超时。
-     * 实测（11-24/11-25 两份现场日志）：形态 0 一次都没回过，形态 1 / 2 才有。
+     * 三轮现场日志（11-24 / 11-25 08:35 / 11-25 09:07）教训：
+     * - 形态本身不是问题：设备醒着时形态 0/1/2 都能回，NOR 目录页 135KB 只要 1.0~1.3 秒；
+     * - 但它是个**单线程小 httpd**。09:07 那份四分钟 99 次超时、只有一次 `/` 回 200，
+     *   就是连接被我们反复掐断后它卡在写死连接上，再也伺候不了新请求；
+     * - 掐它的元凶是短超时（2.5 秒）和前端自动重试 —— 它还在生成目录页，我们就把 socket 关了。
      *
-     * 以前的顺序是「0 → 2 → 1」，每个形态挂满 9 秒，于是打开一次要 27 秒 —— 这就是
-     * 「太难连接」。现在：
-     * 1. 有记忆形态就只用它，首字节 6 秒、失败再补 4.5 秒（弱设备常被上一个请求拖着）；
-     * 2. 没记忆才依次试 1 → 2 → 0，试探形态只给 3 秒；
-     * 3. 成功一次按 IP 记住并落盘，断线重连、重启车机都不用再试错。
+     * 所以现在一次请求只开**一个**连接，且给足 18 秒；失败先探测一次 `/` 判断它是
+     * 「整个卡死」还是「只是目录页慢」，然后冷却 15 秒，绝不连环重试。
+     * 没有形态记忆时，每次失败换下一个形态（不是一次连发三个）。
      */
+    private static final int[] PROBE_ORDER = new int[] { MODE_10, MODE_KEEP, MODE_CLOSE };
+    private static int probeCursor = 0;
+
     private static String[] httpFetch(String ip, String path, int max) {
         String key = ip + "|" + path;
         long now = System.currentTimeMillis();
@@ -991,49 +998,87 @@ final class DvrProxy {
             return new String[] { "", "记录仪不应答，冷却 " + left + " 秒" };
         }
 
-        String stat = "";
         int known = modeFor(ip);
+        int mode;
         if (known >= 0) {
-            String[] r = httpOnce(ip, path, max, known, HEAD_KNOWN_MS);
-            if (r[0].length() > 0) return r;
-            stat = r[1];
-            // 连上了却一个字节不回：设备刚醒时目录页要现生成（实测 7 秒），同一形态再给一次
-            if (stat.indexOf("没有任何应答") >= 0) {
-                r = httpOnce(ip, path, max, known, HEAD_RETRY_MS);
-                if (r[0].length() > 0) return r;
-                stat = r[1];
-            }
-            // 记忆的形态万一不对（换过固件/换过设备），再试一个别的，别死等
-            int alt = known == MODE_10 ? MODE_KEEP : MODE_10;
-            r = httpOnce(ip, path, max, alt, HEAD_PROBE_MS);
-            if (r[0].length() > 0) {
-                rememberMode(ip, alt);
-                note("形态修正 " + ip + " -> " + alt);
-                return r;
-            }
-            // 已经知道这台设备讲什么 HTTP 了，不用再打根路径做基线，省 4 秒
-            coolKey = key;
-            coolUntil = System.currentTimeMillis() + FAIL_COOL_MS;
-            return new String[] { "", stat.length() > 0 ? stat : "ERR 记录仪没有应答" };
+            mode = known;
+        } else {
+            mode = PROBE_ORDER[probeCursor++ % PROBE_ORDER.length];
         }
 
-        int[] order = new int[] { MODE_10, MODE_KEEP, MODE_CLOSE };
-        for (int i = 0; i < order.length; i++) {
-            String[] r = httpOnce(ip, path, max, order[i], i == 0 ? HEAD_FIRST_MS : HEAD_PROBE_MS);
-            if (r[0].length() > 0) {
-                rememberMode(ip, order[i]);
-                note("记住形态 " + ip + " -> " + order[i]);
-                return r;
+        String[] r = httpOnce(ip, path, max, mode, HEAD_SLOW_MS);
+        if (r[0].length() > 0) {
+            if (known < 0) {
+                rememberMode(ip, mode);
+                note("记住形态 " + ip + " -> " + mode);
             }
-            stat = r[1];
-            // 连都连不上，换形态也没用（别白等后面几个超时）
-            if (stat.toLowerCase().indexOf("connect") >= 0) break;
+            return r;
         }
 
-        baseline(ip);
+        String stat = r[1];
+        if (stat.indexOf("没有任何应答") >= 0) {
+            int ping = pingRoot(ip);
+            if (ping < 0) {
+                stat = "ERR 记录仪网页服务没反应（根路径也不回，多半卡死了：断电重启记录仪最有效）";
+                note("fs " + path + " 形态" + mode + " 无应答，探测 / 也没回");
+            } else {
+                stat = "ERR 目录页没应答（网页服务还活着，/ " + ping
+                        + "ms 就回了）：过十几秒点「重试」";
+                note("fs " + path + " 形态" + mode + " 无应答，但 / 只用了 " + ping + "ms");
+            }
+        }
         coolKey = key;
         coolUntil = System.currentTimeMillis() + FAIL_COOL_MS;
         return new String[] { "", stat.length() > 0 ? stat : "ERR 记录仪没有应答" };
+    }
+
+    /**
+     * 活体探测：GET / 只看首个字节，3 秒够。
+     * 设备活着时 11~20ms 就回；设备卡死时一个字节也没有。
+     * 用来把「记录仪整个卡死」和「只是目录页生成得慢」分开，给人话提示。
+     */
+    private static int pingRoot(String ip) {
+        Socket s = new Socket();
+        try {
+            s.connect(new InetSocketAddress(ip, HTTP_PORT), HTTP_CONNECT_MS);
+            s.setSoTimeout(PING_MS);
+            OutputStream os = s.getOutputStream();
+            os.write(("GET / HTTP/1.0\r\nHost: " + ip + "\r\nAccept: */*\r\n\r\n")
+                    .getBytes("ISO-8859-1"));
+            os.flush();
+            InputStream in = s.getInputStream();
+            long t0 = System.currentTimeMillis();
+            int c = in.read();
+            if (c < 0) return -1;
+            int ms = (int) (System.currentTimeMillis() - t0);
+            // 读到一半就 RST 会把这个单线程 httpd 卡住，先把它剩下的字节收掉再关
+            drain(s, in);
+            return ms;
+        } catch (Throwable t) {
+            return -1;
+        } finally {
+            closeQuiet(s);
+        }
+    }
+
+    /**
+     * 关连接前把残余字节读掉（最多 128KB / 1.5 秒）。
+     * 记录仪是单线程小 httpd：我们读一两个字节就 close，它那头还在往外写，
+     * 会卡在写死连接上，后面的请求只能排队——现场那种「四分钟一个都不成」很可能是这么来的。
+     */
+    private static void drain(Socket s, InputStream in) {
+        try {
+            s.setSoTimeout(400);
+            byte[] b = new byte[4096];
+            long until = System.currentTimeMillis() + 1500;
+            int total = 0;
+            while (total < 128 * 1024 && System.currentTimeMillis() < until) {
+                int n = in.read(b);
+                if (n <= 0) break;
+                total += n;
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     private static String[] httpOnce(String ip, String path, int max, int mode, int headMs) {
@@ -1178,6 +1223,7 @@ final class DvrProxy {
                 status = status + "·不完整";
                 note("fs " + path + " 形态" + mode + " 正文不完整 已收 " + bodyLen
                         + " 字节（clen=" + clen + " chunked=" + chunked + "）");
+                drain(s, in);       // 它还在往外写，先收完再关，别把它噎住
             }
             note("fs " + path + " [" + status + "] 形态" + mode + " 连" + tConn
                     + "ms 首字节" + tFirst + "ms len=" + clen + " -> " + text.length());
@@ -1185,45 +1231,6 @@ final class DvrProxy {
         } catch (Throwable t) {
             note("fs " + path + " 形态" + mode + " err: " + root(t));
             return new String[] { "", "ERR " + root(t) };
-        } finally {
-            closeQuiet(s);
-        }
-    }
-
-    /**
-     * 基线：整轮都没应答之后，拿根路径按最简请求打一次（4 秒）。
-     * 只为在日志里分清两种情况：根路径也不回 → 这台设备的 80 服务不认我们；
-     * 根路径回了 → 是目录路径或请求形态的问题，不是"连不上"。
-     */
-    private static void baseline(String ip) {
-        Socket s = new Socket();
-        try {
-            s.connect(new InetSocketAddress(ip, HTTP_PORT), HTTP_CONNECT_MS);
-            s.setSoTimeout(4000);
-            OutputStream os = s.getOutputStream();
-            os.write(("GET / HTTP/1.1\r\nHost: " + ip + "\r\nAccept: */*\r\n\r\n")
-                    .getBytes("ISO-8859-1"));
-            os.flush();
-            InputStream in = s.getInputStream();
-            long t0 = System.currentTimeMillis();
-            int c = in.read();
-            long ms = System.currentTimeMillis() - t0;
-            if (c < 0) {
-                note("基线 / 对端直接关闭（0 字节，连上后立刻 FIN）");
-            } else {
-                StringBuilder sb = new StringBuilder();
-                sb.append((char) c);
-                byte[] b = new byte[256];
-                try {
-                    int n = in.read(b);
-                    if (n > 0) sb.append(new String(b, 0, n, "ISO-8859-1"));
-                } catch (Throwable ignored) {}
-                String head = sb.toString().replace("\r", " ").replace("\n", " ");
-                if (head.length() > 90) head = head.substring(0, 90);
-                note("基线 / 首字节 " + ms + "ms：" + head);
-            }
-        } catch (Throwable t) {
-            note("基线 / 失败 " + root(t));
         } finally {
             closeQuiet(s);
         }
