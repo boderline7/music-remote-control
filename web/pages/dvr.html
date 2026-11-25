@@ -464,7 +464,9 @@ html.pane .top{display:none}
      ok:0 是正常 HTTP 应答走 then，catch 兜不住。
      失败自动重试 2 次，间隔递增长一点，给设备缓过来的时间；
      断开了(seq 变了)就不再回填。后端还会用上次成功的列表兜底(带 stale)。 */
-  var RETRY_GAP = [0, 1200, 2400];
+  /* 后端一个回合最长十几秒（记忆形态 6s + 补试 4.5s + 换形态 3s），
+     间隔太密只会在冷却里空转，拉长到 3.5s / 7s。 */
+  var RETRY_GAP = [0, 3500, 7000];
   function load(type, path, left) {
     if (left === undefined) left = RETRY_GAP.length - 1;
     var my = seq;

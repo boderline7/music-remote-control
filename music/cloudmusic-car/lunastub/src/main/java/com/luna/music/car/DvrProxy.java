@@ -29,14 +29,24 @@ final class DvrProxy {
     private static final int HTTP_CONNECT_MS = 3500;
     /** 目录页上限：一页几十 KB，给 512KB 足够，别让它把内存吃掉 */
     private static final int FS_MAX = 512 * 1024;
-    /** 记录仪 80 端口应答慢且时好时坏，单次读取给到 9 秒 */
+    /** 正文读取预算：记录仪吐 130KB 的目录页要几秒 */
     private static final int FS_READ_MS = 9000;
     /**
-     * 请求形态。浏览器能读得很顺，就照浏览器那样发：
+     * 首字节预算。以前一个形态一直挂到 9 秒，三个形态就是 27 秒 —— 记录仪明明活得好好的，
+     * 用户也要等半分钟。现在分开给：记住的形态给足（弱设备慢启动实测 3~6 秒），
+     * 换形态试探只给短的，不对就赶紧换下一个。
+     */
+    private static final int HEAD_MS = 6000;
+    private static final int HEAD_RETRY_MS = 4500;
+    private static final int HEAD_PROBE_MS = 3000;
+    /**
+     * 请求形态。
      * 0 = HTTP/1.1 + Connection: close
      * 1 = HTTP/1.0（老式极简 httpd 只认这个）
      * 2 = HTTP/1.1 不带 Connection 头（keep-alive，Chrome 的默认行为）
-     * 逐个试，第一个有正文的记住，下次直接用它。
+     *
+     * 这台记录仪（192.168.228.x）实测：形态 0 一律不应答，1 / 2 才回。
+     * 所以试探顺序不再拿 0 打头，成功一次就按 IP 记住、落盘，重启也不用重试。
      */
     private static final int MODE_CLOSE = 0;
     private static final int MODE_10 = 1;
@@ -64,12 +74,16 @@ final class DvrProxy {
 
     /** 最近一次探测到的记录仪 IP */
     private static volatile String cachedIp = "";
-    /** 上次成功拿到目录页用的请求形态，弱设备优先复用，省掉一次试错的等待 */
-    private static volatile int lastOkMode = MODE_CLOSE;
+    /** 每台记录仪认的请求形态：ip → mode，成功过就记住，落盘跨重启 */
+    private static final java.util.HashMap<String, Integer> MODE_BY_IP =
+            new java.util.HashMap<String, Integer>();
+    private static volatile int lastOkMode = -1;
     /** 整轮都不应答之后的冷却：同一个 ip+path 短时间内不再重复打，避免连点把设备打穿 */
     private static volatile String coolKey = "";
     private static volatile long coolUntil = 0;
-    private static final long FAIL_COOL_MS = 5000;
+    private static final long FAIL_COOL_MS = 3000;
+    /** 连点「断开」的合并窗口：日志里一次能刷十几条，顺手把记忆的形态也清了 */
+    private static volatile long lastDisconnectT = 0;
     /** 页面「指定 IP」；留空则自动探测 */
     private static volatile String fixedIp = "";
     /** 按过「断开」后置真：此后不再往记录仪发任何字节 */
@@ -89,22 +103,82 @@ final class DvrProxy {
     }
 
     static String disconnect() {
+        long now = System.currentTimeMillis();
+        if (offline && now - lastDisconnectT < 1500) {
+            return stateJson();          // 连点合并：日志里一次刷十几条，还把记忆的形态冲掉了
+        }
+        lastDisconnectT = now;
         offline = true;
         clearCache();
         note("disconnect (ip=" + cachedIp + ")");
         return stateJson();
     }
 
-    /** 换设备/断开时把旧列表和协议记忆一起丢掉，别串到新记录仪上 */
+    /** 换设备/断开时把旧列表丢掉；协议记忆按 IP 存，不受影响 */
     private static void clearCache() {
         synchronized (FS_LOCK) {
             DIR_CACHE.clear();
             DIR_CACHE_STAT.clear();
             DIR_CACHE_T.clear();
-            lastOkMode = MODE_CLOSE;
             coolKey = "";
             coolUntil = 0;
         }
+    }
+
+    // ------------------------------------------------------- 请求形态记忆（落盘）
+
+    private static File modeFile;
+
+    private static void loadModes() {
+        if (modeFile == null || !modeFile.isFile()) return;
+        try {
+            java.io.BufferedReader r = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(new java.io.FileInputStream(modeFile), "UTF-8"));
+            String line;
+            while ((line = r.readLine()) != null) {
+                int sp = line.indexOf(' ');
+                if (sp <= 0) continue;
+                try {
+                    MODE_BY_IP.put(line.substring(0, sp).trim(),
+                            Integer.valueOf(Integer.parseInt(line.substring(sp + 1).trim())));
+                } catch (Throwable ignored) {
+                }
+            }
+            r.close();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void saveModes() {
+        if (modeFile == null) return;
+        try {
+            StringBuilder sb = new StringBuilder();
+            synchronized (MODE_BY_IP) {
+                for (java.util.Map.Entry<String, Integer> e : MODE_BY_IP.entrySet()) {
+                    sb.append(e.getKey()).append(' ').append(e.getValue()).append('\n');
+                }
+            }
+            java.io.FileOutputStream out = new java.io.FileOutputStream(modeFile);
+            out.write(sb.toString().getBytes("UTF-8"));
+            out.close();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 这台设备记住的形态；没记录返回 -1 */
+    private static int modeFor(String ip) {
+        synchronized (MODE_BY_IP) {
+            Integer m = MODE_BY_IP.get(ip);
+            return m == null ? -1 : m.intValue();
+        }
+    }
+
+    private static void rememberMode(String ip, int mode) {
+        synchronized (MODE_BY_IP) {
+            MODE_BY_IP.put(ip, Integer.valueOf(mode));
+        }
+        lastOkMode = mode;
+        saveModes();
     }
 
     static String stateJson() {
@@ -112,6 +186,7 @@ final class DvrProxy {
                 + ",\"fixed\":" + q(fixedIp)
                 + ",\"port\":" + HTTP_PORT
                 + ",\"log\":" + logCount
+                + ",\"mode\":" + lastOkMode
                 + ",\"cacheN\":" + cacheCount()
                 + ",\"cacheMB\":" + (cacheBytes() / 1024 / 1024)
                 + ",\"off\":" + (offline ? 1 : 0) + "}";
@@ -223,6 +298,11 @@ final class DvrProxy {
         fileCacheDir = d;
         trimCache();
         note("文件缓存 " + d.getAbsolutePath() + " 上限 " + (FILE_CACHE_MAX / 1024 / 1024) + "MB");
+        try {
+            modeFile = new File(c.getFilesDir(), "dvr_mode.txt");
+            loadModes();
+        } catch (Throwable ignored) {
+        }
     }
 
     /** 已完成缓存的本地文件；没有就 null */
@@ -584,9 +664,12 @@ final class DvrProxy {
             return stale.replace("\"ok\":1", "\"ok\":1,\"stale\":1");
         }
         note("browse " + dir + " 失败，无缓存可用");
+        String hint = page[1].indexOf("没有任何应答") >= 0
+                ? "记录仪没应答（多半在休眠）：再点一次「连接」，或先打开原厂记录仪 App 再关掉"
+                : "记录仪网页没有应答";
         return "{\"ok\":0,\"src\":\"fs\",\"path\":" + q(dir)
                 + ",\"stat\":" + q(page[1])
-                + ",\"err\":\"记录仪网页没有应答\"}";
+                + ",\"err\":" + q(hint) + "}";
     }
 
     /** 取缓存；expire 内的原样返回，超出返回 null */
@@ -880,10 +963,14 @@ final class DvrProxy {
     /**
      * 抓记录仪网页（80），返回 {body, 状态行}。
      *
-     * 这台设备有个明显的脾气：TCP 能连上，但某种请求形态它就是不吐字节，
-     * 一直挂到超时。浏览器读得顺，说明它认的是浏览器那套（HTTP/1.1 + 不给 Connection 头）。
-     * 所以按「浏览器形态 → close 形态 → HTTP/1.0」依次试，成功一次就记住；
-     * 全都没应答时打一次根路径做基线，日志里就能看出是设备整体不讲 HTTP 还是路径不对。
+     * 这台设备有个明显的脾气：TCP 能连上，但某种请求形态它就是不吐字节，一直挂到超时。
+     * 实测（11-24/11-25 两份现场日志）：形态 0 一次都没回过，形态 1 / 2 才有。
+     *
+     * 以前的顺序是「0 → 2 → 1」，每个形态挂满 9 秒，于是打开一次要 27 秒 —— 这就是
+     * 「太难连接」。现在：
+     * 1. 有记忆形态就只用它，首字节 6 秒、失败再补 4.5 秒（弱设备常被上一个请求拖着）；
+     * 2. 没记忆才依次试 1 → 2 → 0，试探形态只给 3 秒；
+     * 3. 成功一次按 IP 记住并落盘，断线重连、重启车机都不用再试错。
      */
     private static String[] httpFetch(String ip, String path, int max) {
         String key = ip + "|" + path;
@@ -894,21 +981,39 @@ final class DvrProxy {
             return new String[] { "", "记录仪不应答，冷却 " + left + " 秒" };
         }
 
-        int[] order;
-        if (lastOkMode == MODE_10) order = new int[] { MODE_10, MODE_KEEP, MODE_CLOSE };
-        else if (lastOkMode == MODE_CLOSE) order = new int[] { MODE_CLOSE, MODE_KEEP, MODE_10 };
-        else order = new int[] { MODE_KEEP, MODE_CLOSE, MODE_10 };
-
         String stat = "";
-        for (int i = 0; i < order.length; i++) {
-            String[] r = httpOnce(ip, path, max, order[i]);
+        int known = modeFor(ip);
+        if (known >= 0) {
+            String[] r = httpOnce(ip, path, max, known, HEAD_MS);
+            if (r[0].length() > 0) return r;
+            stat = r[1];
+            // 连上了却一个字节不回：弱设备常被上一个请求拖着，同一形态再给一次
+            if (stat.indexOf("没有任何应答") >= 0) {
+                r = httpOnce(ip, path, max, known, HEAD_RETRY_MS);
+                if (r[0].length() > 0) return r;
+                stat = r[1];
+            }
+            // 记忆的形态万一不对（换过固件/换过设备），再试一个别的，别死等
+            int alt = known == MODE_10 ? MODE_KEEP : MODE_10;
+            r = httpOnce(ip, path, max, alt, HEAD_PROBE_MS);
             if (r[0].length() > 0) {
-                lastOkMode = order[i];
+                rememberMode(ip, alt);
+                note("形态修正 " + ip + " -> " + alt);
                 return r;
             }
-            stat = r[1];
-            // 连都连不上，换形态也没用，直接收工（别白等三个超时）
-            if (stat.toLowerCase().indexOf("connect") >= 0) break;
+        } else {
+            int[] order = new int[] { MODE_10, MODE_KEEP, MODE_CLOSE };
+            for (int i = 0; i < order.length; i++) {
+                String[] r = httpOnce(ip, path, max, order[i], i == 0 ? HEAD_MS : HEAD_PROBE_MS);
+                if (r[0].length() > 0) {
+                    rememberMode(ip, order[i]);
+                    note("记住形态 " + ip + " -> " + order[i]);
+                    return r;
+                }
+                stat = r[1];
+                // 连都连不上，换形态也没用（别白等后面几个超时）
+                if (stat.toLowerCase().indexOf("connect") >= 0) break;
+            }
         }
 
         baseline(ip);
@@ -917,13 +1022,13 @@ final class DvrProxy {
         return new String[] { "", stat.length() > 0 ? stat : "ERR 记录仪没有应答" };
     }
 
-    private static String[] httpOnce(String ip, String path, int max, int mode) {
+    private static String[] httpOnce(String ip, String path, int max, int mode, int headMs) {
         Socket s = new Socket();
         try {
             long t0 = System.currentTimeMillis();
             s.connect(new InetSocketAddress(ip, HTTP_PORT), HTTP_CONNECT_MS);
             long tConn = System.currentTimeMillis() - t0;
-            s.setSoTimeout(FS_READ_MS);
+            s.setSoTimeout(headMs);
             OutputStream os = s.getOutputStream();
 
             /*
@@ -950,13 +1055,24 @@ final class DvrProxy {
              * 这里拿到 Content-Length 就只读那么多字节，读满立刻返回，不再等 FIN。
              */
             long tTx = System.currentTimeMillis();
-            String first = ServerIo.readLine(in);
+            String first;
+            try {
+                first = ServerIo.readLine(in);
+            } catch (java.net.SocketTimeoutException te) {
+                // 状态行就超时：这个形态不对，或者设备没醒 —— 交给上层换形态/重试
+                long waited = System.currentTimeMillis() - tTx;
+                note("fs " + path + " 形态" + mode + " 失败：连上 " + tConn + "ms，等 "
+                        + waited + "ms 没有状态行");
+                return new String[] { "", "ERR 连上但没有任何应答（等 " + waited + "ms）" };
+            }
             long tFirst = System.currentTimeMillis() - tTx;
             if (first == null || first.length() == 0) {
                 note("fs " + path + " 形态" + mode + " 失败：连上 " + tConn + "ms，等 "
                         + tFirst + "ms 一个字节都没回");
                 return new String[] { "", "ERR 连上但没有任何应答（等 " + tFirst + "ms）" };
             }
+            // 状态行到了，说明设备在应答：正文按正常预算读，别被首字节的短预算拖累
+            s.setSoTimeout(FS_READ_MS);
 
             StringBuilder headSb = new StringBuilder(1024);
             headSb.append(first).append("\r\n");
