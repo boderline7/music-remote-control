@@ -115,7 +115,7 @@ object AccountStore {
         NeteaseClient.onSessionExpired = {
             scope.launch {
                 clearAccount()
-                PlayerHub.toast("网易云登录已过期，请重新扫码登录")
+                PlayerHub.toast("云音乐登录已过期，请重新扫码登录")
             }
         }
         if (_loggedIn.value) {

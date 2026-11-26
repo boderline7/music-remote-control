@@ -5,7 +5,7 @@ import com.cloudmusic.car.api.NeteaseClient.checked
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 网易云音乐接口，对应 Kumone 的 NeteaseAPI.swift（只保留车机版用到的部分）。 */
+/** 云音乐接口，对应 Kumone 的 NeteaseAPI.swift（只保留车机版用到的部分）。 */
 object NeteaseApi {
     private val client = NeteaseClient
 
@@ -15,7 +15,7 @@ object NeteaseApi {
 
     // ---------- 登录 ----------
 
-    // 网易云已不再认 weapi + type 1 的扫码结果，这里与 NeteaseCloudMusicApi 当前实现一致：eapi + type 3。
+    // 云音乐已不再认 weapi + type 1 的扫码结果，这里与 NeteaseCloudMusicApi 当前实现一致：eapi + type 3。
     suspend fun qrKey(): String =
         client.eapi("/login/qrcode/unikey", json("type" to 3)).checked().getString("unikey")
 
@@ -143,10 +143,10 @@ object NeteaseApi {
     /**
      * 把歌曲加进自建歌单。
      *
-     * 2026-11 实测：老的 playlist/tracks 接口已被网易云下线，返回 code=404「接口未找到！」
+     * 2026-11 实测：老的 playlist/tracks 接口已被云音乐下线，返回 code=404「接口未找到！」
      * —— 这正是遥控端点「添加到歌单」报错的原因，不是权限或架构限制。
      * 现行接口为 `/playlist/manipulate/tracks`（按 Kumone 方案统一走 eapi），参数从 tracks(逗号分隔) 改成
-     * trackIds(JSON 数组字符串) + imme=true；保留 v1 变体作为回退，网易云再改路径时不至于整个功能立刻失效。
+     * trackIds(JSON 数组字符串) + imme=true；保留 v1 变体作为回退，云音乐再改路径时不至于整个功能立刻失效。
      */
     suspend fun addTrackToPlaylist(pid: Long, tid: Long) {
         val payload = json(

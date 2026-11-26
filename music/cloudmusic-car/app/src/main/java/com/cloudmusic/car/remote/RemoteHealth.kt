@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicLong
  * - 线程数一直涨 → 某个 loop 没退出；
  * - 队列积压 → 有慢客户端；
  * - 宣告计数不涨 → mDNS 保活死了；
- * - 网易云耗时飙升 → 资料库慢，和播放器无关。
+ * - 云音乐耗时飙升 → 资料库慢，和播放器无关。
  *
  * 所有计数都是 Atomic，读的时候允许短暂不一致，不需要加锁。
  */
@@ -53,7 +53,7 @@ object RemoteHealth {
     val networkChanges = AtomicLong()
     val mdnsRebuilds = AtomicLong()
 
-    // ---- 网易云 ----
+    // ---- 云音乐 ----
     private val netLast = AtomicLong(-1L)
     private val netMax = AtomicLong(0L)
     private val netTotal = AtomicLong(0L)
@@ -190,7 +190,7 @@ object RemoteHealth {
             "媒体: " + com.cloudmusic.car.player.PlayerHub.diagLine() +
                 " 预热=" + com.cloudmusic.car.player.MediaSessionKeeper.primeState
         )
-        appendLine("网易云请求: ${s.neteaseCount} 次，最近 ${s.neteaseLastMs}ms，最大 ${s.neteaseMaxMs}ms，平均 ${s.neteaseAvgMs}ms，失败 ${s.neteaseFailures}")
+        appendLine("云音乐请求: ${s.neteaseCount} 次，最近 ${s.neteaseLastMs}ms，最大 ${s.neteaseMaxMs}ms，平均 ${s.neteaseAvgMs}ms，失败 ${s.neteaseFailures}")
         appendLine("最近错误:")
         s.errors.forEach { appendLine("  $it") }
         appendLine()

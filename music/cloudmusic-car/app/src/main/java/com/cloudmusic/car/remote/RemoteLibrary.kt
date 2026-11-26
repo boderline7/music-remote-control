@@ -24,7 +24,7 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * 手机端的资料库：我喜欢的音乐、音乐云盘、我创建的歌单，再加上排行榜、推荐歌单和搜索。
  *
- * 走的是车机已登录的账号（AccountStore），手机端不需要自己登录网易云。
+ * 走的是车机已登录的账号（AccountStore），手机端不需要自己登录云音乐。
  * 拉取放在 IO 线程；播放必须回主线程，ExoPlayer 只能在主线程碰。
  *
  * 列表按页返回（[PAGE_SIZE] 首），因为单帧上限 8 KB，整张歌单塞不进一帧。
@@ -57,7 +57,7 @@ object RemoteLibrary {
     /**
      * 两个「不是歌单、但也要当成列表打开」的入口。
      *
-     * 每日推荐和心动模式在车机上都是动态生成的队列，没有网易云的歌单 id，
+     * 每日推荐和心动模式在车机上都是动态生成的队列，没有云音乐的歌单 id，
      * 但它们的用法和歌单完全一样（先看列表、再点某一首），所以挂成虚拟 id 走 [tracks] / [play]，
      * 手机端和网页端一个字都不用改，原样回传即可。
      */
@@ -192,7 +192,7 @@ object RemoteLibrary {
 
     /**
      * 账号 profile 是异步加载的（AccountStore.init）。手机一连上就发 library，
-     * 此刻 profile 可能还没就绪，uid()=0 会让 buildLibrary 直接报「车机还没登录网易云」，
+     * 此刻 profile 可能还没就绪，uid()=0 会让 buildLibrary 直接报「车机还没登录云音乐」，
      * 表现就是「自建歌单之前有、现在空了」。这里最多等 1.5 秒再判定，等不到才当真的没登录。
      */
     private suspend fun awaitUid(): Long {
@@ -221,14 +221,14 @@ object RemoteLibrary {
     /** 真正干活的部分。失败直接抛，让 cached 不要缓存一个错误结果。 */
     private suspend fun buildLibrary(): JSONObject = coroutineScope {
         val id = uid()
-        if (id == 0L) error("车机还没登录网易云")
+        if (id == 0L) error("车机还没登录云音乐")
         val playlistsDeferred = async { NeteaseApi.userPlaylists(id) }
         val cloudDeferred = async {
             runCatching { NeteaseApi.cloudDrive().tracks.size }.getOrDefault(0)
         }
         val all = playlistsDeferred.await()
         // /user/playlist 本来就按 uid 拉「该账号的歌单」，creatorId 只是用来剔除收藏的别人的歌单。
-        // 网易云偶发不返回 creator 字段（解析成 0），此时严格按 id 过滤会把自建歌单全滤掉，
+        // 云音乐偶发不返回 creator 字段（解析成 0），此时严格按 id 过滤会把自建歌单全滤掉，
         // 表现就是「之前有、现在没了」。creatorId=0 无法判归属，按接口语义保留，宁可多列也别空。
         val mine = all.filter { it.creatorId == id || it.creatorId == 0L }
         val liked = mine.firstOrNull { it.isLikedSongs }
@@ -418,7 +418,7 @@ object RemoteLibrary {
 
         id == "cloud" -> NeteaseApi.cloudDrive().tracks
 
-        // 每日推荐没有歌单 id，直接问网易云要当天的推荐列表（和车机首页那张卡片同一个接口）
+        // 每日推荐没有歌单 id，直接问云音乐要当天的推荐列表（和车机首页那张卡片同一个接口）
         id == DAILY_ID -> NeteaseApi.dailySongs()
 
         // 心动模式：随便挑一首红心当种子，以「我喜欢的音乐」为池子生成队列。

@@ -6,9 +6,9 @@ import android.content.Intent;
 import android.util.Log;
 
 /**
- * 悬浮音乐卡片 →「网易云音乐」（com.cloudmusic.car）的歌词大屏。
+ * 悬浮音乐卡片 →「云音乐」（com.cloudmusic.car）的歌词大屏。
  *
- * 第三方网易云的歌词大屏不是独立 Activity，而是 Compose 里的一层浮层
+ * 云音乐的歌词大屏不是独立 Activity，而是 Compose 里的一层浮层
  * （Nav.nowPlayingOpen），外面没法直接 startActivity。它自己在 MainActivity 里留了
  * 一个外部入口：发 {@link #ACTION_OPEN_LYRICS} 过去，onCreate / onNewIntent 收到就
  * 把浮层打开。
@@ -64,7 +64,7 @@ public final class MusicJump {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
                     | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
             ctx.startActivity(intent);
-            Log.i(TAG, "已拉起网易云歌词大屏: " + intent);
+            Log.i(TAG, "已拉起云音乐歌词大屏: " + intent);
             return true;
         } catch (Throwable t) {
             Log.w(TAG, "拉起失败(" + intent + "): " + t);

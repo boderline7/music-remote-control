@@ -154,7 +154,7 @@ fun LoginScreen() {
             Spacer(Modifier.height(40.dp))
             val status = when (state) {
                 QrState.LOADING -> "正在生成二维码…"
-                QrState.WAITING -> "打开手机网易云音乐 App\n扫一扫登录"
+                QrState.WAITING -> "打开手机云音乐 App\n扫一扫登录"
                 QrState.SCANNED -> "已扫码\n请在手机上确认登录"
                 QrState.EXPIRED -> "二维码已过期\n点击二维码刷新"
                 QrState.ERROR -> "网络异常\n点击重试"
@@ -429,7 +429,7 @@ fun SettingsScreen(nav: Nav) {
 
         Label("关于", 30.sp, c.label, FontWeight.Bold, Modifier.padding(top = 30.dp, bottom = 10.dp))
         Label(
-            "云音乐 车机版 1.0.1\n接口与加密实现移植自 github.com/missuo/kumone（LGPL-3.0）。\n本应用为非官方客户端，与网易云音乐无关。",
+            "云音乐 车机版 1.0.1\n接口与加密实现移植自 github.com/missuo/kumone（LGPL-3.0）。\n本应用为非官方客户端，与云音乐无关。",
             21.sp, c.secondary, maxLines = 4,
         )
     }

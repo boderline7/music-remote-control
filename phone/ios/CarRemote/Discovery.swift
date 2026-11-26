@@ -78,7 +78,7 @@ final class BonjourFinder: NSObject, NetServiceBrowserDelegate, NetServiceDelega
 /// 少任何一个都会让「按音源模式选端口」的那台车连不上。
 enum Ports {
     static let car = 18766          // 车机助手：车控 + 网关 + 外壳
-    static let musicThird = 18765   // 第三方网易云车机版
+    static let musicThird = 18765   // 云音乐车机版
     static let legacyBridge = 18764  // 旧端口，已停用
     static let all = [car, musicThird, musicBridge]
 }

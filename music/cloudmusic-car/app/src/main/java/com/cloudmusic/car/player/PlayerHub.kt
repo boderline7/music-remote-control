@@ -64,7 +64,7 @@ data class PlaybackNotice(val kind: String, val text: String)
 
 /**
  * 全局播放器。队列直接交给 ExoPlayer（通知栏、方向盘按键的上一首/下一首因此天然可用），
- * 每首歌以 `cloudmusic://song/<id>` 占位，真正加载时才通过 [ResolvingDataSource] 换成网易云的播放地址。
+ * 每首歌以 `cloudmusic://song/<id>` 占位，真正加载时才通过 [ResolvingDataSource] 换成云音乐的播放地址。
  */
 @OptIn(UnstableApi::class)
 object PlayerHub {

@@ -5,7 +5,7 @@ import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * 网易云音乐请求加密（eapi），与 Kumone 现行 `RequestCrypto.swift` 一致。
+ * 云音乐请求加密（eapi），与 Kumone 现行 `RequestCrypto.swift` 一致。
  *
  * eapi：对 "url + payload + md5" 串做 AES-128-ECB（PKCS7），输出大写 hex。
  *

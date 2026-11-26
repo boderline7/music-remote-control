@@ -125,7 +125,7 @@ fun JSONObject.optStringOrNull(key: String): String? =
 
 fun JSONObject.optIntOrNull(key: String): Int? = if (has(key) && !isNull(key)) optInt(key) else null
 
-/** 网易云图片 CDN 缩放：`<url>?param=WyH`，并升级为 https。 */
+/** 云音乐图片 CDN 缩放：`<url>?param=WyH`，并升级为 https。 */
 fun String?.sized(size: Int): String? {
     if (this.isNullOrEmpty()) return null
     val s = replace("http://", "https://")

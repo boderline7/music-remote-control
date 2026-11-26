@@ -2,7 +2,7 @@
 # 推到车机并安装。设备已 root，用 -d 允许同版本覆盖。
 # 装哪些包自动取 dist/ 里最新的，不用手工改版本号：
 #   车机助手    com.navi.tool       18766 车控 + 18767 记录仪 + 统一入口
-#   网易云车机版 com.cloudmusic.car  音乐播放，车机助手的酷我槽位直连它
+#   云音乐车机版 com.cloudmusic.car  音乐播放，车机助手的酷我槽位直连它
 # 文件传输（小绿传）用原版 APK，单独装，不归这里管。
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -19,7 +19,7 @@ export MSYS_NO_PATHCONV=1
 pick() { ls -t "$@" 2>/dev/null | head -1; }
 
 NAVI=$(pick dist/车机助手_V*.apk)
-NETEASE=$(pick dist/网易云音乐车机版_v*.apk)
+NETEASE=$(pick dist/云音乐车机版_v*.apk)
 
 [ -n "$NAVI" ] || { echo "dist/ 里没有车机助手包，先跑 python make.py build（见 README 第二节）"; exit 1; }
 

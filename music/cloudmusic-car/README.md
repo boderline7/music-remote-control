@@ -1,12 +1,12 @@
 # 云音乐 车机版（Android）
 
-网易云音乐非官方车机客户端，Apple Music 风格，横屏 / 竖屏自适应。
+云音乐非官方车机客户端，Apple Music 风格，横屏 / 竖屏自适应。
 本模块派生自 [xuqian-git/cloudmusic-car](https://github.com/xuqian-git/cloudmusic-car)（LGPL-3.0），
 接口与 eapi 加密移植自其上游 [missuo/kumone](https://github.com/missuo/kumone)（LGPL-3.0），应用图标亦取自后者。
 来源链与许可见仓库根目录 [`README.md`](../../README.md#云音乐端来源与许可)。
 
 ## 功能
-- 扫码登录（请用**网易云音乐 App** 扫码，微信扫码无效）
+- 扫码登录（请用**云音乐 App** 扫码，微信扫码无效）
 - 主页：每日推荐、私人 FM、心动模式、推荐歌单
 - 排行榜、我喜欢的音乐、最近播放、我的歌单（创建 / 收藏）
 - 搜索（歌曲 / 歌单）
@@ -30,7 +30,7 @@ Release 使用正式签名：读取根目录 `keystore.properties` 与 `keystore
 | 语言 | Kotlin 2.0.21（JVM 17） |
 | UI | Jetpack Compose + Material 3（BOM 2024.09.03） |
 | 播放器 | Media3 / ExoPlayer 1.4.1 + MediaSessionService |
-| 网络 | OkHttp 4.12，网易云接口统一走 eapi 加密（AES-128-ECB） |
+| 网络 | OkHttp 4.12，云音乐接口统一走 eapi 加密（AES-128-ECB） |
 | 图片 | Coil 2.7 |
 | 其他 | Palette（封面取色）、ZXing（扫码登录）、kotlinx-coroutines |
 | 构建 | Gradle 8.x + AGP 8.7.3，Kotlin DSL |

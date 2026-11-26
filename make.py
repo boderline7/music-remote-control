@@ -1333,7 +1333,7 @@ def cmd_build(args):
 
     if not args.no_music_patch:
         n += 1
-        print(f"[{n}/{steps}] 音源槽位：酷我 1/4 -> 第三方网易云（musicpatches.py）")
+        print(f"[{n}/{steps}] 音源槽位：酷我 1/4 -> 云音乐（musicpatches.py）")
         for tag, detail in musicpatches.apply_music_patches(decoded, inject=args.inject):
             print(f"      {tag}  ({detail})")
 
@@ -1634,7 +1634,7 @@ def main():
                    help="整块去除 so：所有 native 方法桩化并去掉 loadLibrary，"
                         "用于 V19 这类 so 反篡改导致去壳即 SIGKILL 的版本")
     p.add_argument("--no-music-patch", action="store_true",
-                   help="跳过 musicpatches.py（音源槽位换第三方网易云）。"
+                   help="跳过 musicpatches.py（音源槽位换云音乐）。"
                         "V18 的汽水控制接口签名不同，用这个开关出纯车控包")
     p.add_argument("--inject", action="store_true",
                    help="注入 18766 网关：编译 bridge、加清单组件、塞车控页、追加 classes3.dex")

@@ -16,7 +16,7 @@ import kotlin.random.Random
 class ApiException(val code: Int, message: String) : IOException(message)
 
 /**
- * 网易云音乐传输层：管理 Cookie，执行 eapi 加密请求。
+ * 云音乐传输层：管理 Cookie，执行 eapi 加密请求。
  * 移植自 Kumone 的 NeteaseClient.swift。
  */
 object NeteaseClient {

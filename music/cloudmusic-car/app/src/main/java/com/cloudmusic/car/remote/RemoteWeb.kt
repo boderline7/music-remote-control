@@ -99,7 +99,7 @@ object RemoteWeb {
         return page.replace(HOST_TAG, clean.ifEmpty { "127.0.0.1" })
     }
 
-    /** iOS「添加到主屏幕」用的图标，取自官方那张网易云图标。 */
+    /** iOS「添加到主屏幕」用的图标，取自官方那张云音乐图标。 */
     private fun icon(context: Context?): ByteArray {
         iconCache?.let { return it }
         val ctx = context ?: return text("no icon", "404")

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""第三方网易云音源槽位 · smali 级改动表
+"""云音乐音源槽位 · smali 级改动表
 
 原厂车机助手的音源表把「酷我 6.x」放在 source=1、「酷我 7.x」放在 source=4，两条分支
-都直接调 `cn.kuwo.autosdk` 的私有管理器。现在酷我不用了，这两个槽位改指第三方网易云
+都直接调 `cn.kuwo.autosdk` 的私有管理器。现在酷我不用了，这两个槽位改指云音乐
 （`com.cloudmusic.car`）。
 
 为什么打 smali 而不写 Java：这些分支埋在原厂几万行混淆代码里（DesktopAssistantActivity
@@ -12,7 +12,7 @@
 
 真正干活的通道复用了原厂给「汽水音乐」留的那条（jadx 里的 `k4.a`，公版 smali 名
 `Li4/a`）：它只是发 `com.luna.music.car.PLAYER_CONTROL` / `PLAYER_SYNC` 广播，
-第三方网易云侧的 `LunaCompat` 已经完整实现了收发（播控、封面、逐行歌词、收藏）。
+云音乐侧的 `LunaCompat` 已经完整实现了收发（播控、封面、逐行歌词、收藏）。
 把它接过来，source=1/4 就和原来的 source=5 行为一致，而 source=5 一个字没动。
 """
 
@@ -101,7 +101,7 @@ TEXT_EDITS = [
      "    if-eqz v0, :cond_2c\n\n    const/4 p0, 0x1\n\n    return p0\n\n    invoke-static {p0, p1}, "
      "Lcom/navi/tool/ui/extra/DesktopAssistantMusicUiHelper;->getPackageVersionName", 1),
 
-    # ---- 显示名：1/4 -> 第三方网易云 ----
+    # ---- 显示名：1/4 -> 云音乐 ----
     (HELPER, "resolveMusicSourceDisplayName(I)Ljava/lang/String;",
      "显示名 source=4", r'    const-string p0, "\u65b0\u7248\u9177\u6211"',
      r'    const-string p0, "\u7b2c\u4e09\u65b9\u7f51\u6613\u4e91"', 1),
@@ -109,13 +109,13 @@ TEXT_EDITS = [
      "显示名 source=1", r'    const-string p0, "\u9177\u6211\u97f3\u4e50"',
      r'    const-string p0, "\u7b2c\u4e09\u65b9\u7f51\u6613\u4e91"', 1),
 
-    # ---- 候选列表：酷我那条换成第三方网易云 ----
+    # ---- 候选列表：酷我那条换成云音乐 ----
     (HELPER, "getInstalledMusicSourceCandidates(Landroid/content/Context;)Ljava/util/List;",
      "候选列表", '    const-string v1, "cn.kuwo.kwmusiccar"\n\n    const-string v2, "\\u9177\\u6211\\u97f3\\u4e50\\u8f66\\u673a\\u7248"',
      '    const-string v1, "%s"\n\n    const-string v2, "\\u7b2c\\u4e09\\u65b9\\u7f51\\u6613\\u4e91"' % CLOUD_PKG, 1),
 
     # ---- 桌面设置页：单选文案，两个酷我槽位已合并成一个 ----
-    (LAYOUT, None, "设置页单选文案", 'android:text="酷我音乐车机版"', 'android:text="第三方网易云"', 1),
+    (LAYOUT, None, "设置页单选文案", 'android:text="酷我音乐车机版"', 'android:text="云音乐"', 1),
     (LAYOUT, None, "设置页隐藏旧酷我单选", 'android:id="@id/radio_source_new_kuwo"',
      'android:id="@id/radio_source_new_kuwo" android:visibility="gone"', 1),
     (FRAGMENT, "getMusicSourceDisplayName(I)Ljava/lang/String;", "Fragment 显示名 1",
@@ -203,7 +203,7 @@ FAVORITE_NEW = """\
 .method private static toggleKuwoFavorite(Landroid/content/Context;ZLandroid/content/SharedPreferences;Lcom/navi/tool/ui/extra/DesktopAssistantMusicUiHelper$FavoriteCallback;)V
     .registers 5
 
-    # [MOD] 收藏走第三方网易云：controlType 3 = 收藏、4 = 取消
+    # [MOD] 收藏走云音乐：controlType 3 = 收藏、4 = 取消
     invoke-static {p0}, Li4/a;->c(Landroid/content/Context;)Li4/a;
 
     move-result-object v0
@@ -240,7 +240,7 @@ OPEN_NEW = """\
 .method private openLyricsFxPage()V
     .registers 14
 
-    # [MOD] 进内置歌词页（含 3D 歌词）之前先跳第三方网易云的大歌词屏，
+    # [MOD] 进内置歌词页（含 3D 歌词）之前先跳云音乐的大歌词屏，
     # 跳不过去（没装 / 被系统拦）才走原逻辑，不打断桌面。
     invoke-static {p0}, Lcom/navitool/bridge/MusicJump;->openCloudLyrics(Landroid/content/Context;)Z
 
@@ -377,7 +377,7 @@ def apply_music_patches(decoded, inject=True):
     s = load(HELPER)
     start, end = _method_span(s, FAVORITE_OLD_SIG, HELPER)
     cache[HELPER] = s[:start] + L(FAVORITE_NEW) + s[end:]
-    results.append(("收藏走网易云", "整方法"))
+    results.append(("收藏走云音乐", "整方法"))
 
     # 4) 定点文本替换
     for rel, sig, tag, old, new, want in TEXT_EDITS:
@@ -431,7 +431,7 @@ def apply_music_patches(decoded, inject=True):
             if head != OPEN_OLD:
                 raise RuntimeError("[歌词页入口] 方法头与预期不一致")
             cache[ACTIVITY] = s[:start] + OPEN_NEW + s[start + len(OPEN_OLD):]
-            results.append(("内置歌词页先跳第三方网易云", "openLyricsFxPage 入口 1 处"))
+            results.append(("内置歌词页先跳云音乐", "openLyricsFxPage 入口 1 处"))
 
     save()
 

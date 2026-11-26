@@ -83,7 +83,7 @@ final class Diag {
         // ------------------------------------------------------------ 包
         sb.append("\n-- 安装包 --\n");
         pkg(sb, ctx, ctx.getPackageName(), fmt);
-        pkg(sb, ctx, "com.cloudmusic.car", fmt);   // 第三方网易云车机版（音乐）
+        pkg(sb, ctx, "com.cloudmusic.car", fmt);   // 云音乐车机版（音乐）
 
         // ------------------------------------------------------------ 日志
         sb.append("\n-- 桥接日志（进程内存，按发生顺序）--\n");
