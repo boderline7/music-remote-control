@@ -102,7 +102,7 @@ final class Gateway {
             }
         }
 
-        // 记录仪后端没起时，先叫醒车控互联再重试一次。手机端访问记录仪页第一次会慢两三秒，
+        // 记录仪后端没起时，先叫醒记录仪代理再重试一次。手机端访问记录仪页第一次会慢两三秒，
         // 但比「记录仪服务没起，请到车机上打开 App」好。
         for (int attempt = 1; ; attempt++) {
             Socket backend = new Socket();
@@ -123,7 +123,7 @@ final class Gateway {
                 if (port == DVR_PORT && attempt == 1) {
                     // 记录仪代理已并进本进程（2026-11-25）：幂等 start 后重试一次，
                     // 覆盖「服务刚起、18767 还没 bind 完」那一小段窗口。
-                    // 不再跨包发广播叫车控互联。
+                    // 不再跨包发广播叫记录仪代理。
                     com.navitool.bridge.dvr.Dvr.start(ctx);
                     woke = com.navitool.bridge.dvr.Dvr.running();
                     Bridge.note("gateway: dvr 重试 " + (woke ? "端口在" : "端口仍不通"));

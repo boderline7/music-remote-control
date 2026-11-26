@@ -17,7 +17,7 @@ import java.util.HashMap;
  * <p>只做两件事：GET / 返回 assets/dvr.html 页面；/dvr/* 交给 {@link DvrHttp}。
  * 没有 WebSocket，不碰音源判定，音乐怎么切都不影响这个端口。
  *
- * <p>2026-11-25 从车控互联整包搬进车机助手：原来由对方的前台服务拉起，现在由
+ * <p>2026-11-25 从记录仪代理整包搬进车机助手：原来由对方的前台服务拉起，现在由
  * {@code BridgeService} 在进程启动时调 {@link Dvr#start}，18766 活着 18767 就活着。
  */
 final class DvrServer {

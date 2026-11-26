@@ -56,7 +56,7 @@ public final class BridgeService extends Service {
             Bridge.note("service install: " + Bridge.root(t));
         }
         HttpServer.start(getApplicationContext());
-        // 记录仪代理（18767）从车控互联并进来了：同一个进程，这里起一次就够，幂等。
+        // 记录仪代理（18767）从记录仪代理并进来了：同一个进程，这里起一次就够，幂等。
         // 18766 活着 18767 就活着，不再需要跨包广播唤醒。
         try {
             boolean ok = com.navitool.bridge.dvr.Dvr.start(getApplicationContext());

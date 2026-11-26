@@ -1070,7 +1070,7 @@ def build_bridge_dex(work, extra_java=None):
             shutil.rmtree(d)
         d.mkdir(parents=True)
 
-    # rglob：dvr/ 子包里有记录仪代理（2026-11-25 从车控互联搬过来）
+    # rglob：dvr/ 子包里有记录仪代理（2026-11-25 从记录仪代理搬过来）
     javas = sorted(str(p) for p in src.rglob("*.java"))
     if extra_java:
         javas += [str(p) for p in extra_java if Path(p).exists()]
@@ -1111,7 +1111,7 @@ def inject_page(decoded):
     assets = decoded / "assets"
     assets.mkdir(parents=True, exist_ok=True)
     # 记录仪页：18767 的 GET / 直接吐这份（dvr.DvrServer 读 assets/dvr.html）。
-    # 原来跟着车控互联走，2026-11-25 记录仪代理并进车机助手后跟着搬过来。
+    # 原来跟着记录仪代理走，2026-11-25 记录仪代理并进车机助手后跟着搬过来。
     dvr = BRIDGE_ROOT / "web" / "pages" / "dvr.html"
     if dvr.exists():
         shutil.copyfile(dvr, assets / "dvr.html")

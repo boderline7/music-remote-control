@@ -189,7 +189,7 @@ final class HttpServer implements Runnable {
                 out = Gateway.statusJson();
             } else if ("/dvrwake".equals(path)) {
                 // 记录仪代理 2026-11-25 已并进本进程，18767 由 BridgeService 拉起，
-                // 不再需要跨包广播叫车控互联。端点和返回格式保持不变，前端不用改。
+                // 不再需要跨包广播叫记录仪代理。端点和返回格式保持不变，前端不用改。
                 out = dvrWakeJson();
             } else if ("/acts".equals(path)) {
                 out = Acts.json();
@@ -428,7 +428,7 @@ final class HttpServer implements Runnable {
     }
 
     /**
-     * 记录仪「确保在跑」。18767 从车控互联并进本进程后，这一步只是幂等 start：
+     * 记录仪「确保在跑」。18767 从记录仪代理并进本进程后，这一步只是幂等 start：
      * 端口已在就立刻返回，没在就当场 bind，不用等对方进程冷启动。
      *
      * <p>返回字段沿用旧协议（was / fired / now），前端 probeDvr() 靠 ok 判断即可。

@@ -7,7 +7,7 @@
 | `python web/stitch.py` | 把 `web/shell/*` 拼进 `web/pages/` 三个页面 | 无 |
 | `bash scripts/compile.sh` | `src/bridge/build/dex/classes.dex` | JDK 17、`android.jar`、`d8` |
 | `python make.py build` | `dist/车机助手_*.apk` | `apk/navitool-19.00-protected.apk`、`dex/V19.00/dex`（两者不入库）、`patch/apktool.jar`、`patch/debug.keystore` |
-| `bash scripts/build_remote.sh` | `dist/车控互联_v*.apk`、`dist/云音乐车机版_v*.apk` | Gradle 离线缓存、`keystore.properties` |
+| `bash scripts/build_remote.sh` | `dist/云音乐车机版_v*.apk` | Gradle 离线缓存、`keystore.properties` |
 | `bash scripts/build_phone.sh` | `dist/车机遥控_手机端_v3.2.1.apk` | 同上 |
 | `bash scripts/build_ios.sh` | 推 `phone-ios` 分支，GitHub 云构建出 IPA | git |
 | `bash scripts/install.sh` | — | adb + root |
