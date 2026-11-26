@@ -23,7 +23,7 @@
 
 ```
 src\bridge\             网关源码
-web\pages\              四个页面 + 统一外壳
+web\pages\              三个页面（车控 / 音乐 / 记录仪）+ 统一外壳
 music\cloudmusic-car\   音乐端（app）
 phone\                  手机端 android / ios
 ```
@@ -35,7 +35,7 @@ phone\                  手机端 android / ios
 - Python 3.8+（只用标准库，无第三方依赖）
 - JDK 17
 - Android SDK：`build-tools 34.0.0` + `platforms/android-35`
-- apktool 2.11.1，放到 `patch/apktool.jar`（体积大，不在仓库里，自行下载）
+- apktool 2.11.1 → `patch/apktool.jar`（体积大不在仓库里，`bash scripts/fetch_deps.sh` 自动下）
 
 音乐端与手机端走 Gradle wrapper（8.14.5 / AGP 8.7.3 / Kotlin 2.0.21），首次构建需联网拉依赖。
 iOS 需 macOS + Xcode + XcodeGen，或直接走仓库内的 GitHub Actions 云构建。
@@ -53,13 +53,25 @@ ANDROID_JAR=<sdk>/platforms/android-35/android.jar
 
 缺配置会直接报出缺哪一项。脱壳另需 root 设备 + frida-server，装包另需 adb。
 
+## 出包
+
+```bash
+bash scripts/fetch_deps.sh          # 首次：拉 apktool
+python web/stitch.py                # 改过 web/shell/* 时必须先跑
+python make.py build   --apk "apk/<原厂包>.apk"   --dex "dump_<版本>"   --inject --no-so --assets-config --free-weather --no-seat-confirm --floating-map --no-weather   --out "dist/车控_m25.apk"
+```
+
+不给 `--out` 时默认 `dist/车控_m<versionCode>.apk`，父目录自动建。
+产物名不带原厂版本号、不带车型名。
+
+`--assets-config` 依赖 `patch/navi_configs/`（8 个配置包，已入库）。
+
 ## 端口
 
 | 端口 | 谁在提供 | 什么时候在 |
 |---|---|---|
 | **18766** | 助手（网关） | 常驻 |
 | **18765** | 云音乐车机版 | 它在跑时 |
-
 | **18767** | 车控 `DvrSvc` | 常驻 |
 
-手机和浏览器只连 18766，页面上切三个 tab：车机控制 / 音乐控制 / 行车记录仪。18764 与 18765 互斥。
+手机和浏览器只连 18766，页面上切三个 tab：车机控制 / 音乐控制 / 行车记录仪。
