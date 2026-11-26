@@ -1017,6 +1017,7 @@ def align_sign(src_apk, out_apk):
          "--ks-key-alias", KS_ALIAS, "--key-pass", f"pass:{KS_PASS}",
          "--min-sdk-version", "26",
          "--v1-signing-enabled", "true", "--v2-signing-enabled", "true",
+         "--v4-signing-enabled", "false",
          "--out", out_apk, aligned])
 
 
@@ -1419,11 +1420,13 @@ def cmd_build(args):
     n += 1
     print(f"[{n}/{steps}] 对齐 + 签名")
     suffix = "_bridge" if args.inject else args.suffix
-    # 注入包按最终 versionName 命名（车机助手_V18.73_bridge.apk），与车上那份对得上
     label = ver
     if args.inject and args.vname:
         label = re.sub(r"-(mod|bridge)$", "", args.vname)
-    out_apk = Path(args.out) if args.out else (OUT / f"车机助手_V{label}{suffix}.apk")
+    # 默认产物名不带原厂版本号/车型（命名约定见 README.local.md「出包命名约定」）
+    default_name = (f"车控_m{args.vcode}.apk" if args.inject
+                    else f"车控_mod_{label}{suffix}.apk")
+    out_apk = Path(args.out) if args.out else (OUT / default_name)
     out_apk.parent.mkdir(parents=True, exist_ok=True)
     align_sign(src_apk, out_apk)
     print(f"      {out_apk}  {out_apk.stat().st_size:,} 字节")
