@@ -1,4 +1,4 @@
-package com.luna.music.car;
+package com.yuhan.dvrcar;
 
 import android.app.Activity;
 import android.content.Intent;
@@ -22,9 +22,8 @@ import android.widget.Toast;
 /**
  * 设置页。
  *
- * <p>这个包现在只做两件事：首页的文件传输（小绿传）和车控页入口。原来「启动桥接 / 切换音源 /
- * 启动音乐」这些和官方网易云绑定的入口已经全部去掉——相关的桥接实现搬到了
- * {@code src/parked}，默认不编译、不启动。
+ * <p>这个包只做两件事：文件传输（小绿传，合并进本包）和行车记录仪（18767）。原来
+ * 「启动桥接 / 切换音源 / 启动音乐」那些和官方网易云绑定的入口，连同实现一起删掉了。
  *
  * <p>布局：按钮靠上的小方块，状态文字放在下面的小方框里，超高可以滚动。
  */
@@ -102,11 +101,11 @@ public class Main extends Activity {
         header.addView(tvMini);
         root.addView(header);
 
-        // 按钮网格：刷新 / 重启车控 / 车控页，下面是退出
+        // 按钮网格：返回上级 / 刷新 / 重启车控，下面是退出
         ScrollView scroll = new ScrollView(this);
         LinearLayout grid = new LinearLayout(this);
         grid.setOrientation(LinearLayout.VERTICAL);
-        grid.addView(row(button(3, "刷新"), button(2, "重启车控"), button(10, "车控页")));
+        grid.addView(row(button(0, "返回上级"), button(3, "刷新"), button(2, "重启车控")));
         grid.addView(row(button(5, "退出")));
 
         // 状态小方框：放在按钮下面，超高滚动，不占整屏
@@ -224,7 +223,7 @@ public class Main extends Activity {
                             refresh();
                             toast(CarPort.alive()
                                     ? "18766 已通，车控可以用了"
-                                    : "还是没通，车控页 → 设置 → 诊断");
+                                    : "还是没通，回设置页点「重启车控」");
                         }
                     });
                 }
@@ -273,7 +272,21 @@ public class Main extends Activity {
 
     void click(int code) {
         try {
-            if (code == 2) {
+            if (code == 0) {
+                // 返回上级 = 回到小绿传的二维码首页，不是退回桌面。
+                // 用显式组件启动而不只 finish()：设置页有可能被单独拉起（比如从车机助手、
+                // 或用户直接点设置页的图标），那时它自己就是栈底，finish() 会直接露桌面。
+                try {
+                    Intent back = new Intent(Intent.ACTION_MAIN);
+                    back.setClassName(getPackageName(), "com.yuhan.xiaolvchuan.MainActivity");
+                    back.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    startActivity(back);
+                } catch (Throwable t) {
+                    Log.w(Cfg.TAG, "回到首页失败，退而关闭设置页", t);
+                }
+                finish();
+                return;
+            } else if (code == 2) {
                 // 车控软重启：让车机助手重抓引擎；完全不通时再拉起车机助手
                 toast("正在重启车控…");
                 CarPort.restartRemoteAsync(new Runnable() {
@@ -299,27 +312,12 @@ public class Main extends Activity {
                     finish();
                 }
                 return;
-            } else if (code == 10) {
-                openCarPage();
             }
         } catch (Throwable t) {
             Log.w(Cfg.TAG, "click failed code=" + code, t);
             toast("操作失败：" + t);
         }
         refresh();
-    }
-
-    /** 打开车控页：18766 由车机助手常驻提供。 */
-    void openCarPage() {
-        try {
-            String ip = Ip.local();
-            if (ip == null || ip.length() == 0) ip = "127.0.0.1";
-            Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse("http://" + ip + ":18766/"));
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(i);
-        } catch (Throwable t) {
-            toast("没有可用浏览器，手动打开 http://" + (Ip.local() == null ? "127.0.0.1" : Ip.local()) + ":18766/");
-        }
     }
 
     void toast(String s) {

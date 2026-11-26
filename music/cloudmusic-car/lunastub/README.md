@@ -1,156 +1,83 @@
-# lunastub —— 桥接包
+# lunastub —— 已停用（记录仪已并进车机助手）
 
-> **2026-11-24 起：官方桥接已整块剥离。**
-> 现在主源码只有文件传输（小绿传）、设置页、行车记录仪（18767）。所有操作官方网易云的代码
-> （MediaBrowser / 方控 / 歌词爱心 / 歌单 / 18764 服务）都在 `src/parked/java/com/luna/music/car/`，
-> 不参与编译、不进 APK。下面第 1–6 节描述的是剥离前的实现，保留作为接回参考；
-> 接回步骤见 [`src/parked/README.md`](src/parked/README.md)。
+> **2026-11-25 起不再出包。** 行车记录仪代理（18767）整包搬进了车机助手
+> （`src/bridge/src/com/navitool/bridge/dvr/`），和 18766 同进程。
+> 文件传输改用原版小绿传 APK，不再需要「车控互联」这个合并包。
+> 本目录代码仅作历史参考；`dist/` 不再产出 `车控互联_*.apk`。
+> **装新车机助手前必须卸掉 `com.yuhan.dvrcar`**，否则两个包抢 18767。
 
-包名 `com.luna.music.car`。车机助手（`com.navi.tool`）按包名硬编码识别音源，这个包名在它的表里对应「汽水音乐车机版」（source 5），所以装上本包，助手音源列表才会出现这一项。桌面名「汽水音乐」只是助手槽位名，跟字节的汽水音乐无关。
 
-## 1. 运行角色：先看模式，端口只做兜底
+> **2026-11-25 起：改名 + 去音乐桥接。**
+> 包名从 `com.luna.music.car` 改成 `com.yuhan.dvrcar`，桌面名「车控互联」。
+> 原来给官方网易云做桥接的那套（MediaBrowser / 方控 / 歌词爱心 / 歌单 / 18764 服务）
+> 已整份删除，`src/parked` 也删了，仓库里不再保留。
+> 音乐这块现在由车机助手的酷我槽位直连第三方网易云（`com.cloudmusic.car`）完成，
+> 跟本包没有关系。
 
-默认（两个包都装）走云音乐车机包 `com.cloudmusic.car`，本包不启动、不绑端口，只在手动切「官方网易云」后才被拉起。
+本包只剩两件事：
 
-| 场景 | 判定 | 行为 |
+1. **文件传输**（小绿传 `com.yuhan.xiaolvchuan`，编译期合并进来，见第 2 节）
+2. **行车记录仪**：`DvrSvc` 常驻 18767，列表走设备 7878 控制口，文件走 80 端口中转缓存
+
+外加一个设置页 `.Main`（车控 18766 状态、日志开关、退出）。
+
+## 1. 端口线
+
+| 端口 | 谁 | 说明 |
 |---|---|---|
-| 云音乐模式（默认） | 没主动切官方 | 本包不服务；18765 归 `com.cloudmusic.car` |
-| 官方模式 | 点了「官方网易云」 | 连接官方 MediaBrowser，绑定 18765，进入前台服务 |
-| 官方模式但端口已被占 | 云音乐包还没退干净 | **让位**，不抢端口，`stopSelf()` |
+| 18766 | 车机助手 `com.navi.tool` | 车控 + 统一入口，常驻 |
+| 18767 | 本包 `DvrSvc` | 记录仪页面与文件 |
+| 18765 | 第三方网易云 `com.cloudmusic.car` | 它的遥控页 |
+| ~~18764~~ | — | 原音乐桥接口，已随桥接代码删除 |
 
-让位路径必须先 `startForeground()` 再 `stopSelf()`：`startForegroundService()` 之后 5 秒内没进前台会 ANR 掉进程，`stopSelf()` 本身不是原因。
+## 2. 与小绿传合并
 
-启动日志分三段记录，便于区分「端口交接成功」和「服务交接成功」：
-
-```
-PORT 18765 空闲
-SERVER 已启动，端口 18765，accept 线程已拉起
-SVC 进入前台，本包开始提供服务（端口 18765）
-```
-
-## 2. 单曲点播状态机
-
-官方车机版**没有**「按 songId 播放」的入口（`onPlayFromMediaId` / `onSkipToQueueItem` 是空实现），单曲只能走 IOT 语音搜索通道，因此必须用状态机防竞态。
-
-```
-IDLE ──playOne──> REQUESTING ──指令下发成功──> CONFIRMING ──歌名对上──> MONITORING ──版本变化/播完──> TAKEOVER
-                        │                        │                              │
-                        └─失败/5s 超时───────────┴─15s 超时──────────────┘
-                                                  （回 IDLE）
-```
-
-| 状态 | 进入条件 | 退出条件 | 超时 |
-|---|---|---|---|
-| `IDLE` | 初始 / 任意失败 | 收到 playOne / playTracks | — |
-| `REQUESTING` | `playOne` 分配新 reqId | 指令下发成功 → CONFIRMING；失败 → IDLE | 5s |
-| `CONFIRMING` | 语音指令已发出 | metadata 歌名匹配 → MONITORING | 15s |
-| `MONITORING` | 已确认起播，记录初始 mediaId | mediaId 变 / 歌名变 / 自然播完 → TAKEOVER | — |
-| `TAKEOVER` | 点播队列下一首 | 点播完成 → REQUESTING | 3s 兜底 |
-
-关键防竞态设计：
-
-- **旧状态残留**：REQUESTING 阶段完全不看 metadata，避免把上一首的 mediaId 当成新目标。
-- **状态更新延迟**：确认只看歌名，不看 artist（合唱拼接会永远对不上）；版本由 mediaId 判定。
-- **事件重复**：所有迁移走 `poTo()`，同一把锁内改状态；`reqId` 不符直接丢弃。
-- **接管后回推**：TAKEOVER 期间 `poMetadata` 直接返回，物理上不可能二次接管。
-- **超时不依赖回调**：`Server.Tick` 每秒调一次 `poTick()`，一条回调都不来也不会卡死在 CONFIRMING。
-- **手动停止不误判**：`STOPPED` 必须同时满足「上一状态是 PLAYING」「连续播放 ≥30s」「过程中没暂停过」才认定自然播完。
-
-歌名匹配做了括号归一（`唐僧骑马` ↔ `唐僧骑马 (唐僧骑马咚那个咚)`），否则儿歌全都会确认超时。
-
-## 3. 歌单与队列
-
-歌单来源三档，顺序即网页显示顺序：
-
-1. 内置自建歌单：`Cfg.DEFAULT_PLAYLISTS`（《Borderline 或许》《嘟嘟妙妙崽崽滴》）
-2. 官方榜：`Cfg.OFFICIAL_PLAYLISTS`（热歌 / 飙升 / 网易云民谣 / 网易云国风，id 固定、官方每天更新）
-3. 设备配置：`/sdcard/Android/data/com.luna.music.car/files/playlists.txt`，一行 `歌单名|公开页 id`，可只写名字（运行时搜 id 并写回）
-
-`Cfg.TRACK_LIMIT = 60`：网页列表与随机队列取同一份截断数据（榜单前 60 名再洗牌），避免两边条数不一致，也避免随机池过大点到冷门歌。
-
-### 换成自己的歌单
-
-内置的两个自建歌单只是示例，换成自己的歌单不用改代码：
-
-1. 在网易云里打开歌单 → 分享 → 复制链接，形如 `https://music.163.com/playlist?id=723825351` 或 `https://163cn.tv/xxxx`
-2. 取其中的数字 id：上面这个就是 `723825351`
-3. 写进车机上的 `playlists.txt`，一行一个：
-
-   ```
-   我的歌单|723825351
-   ```
-
-   路径：`/sdcard/Android/data/com.luna.music.car/files/playlists.txt`（文件不存在就自己新建）
-4. 回网页点一次刷新即可
-
-也可以直接改 `Cfg.DEFAULT_PLAYLISTS` 重新打包，内置进 APK。只支持**公开**歌单（分享出来的那种），私密歌单抓不到。
-
-「随机播放全部」是**假队列**：抓歌单 → 洗牌 → 逐首语音点播 → 播完自动接下一首。
-
-> 为什么不用 `orpheus://playlist_play`：该 scheme 只存在于网易云主 App，车机版没有对应页面，`sendCustomAction` 永远只返回成功、不会切歌。
-
-## 4. 日志
-
-默认**关闭**（正式使用不记录点播细节）。需要排查时在网页里手动打开「日志采样」，状态写入 `SharedPreferences`，重启后保持。
-
-不受开关影响的 `logAlways`：App 启动、端口判定、服务前台、HTTP/WS 启停、崩溃栈——保证最低可观测性。
-
-点播链路每行都带可还原时序的字段：
-
-```
-PO req=3 IDLE→REQUESTING song=晴天 artist=周杰伦 list=Borderline 或许 tid=4211
-PO req=3 REQUESTING→CONFIRMING 指令已发出，等官方起播 mid= tid=4211
-PO req=3 CONFIRMING→MONITORING mid=001abc song=晴天 tid=4233
-PO req=3 MONITORING→TAKEOVER 检测到版本切换 list=Borderline 或许 tid=4233
-QUEUE 就绪 name=Borderline 或许 n=37
-QUEUE 12/37 点播 某歌 - 某歌手
-```
-
-`uncaughtExceptionHandler` 抓不到 ANR / Native Crash / 系统杀进程，这类现场靠的就是崩溃前最后几条主动状态日志。
-
-## 5. 构建
+车机上不再单独装「小绿传」，并进本包一起装：入口是小绿传的 `MainActivity`（文件收发），
+左上品牌区的「设置」进本包 `.Main`。
 
 ```bash
-./gradlew :lunastub:assembleRelease
-```
-
-- 签名复用 `keystore.properties`（与主应用同一套，方便一次 `adb install` 多个包）
-- `assets/remote.html` 是遥控网页，改完需重新打包；运行时由 `Server` 直接读 assets 提供
-- 手工打包流程（无 Gradle 环境时）：`javac -source 8 -target 8` → `d8 --min-api 28` → `aapt2 link -A assets` → `jar uf classes.dex` → `zipalign -4` → `apksigner`
-
-## 6. 已知限制
-
-- **「我喜欢的音乐」只能整单播放**：真实收藏内容存在官方登录态里，抓不到列表；并且点它时官方 `VoiceService` 会主动给车机发一条 directive，车机助手必然播报「好的」，这一点无法从本包消除。
-- **语音搜索可能返回相似歌名**（`黄昏` → `黄昏泛舟`），状态机只能超时放弃，无法纠正搜索结果。
-- **同名不同版本的歌**：队列只存歌名+歌手，语音通道可能点错版本。
-
-## 9. 与小绿传合并（2026-11-24）
-
-车机上不再单独装「小绿传」（`com.yuhan.xiaolvchuan`），并进本包一起装：入口界面是小绿传（文件收发），右上角「设置」进本包原来的设置页。
-
-```
 python scripts/merge_xiaolv.py            # 用现有 Gradle 产物合并
-python scripts/merge_xiaolv.py --gradle   # 先跑 Gradle 再合并
+python scripts/merge_xiaolv.py --gradle   # 先跑一次 Gradle 再合并
 ```
 
-链路：`apktool d` 本包产物 → 注入小绿传的 `smali`（落 `smali_classes2`）/`res`/`assets` → R 引用改指 `com.luna.music.car.R` → 改清单（入口、权限、FileProvider）→ 布局加「设置」+ `MainActivity.openSettings()` → `apktool b` → 补 `classes3.dex`（`Browse.java` 重新 javac+d8）→ `zipalign` → `apksigner`（`keystore/carremote.jks`，与原包同证书才能覆盖安装）。
+链路：`apktool d` 本包产物 → 注入小绿传的 `smali`（落 `smali_classes2`）/`res`/`assets`
+→ R 引用改指 `com.yuhan.dvrcar.R` → 改清单（入口、权限、FileProvider）→ 布局加「设置」
++ `MainActivity.openSettings()` → `apktool b` → 补 `classes3.dex`（`Browse.java` 重新
+javac+d8）→ `zipalign` → `apksigner`（`keystore/carremote.jks`，与原包同证书才能覆盖安装）。
 
-包名**不动**（仍是 `com.luna.music.car`，车机助手按它认汽水音乐车机版）；小绿传的类包名与 `FileProvider` authority 也保持原样。资源 ID 由小绿传的 `public.xml` 固定，`apktool.yml` 的 `forcedPackageId` 必须是 127。
+- 小绿传自己的类包名不动，只把 `FileProvider` authority 与本包对齐（`com.yuhan.dvrcar.files`），
+  否则和真正的独立小绿传同机共存会 `INSTALL_FAILED_CONFLICTING_PROVIDER`。
+- 资源 ID 由小绿传的 `public.xml` 固定，`apktool.yml` 的 `forcedPackageId` 必须是 127。
+- 「退出」原来最后一步是 `Process.killProcess(myPid)`，已去掉：本进程还扛着 18767 常驻服务。
+- 产出：`dist/车控互联_含文件传输_v2.10.29.apk`。
 
-「退出」原来的最后一步 `Process.killProcess(myPid)` 被去掉：本进程还扛着 18764 / 18767 两个常驻服务，杀了会把桥接一起关掉。
+## 3. 构建
 
-## 10. 官方桥接剥离（2026-11-24）
+```bash
+cd music/cloudmusic-car
+./gradlew :lunastub:assembleRelease --offline
+```
 
-链路太绕，官方桥接整块搬出编译范围，默认不引用；以后要用再自己整合回 App。
+签名复用 `keystore.properties`（与主应用同一套，方便一次 `adb install` 多个包）。
+`assets/dvr.html` 由 `scripts/build_remote.sh` 从 `web/pages/dvr.html` 同步；运行时
+`DvrServer` 直接读 assets 提供。
 
-**主源码**（进 APK）：`App`、`Boot`、`Cfg`（TAG / 端口 / 错误码 / `J`）、`Ip`、`ServerIo`、`LogCapture`、`Main`（设置页）、`DvrSvc/DvrServer/DvrHttp/DvrProxy`。
+手工打包（无 Gradle 时）：`javac -source 8 -target 8` → `d8 --min-api 28` →
+`aapt2 link -A assets` → `jar uf classes.dex` → `zipalign -4` → `apksigner`。
 
-**`src/parked/java/com/luna/music/car/`**（不编译）：`Ncm`、`Bridge`、`Keys`、`Star`、`Liked`、`MusicCfg`（含 `Lrc`）、`Mode`、`ModeSync`、`Svc`、`Server`、`Api`、`Alive`、`LaunchStub`。清单见 [`src/parked/README.md`](src/parked/README.md)。
+## 4. 老包怎么处理
 
-行为：
+`com.luna.music.car`（旧的「汽水音乐_桥接包」）与本包**不共用安装位**，升级不会覆盖。
+车机上要手动卸载旧包，否则桌面并排两个图标、旧包的 18767 还会和白占端口。
 
-- `App` / `Boot` 只拉 `DvrSvc`；不启 18764、不排心跳、不同步音源模式。
-- Manifest 删 `.Svc` 与 `.ModeSync$Receiver`，`queries` 只留 `com.navi.tool`。
-- 设置页只留「刷新 / 重启车控 / 车控页 / 退出」，文案只写车控 18766 与文件传输。
+## 5. 定版与校验
 
-校验（合并包 dex）：`MediaBrowser`、`AutomotiveService`、`MediaController`、`MediaSession`、`PLAYER_CONTROL`、`PLAYER_SYNC`、`star_action`、`playlist/detail`、`18764`、`com.netease.cloudmusic.iot` 均为 0 处；组件只剩 `Main`、`DvrSvc`、`Boot` 与小绿传 `MainActivity`。
+版本 `2.10.29` / `versionCode 72` 固定不动（改内容重出同名包，方便随时回退）。
+
+合并包自检（`merge_xiaolv.py` 的 `verify`）：包名、`versionCode/name`、label
+「车控互联」、launchable = 小绿传 `MainActivity`、三个 dex、`assets/web.html`
+与 `assets/dvr.html` 都在。
+
+音乐残留自检（dex 字符串里应当 0 处）：`MediaBrowser`、`AutomotiveService`、
+`MediaController`、`PLAYER_CONTROL`、`PLAYER_SYNC`、`star_action`、`playlist/detail`、
+`18764`、`com.netease.cloudmusic.iot`。

@@ -22,31 +22,37 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * 车机助手（`com.navi.tool`）「汽水音乐」通道的主动适配。
+ * 车机助手（`com.navi.tool`）「汽水通道」的主动适配。
  *
  * ## 为什么需要它
  *
  * 车机助手对包名有一张写死的音源表，认不出来的包一律当「通用音源」。通用音源**不读
  * MediaSession 的 metadata**，而是拿「歌名 空格 歌手」去 `search.kuwo.cn` 搜第一条歌词
- * （`pn=0&rn=1`），封面再按名字搜一次图。所以每播一首歌都要联网搜两轮，搜到同名不同版本
- * 就显示别人的词——这是歌词会错的根因，也是白花流量的来源。
+ * （`pn=0&rn=1`），封面再按名字搜一次图。每播一首歌都要联网搜两轮，搜到同名不同版本就
+ * 显示别人的词——这是歌词会错的根因，也是白花流量的来源。这条兜底路径 2026-11 已从
+ * 车机助手里删掉（`musicpatches.py` 的 `LYRIC_SEARCH_THREAD`）。
  *
- * 它的「汽水音乐」通道（`k4/a` + `LunaMusicLyricReceiver`）反而是三条专用通道里最开放的：
- * 纯广播、字符串传参、**没有签名校验也没有包名校验**，谁发都收。而且它本身支持逐字歌词。
+ * 它的「汽水」通道（jadx 里 `k4/a`，公版 smali `Li4/a`，配 `LunaMusicLyricReceiver`）
+ * 是三条专用通道里最开放的：纯广播、字符串传参、**没有签名校验也没有包名校验**，谁发都收。
+ * 而且它本身支持逐字歌词。
  *
- * 所以只要让它走这条通道，歌词/封面/时长就全部直连，一次搜索都不会发生。
+ * 所以现在车机助手的**酷我槽位（source 1/4）直接指向本包**：点酷我槽位发出的是这条通道的
+ * `PLAYER_*` 广播，歌词/封面/时长全部直连，一次搜索都不会发生。中间不再有任何桥接包。
  *
  * ## 前提
  *
- * 车机助手的音源选择列表只列「已安装」的包，`com.luna.music.car` 要出现在列表里才能选中。
- * 见 `docs/车机助手适配.md` 里对包名的处理。
+ * 车机助手的音源表里 `cn.kuwo.kwmusiccar` 已被换成 `com.cloudmusic.car`（同见
+ * `musicpatches.py` 的 `TEXT_EDITS`）。本包的 `MainActivity` 就是候选列表里那一项。
  *
  * ## 协议（对照 `LunaMusicLyricReceiver` / `k4/a` 反编译确认）
  *
  * 车机助手 → 本应用
  * - `com.luna.music.car.PLAYER_SYNC`                 无参数，请求立刻回一次完整状态
  * - `com.luna.music.car.PLAYER_CONTROL`              `controlType`：
- *                                                    0 播放/暂停、1 上一首、2 下一首、3 收藏、4 取消收藏
+ *                                                    0 播放/暂停、1 上一首、2 下一首、3 收藏、4 取消收藏、
+ *                                                    5 顺序播放、6 单曲循环、7 随机播放
+ *                                                    （5/6/7 是助手「循环模式」按钮的取值，见
+ *                                                    `DesktopAssistantMusicUiHelper.dispatchLoopMode`）
  *
  * 本应用 → 车机助手
  * - `com.luna.music.car.PLAYER_STATE`                title / artist / coverUrl / duration(long) /
@@ -115,6 +121,9 @@ object LunaCompat {
     private const val CONTROL_NEXT = 2
     private const val CONTROL_LIKE = 3
     private const val CONTROL_UNLIKE = 4
+    private const val CONTROL_LOOP_LIST = 5
+    private const val CONTROL_LOOP_SINGLE = 6
+    private const val CONTROL_LOOP_SHUFFLE = 7
 
     /** 上报间隔。必须 < 助手看门狗的 1800ms，见类注释。 */
     private const val TICK_MS = 1_000L
@@ -155,6 +164,10 @@ object LunaCompat {
                         CONTROL_NEXT -> PlayerHub.next()
                         CONTROL_LIKE -> setLiked(true)
                         CONTROL_UNLIKE -> setLiked(false)
+                        // 助手循环按钮下发的是绝对模式，不是「切到下一个」，直接落到播放模式上。
+                        CONTROL_LOOP_LIST -> setLoopMode(PlayModes.SEQUENTIAL)
+                        CONTROL_LOOP_SINGLE -> setLoopMode(PlayModes.REPEAT_ONE)
+                        CONTROL_LOOP_SHUFFLE -> setLoopMode(PlayModes.SHUFFLE)
                     }
                 }
 
@@ -321,6 +334,17 @@ object LunaCompat {
         AccountStore.toggleLike(track) { message ->
             if (message.isNotBlank()) PlayerHub.toast(message)
         }
+        pushState()
+    }
+
+    /**
+     * 助手的循环按钮：`controlType` 5/6/7 = 顺序 / 单曲 / 随机。
+     *
+     * 助手下发的是**绝对模式**（不是「切到下一个」），所以直接落盘，不再经过 cyclePlayMode，
+     * 否则两边各记一份状态，点三下就会错位。已经是目标模式时不重写，只补推一次让图标跟上。
+     */
+    private fun setLoopMode(mode: Int) {
+        if (PlayerHub.playMode.value != mode) PlayerHub.setPlayMode(mode)
         pushState()
     }
 

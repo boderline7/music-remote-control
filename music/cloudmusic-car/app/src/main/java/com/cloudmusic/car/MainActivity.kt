@@ -2,6 +2,7 @@ package com.cloudmusic.car
 
 import android.Manifest
 import android.content.ComponentName
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -20,6 +21,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.cloudmusic.car.data.Settings
 import com.cloudmusic.car.player.PlaybackService
 import com.cloudmusic.car.ui.AppRoot
+import com.cloudmusic.car.ui.UiIntent
 import com.cloudmusic.car.ui.theme.CloudMusicTheme
 
 class MainActivity : ComponentActivity() {
@@ -27,6 +29,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 冷启动也可能是外部拉起来的：savedInstanceState 为空说明是全新意图，
+        // 有值说明只是进程被回收后的重建，不能把用户已收起的歌词大屏又弹出来。
+        if (savedInstanceState == null) handleExternalIntent(intent)
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -55,6 +60,25 @@ class MainActivity : ComponentActivity() {
             controller.hide(WindowInsetsCompat.Type.systemBars())
         } else {
             controller.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // singleTask：App 已在栈里时反复点击只会走到这里，不会再 onCreate。
+        setIntent(intent)
+        handleExternalIntent(intent)
+    }
+
+    /**
+     * 外部入口。目前只有车机助手的「点悬浮音乐卡片 → 直接进歌词大屏」。
+     *
+     * 车机助手不认包内页面，只会发 action，所以这里按 action 分发；页面状态交给
+     * [UiIntent]，由 AppRoot 在 Compose 里消费（Nav 只存在于组合树中）。
+     */
+    private fun handleExternalIntent(intent: Intent?) {
+        when (intent?.action) {
+            UiIntent.ACTION_OPEN_LYRICS -> UiIntent.requestLyrics()
         }
     }
 

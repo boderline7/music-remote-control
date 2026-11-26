@@ -1,20 +1,17 @@
-package com.luna.music.car;
+package com.yuhan.dvrcar;
 
 import org.json.JSONObject;
 
 /**
  * 通用常量与 JSON 小工具。
  *
- * <p>与官方网易云相关的常量（包名、MediaBrowser 服务、公开 API、歌单 id、metadata key）
- * 已随桥接实现一起移到 {@code src/parked/java/com/luna/music/car/MusicCfg.java}，
- * 默认不编译、不进 APK。这里只留服务本身要用的：端口、mDNS、错误码。
+ * <p>这个包现在只做文件传输（小绿传）和行车记录仪（18767）。原来给音乐桥接留的
+ * 18764 端口、mDNS 广播类型随 {@code src/parked} 一起删了，这里只剩日志 TAG、
+ * 信封版本号和错误码——后者是 18767 那几个 HTTP 接口出错时回给页面的。
  */
 final class Cfg {
-    static final String TAG = "NcmRemote";
-    static final int PORT = 18764;
+    static final String TAG = "DvrCar";
     static final int V = 1;
-    static final String NSD_TYPE = "_cloudmusic-car._tcp";
-    static final String NSD_NAME = "cloudmusic-car";
 
     static final int ERR_INVALID_MESSAGE = 1000;
     static final int ERR_UNSUPPORTED_VERSION = 1001;

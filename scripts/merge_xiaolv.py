@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""把小绿传（com.yuhan.xiaolvchuan）并进桥接包（com.luna.music.car）。
+"""把小绿传（com.yuhan.xiaolvchuan）并进「车控互联」（com.yuhan.dvrcar）。
 
 为什么不做成两个 APK 各装一次：车机上多一个包就多一个自启、多一份签名升级负担，
-而小绿传的 HTTP 服务天然该跟桥接包同生共死。包名必须保持 com.luna.music.car——
-车机助手的音源表按包名认「汽水音乐车机版」（source 5），改了就掉出候选列表。
+而小绿传的 HTTP 服务天然该跟记录仪端同生共死。包名 com.yuhan.dvrcar 与音乐无关——
+音源已经全部走车机助手的酷我槽位直连第三方网易云（com.cloudmusic.car），
+原来的 com.luna.music.car 不再使用。
 
 链路：
     Gradle 出 lunastub-release.apk → apktool 解包 → 注入小绿传的 smali/res/assets
-    → 改清单（入口换成小绿传，设置跳桥接页）→ apktool 回编译 → zipalign → apksigner
+    → 改清单（入口换成小绿传，设置跳本包 .Main）→ apktool 回编译 → zipalign → apksigner
 
 不重写小绿传的代码：367 个 smali 类原样搬过去，只把 R 引用从自己的包名指到
-com.luna.music.car.R（同一个 APK 里只有一个 R）。这样它的功能一行没变。
+com.yuhan.dvrcar.R（同一个 APK 里只有一个 R）。这样它的功能一行没变。
 
 用法：
     python scripts/merge_xiaolv.py            # 用现有 Gradle 产物合并
@@ -50,7 +51,7 @@ DIST = ROOT / "dist"
 # MIN_SDK 只用于排查「车机装不上是不是系统版本不够」，正常出包不要设；
 # 设了就以试验包命名，不会覆盖正式产物。
 MIN_SDK = int(os.environ.get("MIN_SDK") or 0)
-OUT_NAME = ("汽水音乐_桥接包_含文件传输_v2.10.29"
+OUT_NAME = ("车控互联_含文件传输_v2.10.29"
             + (f"_min{MIN_SDK}" if MIN_SDK else "") + ".apk")
 
 # ---- 签名（与 Gradle 同一把钥匙，才能覆盖安装） ----
@@ -58,8 +59,9 @@ KEYSTORE = ROOT / "keystore/carremote.jks"
 KS_ALIAS = "carremote"
 KS_PASS = "CarRemote2026"
 
-# 桥接包自己的包名，不能动
-PKG = "com.luna.music.car"
+# 本包包名。2026-11 从 com.luna.music.car 改成 com.yuhan.dvrcar，
+# 老包不会被覆盖安装，桌面上要手动卸掉旧图标
+PKG = "com.yuhan.dvrcar"
 # 小绿传的包名：类包名保留原样，只改 R 引用
 XLV_PKG = "com.yuhan.xiaolvchuan"
 
@@ -86,14 +88,14 @@ def java(*args: str) -> None:
 
 # ------------------------------------------------------------------ 注入
 def inject_smali(dec: Path) -> int:
-    """小绿传的 367 个 smali 类 → smali_classes2，避免和桥接包自己的 dex 混在一起。"""
+    """小绿传的 367 个 smali 类 → smali_classes2，避免和本包自己的 dex 混在一起。"""
     src = XSRC / "smali"
     dst = dec / "smali_classes2"
     if dst.exists():
         shutil.rmtree(dst)
     shutil.copytree(src, dst)
 
-    # 同一个 APK 只有一个 R，小绿传编译时写死的 R 引用要指到桥接包的 R 上
+    # 同一个 APK 只有一个 R，小绿传编译时写死的 R 引用要指到本包的 R 上
     old = "L" + XLV_PKG.replace(".", "/") + "/R$"
     new = "L" + PKG.replace(".", "/") + "/R$"
 
@@ -115,7 +117,7 @@ def inject_smali(dec: Path) -> int:
             f.write_text(s2, encoding="utf-8", errors="surrogateescape")
             changed += 1
 
-    # 冲突自检：桥接包自己的类不能被覆盖
+    # 冲突自检：本包自己的类不能被覆盖
     own = {p.relative_to(dec / "smali").as_posix()
            for p in (dec / "smali").rglob("*.smali")}
     dup = [p.relative_to(dst).as_posix() for p in dst.rglob("*.smali")
@@ -128,7 +130,7 @@ def inject_smali(dec: Path) -> int:
 
 
 def inject_res(dec: Path) -> None:
-    """资源整棵树搬过去。桥接包自己没有资源（只有空的 public.xml），不存在 ID 撞车。"""
+    """资源整棵树搬过去。本包自己没有资源（只有空的 public.xml），不存在 ID 撞车。"""
     dst_res = dec / "res"
     copied = 0
     for f in (XSRC / "res").rglob("*"):
@@ -194,10 +196,9 @@ def patch_manifest(dec: Path) -> None:
     s = s.replace("    <application", add + "\n    <application", 1)
 
     # 2) application：图标 / 主题
-    #    label 与 icon 都保持桥接包原样：车机助手按包名认音源，桌面上也该是「汽水音乐」
-    #    和桥接包那颗图标（@android:drawable/ic_media_play）。小绿传的 mipmap/ic_launcher
-    #    照样打进去给它的界面用，但桌面图标不用它。
-    assert 'android:label="汽水音乐"' in s, "application label 不匹配"
+    #    label 与 icon 都保持本包原样：桌面显示「车控互联」，图标还是系统那颗
+    #    ic_media_play。小绿传的 mipmap/ic_launcher 照样打进去给它的界面用，桌面不用它。
+    assert 'android:label="车控互联"' in s, "application label 不匹配"
     assert 'android:icon="@android:drawable/ic_media_play"' in s, "application icon 不匹配"
     s = re.sub(r'android:icon="[^"]*"',
                'android:icon="@android:drawable/ic_media_play"', s, count=1)
@@ -205,10 +206,10 @@ def patch_manifest(dec: Path) -> None:
                   '<application android:requestLegacyExternalStorage="true" '
                   'android:theme="@style/AppTheme" ', 1)
 
-    # 3) 桥接页不再是入口：去掉它的 LAUNCHER，只留「设置」这条显式跳转
+    # 3) 设置页不再是入口：去掉它的 LAUNCHER，只留「设置」这条显式跳转
     m = re.search(r'(<activity[^>]*android:name="' + re.escape(PKG) + r'\.Main"[^>]*>)'
                   r'\s*<intent-filter>.*?</intent-filter>\s*</activity>', s, re.S)
-    assert m, "没找到桥接页的 LAUNCHER 入口"
+    assert m, "没找到设置页的 LAUNCHER 入口"
     head = m.group(1)
     if not head.endswith("/>"):
         head = head[:-1].rstrip() + "/>"
@@ -219,7 +220,7 @@ def patch_manifest(dec: Path) -> None:
     s = s.replace("    </application>", XLV_TAIL + "    </application>", 1)
 
     p.write_text(s, encoding="utf-8")
-    log("manifest", "入口 = 小绿传 MainActivity，设置 = com.luna.music.car.Main")
+    log("manifest", f"入口 = 小绿传 MainActivity，设置 = {PKG}.Main")
 
 
 # ------------------------------------------------------------------ 设置入口
@@ -245,7 +246,7 @@ def patch_layout(dec: Path) -> None:
     p = dec / "res/layout/act_main.xml"
     s = p.read_text(encoding="utf-8")
 
-    # 1) 设置：跟着「开发者 6+1」那一列走，点文字进桥接页
+    # 1) 设置：跟着「开发者 6+1」那一列走，点文字进本包设置页
     i = s.find('android:id="@id/tv_dev"')
     assert i > 0, "没找到 tv_dev，布局结构变了"
     j = s.find("/>", i) + 2
@@ -262,6 +263,7 @@ def patch_layout(dec: Path) -> None:
     log("layout", "「设置」移到左上品牌区，「上级」放到右上按钮组")
 
 
+# 目标类写成占位符：smali 里 {:try_start_0} 的大括号会和 f-string 打架
 OPEN_SETTINGS = """
 .method public openSettings(Landroid/view/View;)V
     .locals 2
@@ -269,7 +271,7 @@ OPEN_SETTINGS = """
     :try_start_0
     new-instance v0, Landroid/content/Intent;
 
-    const-class v1, Lcom/luna/music/car/Main;
+    const-class v1, @@MAIN@@;
 
     invoke-direct {v0, p0, v1}, Landroid/content/Intent;-><init>(Landroid/content/Context;Ljava/lang/Class;)V
 
@@ -352,9 +354,10 @@ def patch_activity(dec: Path) -> None:
         log("activity", "已经有 openSettings，跳过")
         return
     assert s.rstrip().endswith(".end method"), "MainActivity.smali 结尾不是 .end method"
-    p.write_text(s.rstrip("\n") + "\n" + OPEN_SETTINGS,
+    body = OPEN_SETTINGS.replace("@@MAIN@@", "L" + PKG.replace(".", "/") + "/Main")
+    p.write_text(s.rstrip("\n") + "\n" + body,
                  encoding="utf-8", errors="surrogateescape")
-    log("activity", "MainActivity 追加 openSettings()，跳 com.luna.music.car.Main")
+    log("activity", f"MainActivity 追加 openSettings()，跳 {PKG}.Main")
 
 
 def patch_parent(dec: Path) -> None:
@@ -374,7 +377,7 @@ def patch_parent(dec: Path) -> None:
 # ------------------------------------------------------------------ 构建
 def patch_exit(dec: Path) -> None:
     """小绿传的「退出」最后一步是 Process.killProcess(myPid)。合并后这个进程还扛着
-    18764（音乐遥控）和 18767（记录仪）两个常驻服务，杀了等于把桥接一起关掉。
+    18767（记录仪）这个常驻服务，杀了等于把记录仪一起关掉。
     这里只去掉那一下杀进程，Hub.stop() 和 finishAndRemoveTask() 保留——界面照旧退干净。"""
     p = dec / "smali_classes2" / XLV_PKG.replace(".", "/") / "MainActivity$21.smali"
     s = p.read_text(encoding="utf-8", errors="surrogateescape")
@@ -382,7 +385,7 @@ def patch_exit(dec: Path) -> None:
            "    move-result v0\n\n"
            "    invoke-static {v0}, Landroid/os/Process;->killProcess(I)V\n")
     if old in s:
-        s = s.replace(old, "    # 合并包：不杀进程，桥接服务要接着跑\n")
+        s = s.replace(old, "    # 合并包：不杀进程，记录仪服务要接着跑\n")
         p.write_text(s, encoding="utf-8", errors="surrogateescape")
         log("exit", "「退出」不再 killProcess，只退界面")
     elif "killProcess" not in s:
@@ -449,6 +452,14 @@ SHOW_GUARD = SVC_READ + """    if-nez v0, :addr_on
 
     invoke-virtual {v0, v1}, Landroid/widget/ImageView;->setImageBitmap(Landroid/graphics/Bitmap;)V
 
+    # 光清 ImageView 不够：showQr() 有「url 相同且 lastQrBitmap 非空就直接 return」的缓存，
+    # 不清这两个字段的话，重新开启时地址没变 → 判定「已经画过」→ 二维码永远空白。
+    const/4 v0, 0x0
+
+    iput-object v0, p0, Lcom/yuhan/xiaolvchuan/MainActivity;->lastQrUrl:Ljava/lang/String;
+
+    iput-object v0, p0, Lcom/yuhan/xiaolvchuan/MainActivity;->lastQrBitmap:Landroid/graphics/Bitmap;
+
     iget-object v0, p0, Lcom/yuhan/xiaolvchuan/MainActivity;->btnExit:Landroid/widget/TextView;
 
     const-string v1, "@BTN_OFF@"
@@ -470,7 +481,7 @@ NEW_EXIT = """\
 .method private exitApp()V
     .locals 4
 
-    # SVC_TOGGLE_V1：这个按钮不再退出 App（进程还扛着 18764/18767 两个常驻服务），
+    # SVC_TOGGLE_V1：这个按钮不再退出 App（进程还扛着 18767 记录仪服务），
     # 只开关小绿传自己的文件传输服务；状态写 svc_on，下次进来照旧保持。
     invoke-direct {p0}, Lcom/yuhan/xiaolvchuan/MainActivity;->prefs()Landroid/content/SharedPreferences;
     move-result-object v0
@@ -713,7 +724,7 @@ def verify(final: Path) -> None:
     p = run([BT / "aapt2.exe", "dump", "badging", final])
     bad = p.stdout or ""
     want = [f"package: name='{PKG}'", "versionCode='72'", "versionName='2.10.29'",
-            "application-label:'汽水音乐'",
+            "application-label:'车控互联'",
             f"launchable-activity: name='{XLV_PKG}.MainActivity'"]
     for w in want:
         if w not in bad:
@@ -721,10 +732,10 @@ def verify(final: Path) -> None:
     with zipfile.ZipFile(final) as z:
         names = z.namelist()
         for n in ("classes.dex", "classes2.dex", "classes3.dex", "assets/web.html",
-                  "assets/remote.html", "res/layout/act_main.xml"):
+                  "assets/dvr.html", "res/layout/act_main.xml"):
             if n not in names:
                 raise SystemExit(f"校验失败，包里没有 {n}")
-    log("verify", "包名 2.10.29 / 入口小绿传 / 三个 dex / 两套页面都在")
+    log("verify", "包名 2.10.29 / 入口小绿传 / 三个 dex / 文件传输页与记录仪页都在")
 
 
 def main() -> None:

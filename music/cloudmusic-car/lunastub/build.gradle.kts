@@ -5,29 +5,28 @@ plugins {
 }
 
 /**
- * 「汽水音乐车机版」—— 官方网易云车机版的桥接层 + 遥控服务。
+ * 「车控互联」—— 文件传输（小绿传）+ 行车记录仪（18767）。
  *
- * 车机助手的音源表写死在 DesktopAssistantMusicUiHelper 里，按包名判断「是否已安装」：
- *   com.luna.music.car → source 5（汽水音乐车机版）
- * 没装就不进候选列表，也就选不中，主应用发的广播没人收。
+ * 历史：这个包原本是「汽水音乐车机版」，兼着官方网易云的桥接（18764）和车机助手的
+ * 汽水音源通道。桥接代码 2026-11 已整块剥离，音乐相关一律不在这个包里；音源改由
+ * 车机助手的酷我槽位直连第三方网易云（com.cloudmusic.car），跟本包无关。
  *
- * 本包职责：
- *   - 通过 MediaBrowser 连接官方车机版（com.netease.cloudmusic.iot），转发播放/暂停/切歌/歌词
- *   - 在 18765 端口提供遥控网页与 WebSocket（assets/remote.html）
- *   - 端口即角色：18765 被占说明第三方自研播放器（com.cloudmusic.car）在服务，本包让位不抢
+ * 职责就两条：
+ *   - 首页：文件传输（小绿传），合并进本包，见 scripts/merge_xiaolv.py
+ *   - 行车记录仪：DvrSvc 常驻 18767，列表走设备 7878 控制口，文件走 80 端口中转缓存
  *
- * 之所以不直接改主应用包名：改了等于换一个 App，登录态、缓存、播放记录、遥控配对全部作废。
+ * 包名 com.yuhan.dvrcar 是新的，和原来的 com.luna.music.car 不共用一个安装位——老包
+ * 想彻底清掉得手动卸载，不然桌面上会并排两个图标。
  */
 android {
-    namespace = "com.luna.music.car"
+    namespace = "com.yuhan.dvrcar"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.luna.music.car"
+        applicationId = "com.yuhan.dvrcar"
         minSdk = 28
         targetSdk = 35
-        // 与主应用区分版本线，避免车机助手把两个包的版本号混在一起看。
-        // 固定了：以后改内容也重出同一个 2.10.7 / 50，覆盖安装才不会断。
+        // 与其它几个包区分版本线。固定住：以后改内容也重出同一个 2.10.29 / 72。
         versionCode = 72
         versionName = "2.10.29"
     }

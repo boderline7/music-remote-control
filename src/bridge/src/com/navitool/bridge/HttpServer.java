@@ -171,7 +171,7 @@ final class HttpServer implements Runnable {
             // 统一入口：音乐 / 记录仪 / 所有 WebSocket 交给网关转发到对应后端。
             // 车控仍是纯 HTTP，根路径和车控 API 全部留在本地。
             if (Gateway.shouldHandle(path, upgrade)) {
-                Gateway.handle(s, path, upgrade, rawBuf.toByteArray());
+                Gateway.handle(s, path, upgrade, rawBuf.toByteArray(), ctx);
                 return;
             }
             String body = new String(bodyBytes, "UTF-8");
@@ -187,6 +187,10 @@ final class HttpServer implements Runnable {
             } else if ("/gateway".equals(path)) {
                 // 统一外壳探活：音乐 / 记录仪后端在不在线
                 out = Gateway.statusJson();
+            } else if ("/dvrwake".equals(path)) {
+                // 记录仪代理 2026-11-25 已并进本进程，18767 由 BridgeService 拉起，
+                // 不再需要跨包广播叫车控互联。端点和返回格式保持不变，前端不用改。
+                out = dvrWakeJson();
             } else if ("/acts".equals(path)) {
                 out = Acts.json();
             } else if ("/act".equals(path)) {
@@ -319,7 +323,7 @@ final class HttpServer implements Runnable {
                 Bridge.clearLog();
                 out = "{\"ok\":1}";
             } else if ("/restart".equals(path)) {
-                // 音频桥接包的「重启」按钮会打这里：车控不会自己发现引擎掉了，
+                // 遥控页的「重启」按钮会打这里：车控不会自己发现引擎掉了，
                 // 只能靠这个软重启把 Activity / Helper 重新抓一遍，顺带再要一次前台服务。
                 out = restartJson(ctx);
             } else if ("/".equals(path) || "/index.html".equals(path) || "/ui".equals(path)) {
@@ -421,6 +425,24 @@ final class HttpServer implements Runnable {
             return null;
         }
         return new String(buf.toByteArray(), "UTF-8");
+    }
+
+    /**
+     * 记录仪「确保在跑」。18767 从车控互联并进本进程后，这一步只是幂等 start：
+     * 端口已在就立刻返回，没在就当场 bind，不用等对方进程冷启动。
+     *
+     * <p>返回字段沿用旧协议（was / fired / now），前端 probeDvr() 靠 ok 判断即可。
+     */
+    private String dvrWakeJson() {
+        boolean was = com.navitool.bridge.dvr.Dvr.running();
+        boolean ok = com.navitool.bridge.dvr.Dvr.start(ctx);
+        boolean now = com.navitool.bridge.dvr.Dvr.running();
+        if (!was) {
+            Bridge.note("dvrwake: 18767 " + (now ? "已启动" : "启动失败"));
+        }
+        return "{\"ok\":1,\"was\":" + (was ? 1 : 0)
+                + ",\"fired\":" + (ok ? 1 : 0)
+                + ",\"now\":" + (now ? 1 : 0) + "}";
     }
 
     /**

@@ -2,15 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!--
-        汽水音乐车机版（文件传输 + 记录仪壳）
+        车控互联（文件传输 + 记录仪）
 
         职责：
           1) 首页：文件传输（小绿传），局域网收发文件
           2) 设置页：车控 18766 状态与入口
-          3) 行车记录仪桥接：18767，随包常驻
+          3) 行车记录仪：18767，随包常驻
 
-        音乐桥接（官方网易云的 MediaBrowser / 方控 / 歌词爱心）已整份剥离到 src/parked，
-        默认不编译、不启动；相关入口与文案也已从界面移除。
+        音乐桥接（官方网易云的 MediaBrowser / 方控 / 歌词爱心）与 18764 端口已整份删除，
+        汽水音源也从车机助手的候选列表里去掉了。这个包不再和任何音源有关系。
     -->
 
     <queries>
@@ -28,7 +28,7 @@
 
     <application
         android:name=".App"
-        android:label="汽水音乐"
+        android:label="车控互联"
         android:icon="@android:drawable/ic_media_play"
         android:allowBackup="false"
         android:usesCleartextTraffic="true"
@@ -45,6 +45,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 后台唤醒：车机助手发现 18767 不通时发显式广播过来，只起服务，不开界面。
+             显式广播（指名 component）不受 Android 8+ 隐式广播限制。 -->
+        <receiver
+            android:name=".WakeRcvr"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.yuhan.dvrcar.WAKE" />
+            </intent-filter>
+        </receiver>
 
         <!-- 行车记录仪桥接：独立端口 18767，无条件常驻 -->
         <service

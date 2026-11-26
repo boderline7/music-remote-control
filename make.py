@@ -22,6 +22,7 @@
 补丁内容在 patches.py，改补丁不用动这个文件。
 """
 import argparse
+import json
 import os
 import re
 import shutil
@@ -33,6 +34,7 @@ import zipfile
 from pathlib import Path
 
 import patches
+import musicpatches
 
 ROOT = Path(__file__).resolve().parent
 SRC_APK = ROOT / "apk"
@@ -949,6 +951,40 @@ def fix_manifest(decoded):
     return f"{patches.APP_CLASS_FROM} -> {patches.APP_CLASS_TO}"
 
 
+def retheme(decoded, name="车控"):
+    """应用名与图标：名字统一成「车控」，图标换成原厂风格（青绿底色 + 白色方向盘）。
+
+    原厂「本地设置 / 车辆设置」都是 #008476 纯色圆角方形 + 白色扁平线稿，没有渐变、
+    没有阴影。这里照着做一套：自适应图标改 background/foreground，方形与圆形各一份
+    兜底，全部是 vector，不依赖 png 密度。
+    """
+    icons = ROOT / "patch" / "icons"
+    sp = decoded / "res" / "values" / "strings.xml"
+    s = sp.read_text(encoding="utf-8")
+    m = re.search(r'<string name="app_name">([^<]*)</string>', s)
+    if not m:
+        raise RuntimeError("strings.xml 里找不到 app_name，应用名改不了")
+    old = m.group(1)
+    if old != name:
+        s = s[:m.start()] + f'<string name="app_name">{name}</string>' + s[m.end():]
+        sp.write_text(s, encoding="utf-8")
+
+    pairs = [
+        ("ic_launcher_background.xml", "res/drawable/ic_launcher_background.xml"),
+        ("ic_launcher_foreground.xml", "res/drawable/ic_launcher_foreground.xml"),
+        ("ic_launcher_legacy.xml", "res/mipmap/ic_launcher.xml"),
+        ("ic_launcher_round.xml", "res/mipmap/ic_launcher_round.xml"),
+    ]
+    for src_name, rel in pairs:
+        src = icons / src_name
+        if not src.exists():
+            raise RuntimeError(f"图标素材缺失: {src}")
+        dst = decoded / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    return f"{old} -> {name}，图标 {len(pairs)} 个"
+
+
 def fix_yml(decoded, ver, suffix, vcode=None, vname=None):
     p = decoded / "apktool.yml"
     s = p.read_text(encoding="utf-8")
@@ -1033,7 +1069,8 @@ def build_bridge_dex(work, extra_java=None):
             shutil.rmtree(d)
         d.mkdir(parents=True)
 
-    javas = sorted(str(p) for p in src.glob("*.java"))
+    # rglob：dvr/ 子包里有记录仪代理（2026-11-25 从车控互联搬过来）
+    javas = sorted(str(p) for p in src.rglob("*.java"))
     if extra_java:
         javas += [str(p) for p in extra_java if Path(p).exists()]
     run([JAVAC, "-encoding", "UTF-8", "-nowarn", "-source", "8", "-target", "8",
@@ -1070,12 +1107,39 @@ def inject_manifest(decoded, with_config=False):
 
 def inject_page(decoded):
     _, page, _ = resolve_inject()
-    if page is None:
-        return None
     assets = decoded / "assets"
     assets.mkdir(parents=True, exist_ok=True)
+    # 记录仪页：18767 的 GET / 直接吐这份（dvr.DvrServer 读 assets/dvr.html）。
+    # 原来跟着车控互联走，2026-11-25 记录仪代理并进车机助手后跟着搬过来。
+    dvr = BRIDGE_ROOT / "web" / "pages" / "dvr.html"
+    if dvr.exists():
+        shutil.copyfile(dvr, assets / "dvr.html")
+    if page is None:
+        return None
     dst = assets / "carbridge.html"
     shutil.copyfile(page, dst)
+    return dst.stat().st_size
+
+
+def inject_store_json(decoded):
+    """把商店清单放进 assets/store.json。
+
+    商店页的清单原本要靠 native 取地址再联网拉，去 so 后这条链断了。清单本身只有
+    几 KB，直接随包走；里面每条的 download_url 仍是 123 网盘直链，下载/解压不变。
+    """
+    src = ROOT / "analysis" / "0919configs_商店配置清单.json"
+    if not src.exists():
+        raise RuntimeError(f"商店清单不存在: {src}")
+    assets = decoded / "assets"
+    assets.mkdir(parents=True, exist_ok=True)
+    dst = assets / "store.json"
+    # 原厂清单里个别地址带尾部 #（CDN 分享链接的 fragment），下载器会原样拼请求，
+    # 这里统一清掉，其余字段保持原样。
+    data = json.loads(src.read_text(encoding="utf-8"))
+    for it in data:
+        u = (it.get("download_url") or "").strip()
+        it["download_url"] = u.rstrip("#").strip()
+    dst.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     return dst.stat().st_size
 
 
@@ -1213,7 +1277,7 @@ def cmd_build(args):
     # 构建目录必须 ASCII：apktool 在中文路径下编 res 会失败
     work = ASCII / f"build_{ver}"
     decoded = work / "apk_decoded"
-    steps = str(8 + (2 if args.inject else 0) + (1 if args.no_so else 0)
+    steps = str(8 + (0 if args.no_music_patch else 1) + (2 if args.inject else 0) + (1 if args.no_so else 0)
                 + (1 if args.free_weather else 0)
                 + (1 if args.free_desk_weather else 0)
                 + (1 if args.no_seat_confirm else 0)
@@ -1267,6 +1331,12 @@ def cmd_build(args):
     apply(decoded, args.vin, rows)
     print(f"      生效 {len([r for r in rows if r[2] == 1])} 处")
 
+    if not args.no_music_patch:
+        n += 1
+        print(f"[{n}/{steps}] 音源槽位：酷我 1/4 -> 第三方网易云（musicpatches.py）")
+        for tag, detail in musicpatches.apply_music_patches(decoded, inject=args.inject):
+            print(f"      {tag}  ({detail})")
+
     if args.no_so:
         n += 1
         print(f"[{n}/{steps}] 整块去除 so（native 全桩化 + 去 loadLibrary）")
@@ -1308,6 +1378,7 @@ def cmd_build(args):
     orig, final_name = fix_yml(decoded, ver, args.suffix, args.vcode, args.vname)
     code_note = f" / code {args.vcode}" if args.vcode is not None else ""
     print(f"      versionName: {orig} -> {final_name}{code_note}")
+    print(f"      名称/图标: {retheme(decoded)}")
 
     if args.inject:
         n += 1
@@ -1324,6 +1395,8 @@ def cmd_build(args):
         print(f"      清单加入 {inject_manifest(decoded, with_config=args.assets_config)} 项组件声明")
         size = inject_page(decoded)
         print(f"      assets/carbridge.html {size:,} 字节" if size else "      !! 没找到车控页")
+        sj = inject_store_json(decoded)
+        print(f"      assets/store.json {sj:,} 字节（商店清单，下载仍走 123 网盘）")
         if args.assets_config:
             n += 1
             print(f"[{n}/{steps}] 预置配置包到 assets")
@@ -1560,6 +1633,9 @@ def main():
     p.add_argument("--no-so", action="store_true",
                    help="整块去除 so：所有 native 方法桩化并去掉 loadLibrary，"
                         "用于 V19 这类 so 反篡改导致去壳即 SIGKILL 的版本")
+    p.add_argument("--no-music-patch", action="store_true",
+                   help="跳过 musicpatches.py（音源槽位换第三方网易云）。"
+                        "18.62 的汽水控制接口签名不同，用这个开关出纯车控包")
     p.add_argument("--inject", action="store_true",
                    help="注入 18766 网关：编译 bridge、加清单组件、塞车控页、追加 classes3.dex")
     p.add_argument("--assets-config", action="store_true",

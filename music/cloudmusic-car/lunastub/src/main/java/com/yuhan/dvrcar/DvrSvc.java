@@ -1,4 +1,4 @@
-package com.luna.music.car;
+package com.yuhan.dvrcar;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -76,7 +76,7 @@ public class DvrSvc extends Service {
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm != null) {
-                NotificationChannel ch = new NotificationChannel(CHANNEL, "行车记录仪桥接",
+                NotificationChannel ch = new NotificationChannel(CHANNEL, "行车记录仪",
                         NotificationManager.IMPORTANCE_LOW);
                 nm.createNotificationChannel(ch);
             }
@@ -88,7 +88,7 @@ public class DvrSvc extends Service {
         Notification.Builder b = Build.VERSION.SDK_INT >= 26
                 ? new Notification.Builder(this, CHANNEL) : new Notification.Builder(this);
         Notification n = b.setSmallIcon(android.R.drawable.ic_media_play)
-                .setContentTitle("行车记录仪桥接")
+                .setContentTitle("行车记录仪")
                 .setContentText("http://" + Ip.local() + ":" + DvrServer.PORT)
                 .setContentIntent(pi)
                 .setOngoing(true)

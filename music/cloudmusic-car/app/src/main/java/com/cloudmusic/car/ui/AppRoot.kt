@@ -94,6 +94,15 @@ fun AppRoot(embedded: Boolean = false) {
             Box(modifier) { LoginScreen() }
         } else {
             val nav = remember { Nav() }
+            // 车机助手点了悬浮音乐卡片：直接展开歌词大屏，不经过它自己的内置歌词页。
+            // 序号变了才动作，用户自己下滑收起后不会被重新弹出来。
+            val lyricsSeq = UiIntent.lyricsSeq
+            LaunchedEffect(lyricsSeq) {
+                if (lyricsSeq > UiIntent.consumedLyricsSeq) {
+                    nav.nowPlayingOpen = true
+                    UiIntent.consumeLyrics(lyricsSeq)
+                }
+            }
             BackHandler(enabled = nav.nowPlayingOpen || nav.stack.isNotEmpty() || nav.root != Route.Home) { nav.back() }
             val modifier = if (embedded) Modifier else Modifier.windowInsetsPadding(WindowInsets.systemBars)
             Box(modifier) {

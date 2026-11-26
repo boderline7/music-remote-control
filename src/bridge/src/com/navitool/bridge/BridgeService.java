@@ -56,11 +56,25 @@ public final class BridgeService extends Service {
             Bridge.note("service install: " + Bridge.root(t));
         }
         HttpServer.start(getApplicationContext());
+        // 记录仪代理（18767）从车控互联并进来了：同一个进程，这里起一次就够，幂等。
+        // 18766 活着 18767 就活着，不再需要跨包广播唤醒。
+        try {
+            boolean ok = com.navitool.bridge.dvr.Dvr.start(getApplicationContext());
+            Bridge.note("dvr 18767 " + (ok ? "started" : "start failed"));
+        } catch (Throwable t) {
+            Bridge.note("dvr start: " + Bridge.root(t));
+        }
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         HttpServer.start(getApplicationContext());
+        // 服务被重启时端口可能已经断了（进程还在但 socket 被系统收走），补一次
+        try {
+            com.navitool.bridge.dvr.Dvr.start(getApplicationContext());
+        } catch (Throwable t) {
+            Bridge.note("dvr re-start: " + Bridge.root(t));
+        }
         return START_STICKY;
     }
 

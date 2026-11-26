@@ -259,8 +259,8 @@ object PlayerHub {
                 refreshDiagState()
             }
         }
-        // 车机助手（com.navi.tool）的「汽水音乐」通道适配，见 LunaCompat 注释：
-        // 它的通用音源会拿歌名去酷我搜歌词，走专用通道才能让歌词由本应用直接提供。
+        // 车机助手（com.navi.tool）的「汽水」通道适配，见 LunaCompat 注释：
+        // 助手那边的酷我槽位（source 1/4）直连本包，歌词由本应用自己提供，不联网搜词。
         LunaCompat.start(context)
     }
 

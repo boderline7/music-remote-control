@@ -15,7 +15,7 @@ build/
 /apk/
 # 从原包导出的产物
 /dex/
-/dump/
+/dump_*/
 # 原厂包里提取的配置包（--assets-config 的输入，本地自备）
 /patch/navi_configs/
 

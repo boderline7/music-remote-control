@@ -8,10 +8,10 @@ import java.net.Socket;
 
 /**
  * 统一入口网关：让手机 / 浏览器只连 18766 一个地址，
- * 音乐（18765 / 18764）和记录仪（18767）由这里转发。
+ * 音乐（18765）和记录仪（18767）由这里转发。
  *
  * 为什么能做成纯 TCP 透传：
- *   音乐端和桥接包都是「单端口」服务 —— 普通 GET 返回页面，
+ *   音乐端是「单端口」服务 —— 普通 GET 返回页面，
  *   带 Upgrade: websocket 的请求走协议 v1。记录仪是普通 HTTP。
  *   网关不需要理解 HTTP / WebSocket 帧，把字节双向搬运即可。
  *
@@ -23,13 +23,13 @@ import java.net.Socket;
  *                                         只在用户打开记录仪页时才走，网关不做任何后台探测
  *   - 其余                              -> 交回 18766 本地处理
  *
- * 音乐后端选择：18765（第三方网易云车机版）优先，18764（桥接包）兜底，
- * 两者互斥、同一时刻只有一个在跑。探测结果缓存，失败时重探。
+ * 音乐后端只有 18765（第三方网易云车机版）。原来 18764 是桥接包那条线，
+ * 2026-11 桥接代码删掉后端口一并作废，这里不再兜底探测。
  */
 final class Gateway {
 
     static final int DVR_PORT = 18767;
-    private static final int[] MUSIC_PORTS = {18765, 18764};
+    private static final int[] MUSIC_PORTS = {18765};
     private static volatile int musicPort = 0;
     private static volatile long musicPortAt = 0;
     private static final long MUSIC_TTL = 3000L;
@@ -75,7 +75,8 @@ final class Gateway {
      * 这里拿到原始字节流做透传。rawRequest 是已读到的请求头字节（含首行），
      * 用于重放给后端；对 /music 前缀要做一次路径改写。
      */
-    static void handle(Socket client, String path, boolean websocket, byte[] rawRequest) {
+    static void handle(Socket client, String path, boolean websocket, byte[] rawRequest,
+                       android.content.Context ctx) {
         int port;
         byte[] replay = rawRequest;
         if (websocket) {
@@ -101,26 +102,43 @@ final class Gateway {
             }
         }
 
-        Socket backend = new Socket();
-        try {
-            backend.connect(new InetSocketAddress("127.0.0.1", port), CONNECT_MS);
-            backend.setSoTimeout(0);
-            client.setSoTimeout(0);
-            bridge(client, backend, replay);
-            Bridge.note("gateway: " + (websocket ? "ws" : path) + " -> " + port);
-        } catch (Throwable t) {
-            Bridge.note("gateway: connect " + port + ": " + Bridge.root(t));
-            // 音乐后端连不上（ws 或普通 HTTP 都算）就清缓存，下次重探；DVR 失败与音乐无关
-            if (port != DVR_PORT && musicPort == port) {
-                musicPort = 0;
+        // 记录仪后端没起时，先叫醒车控互联再重试一次。手机端访问记录仪页第一次会慢两三秒，
+        // 但比「记录仪服务没起，请到车机上打开 App」好。
+        for (int attempt = 1; ; attempt++) {
+            Socket backend = new Socket();
+            try {
+                backend.connect(new InetSocketAddress("127.0.0.1", port), CONNECT_MS);
+                backend.setSoTimeout(0);
+                client.setSoTimeout(0);
+                bridge(client, backend, replay);
+                Bridge.note("gateway: " + (websocket ? "ws" : path) + " -> " + port);
+                return;
+            } catch (Throwable t) {
+                Bridge.note("gateway: connect " + port + ": " + Bridge.root(t));
+                // 音乐后端连不上（ws 或普通 HTTP 都算）就清缓存，下次重探；DVR 失败与音乐无关
+                if (port != DVR_PORT && musicPort == port) {
+                    musicPort = 0;
+                }
+                boolean woke = false;
+                if (port == DVR_PORT && attempt == 1) {
+                    // 记录仪代理已并进本进程（2026-11-25）：幂等 start 后重试一次，
+                    // 覆盖「服务刚起、18767 还没 bind 完」那一小段窗口。
+                    // 不再跨包发广播叫车控互联。
+                    com.navitool.bridge.dvr.Dvr.start(ctx);
+                    woke = com.navitool.bridge.dvr.Dvr.running();
+                    Bridge.note("gateway: dvr 重试 " + (woke ? "端口在" : "端口仍不通"));
+                }
+                if (!woke) {
+                    closeQuietly(client);
+                    return;
+                }
+            } finally {
+                closeQuietly(backend);
             }
-            closeQuietly(client);
-        } finally {
-            closeQuietly(backend);
         }
     }
 
-    /** 探测音乐后端：缓存有效期内先复查还活着再用，否则按 18765 -> 18764 试。 */
+    /** 探测音乐后端：缓存有效期内先复查还活着再用，否则重探 18765。 */
     private static int pickMusic() {
         long now = System.currentTimeMillis();
         if (musicPort != 0 && now - musicPortAt < MUSIC_TTL && reachable(musicPort)) {

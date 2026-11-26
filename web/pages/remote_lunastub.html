@@ -1520,7 +1520,7 @@
     api('/api/status', null, function (d, code) {
       if (!d || d.ok === false) {
         el.setupSub.textContent = '读不到设置（' + code + '）';
-        el.stMsg.textContent = '读不到本包状态：这台车机可能跑着第三方页（18765），或桥接包版本过旧。';
+        el.stMsg.textContent = '读不到本包状态：这台车机可能跑着第三方页（18765），或车控互联版本过旧。';
         if (cb) cb(false);
         return;
       }
@@ -1699,7 +1699,7 @@
 <!--@shell:script-->
 <script>
 /* ==========================================================================
-   统一外壳（车机助手 18766 / 网易云车机版 18765 / 桥接包 18764 共用同一份）
+   统一外壳（车机助手 18766 / 网易云车机版 18765 / 车控互联 18767 共用同一份）
    - 顶上一条状态行 + 一行中文切换「车机控制 / 音乐控制 / 行车记录仪」
    - 从 18766 进来是统一入口：三路全在本机，音乐/记录仪由网关转发，地址只记 18766
    - 从 18765 / 18764 进来是老入口：本端自带的音乐 + iframe 车控 / 记录仪，tab 与网关入口完全一致
@@ -1721,7 +1721,7 @@
   var CAR_BASE = 'http://' + HOST + ':' + CAR_PORT;
   // 拼接时写进来的构建号：并进 iframe 地址，页面一改 URL 就变，
   // 装新包后不用手动清缓存也一定拿到新页面；同一个包重复打开仍走缓存。
-  var BUILD = '8dfa741c';
+  var BUILD = '463cd0d5';
   // 哪个端口发下来的页，就自带哪一路，不用 iframe 套自己
   var NATIVE = String(location.port) === String(CAR_PORT) ? 'car' : 'music';
   // 统一入口：从 18766 进来，三路都走本机 + 网关转发，地址只有一个
@@ -1771,14 +1771,14 @@
       else setStatus('车机助手未就绪 · 到车机上打开一次桌面助手', 'warn');
     } else if (tab === 'dvr') {
       if (dvrSvc === null) setStatus('正在检测记录仪服务…');
-      else if (dvrSvc === false) setStatus('记录仪服务没起 · 到车机上开桥接包', 'warn');
+      else if (dvrSvc === false) setStatus('记录仪服务没起 · 到车机上重启一次车机助手', 'warn');
       else if (dvrOk === null) setStatus('记录仪未连接 · 点「连接」手动读取');
       else if (dvrOk) setStatus('记录仪已连接' + (dvrDirect ? ' · 手机直连' : ' · 经车机中转'), 'on');
       else setStatus('记录仪已断开', 'warn');
     } else {
       if (musOk === null) setStatus('正在找音乐端…');
       else if (musOk) setStatus(GATEWAY ? '音乐端在跑' : '音乐端在跑 · ' + musPort, 'on');
-      else setStatus('音乐端没响应 · 打开汽水音乐或桥接包', 'warn');
+      else setStatus('音乐端没响应 · 打开网易云音乐车机版', 'warn');
     }
   }
 
@@ -1819,20 +1819,43 @@
   /* 记录仪只查「服务在不在」，不代为连接。
      /dvr/state 只是读一下 18767 的状态，不会让记录仪开始连；
      调用时机只有三处：进 tab、手动重试、开机时停在记录仪页。后台心跳永不碰它。 */
-  function probeDvr(cb) {
+  function probeDvr(cb, retried) {
     var done = false;
-    var t = setTimeout(function () {
-      if (!done) { done = true; dvrSvc = false; cb(false); }
-    }, 1500);
+    var t = setTimeout(function () { finish(false); }, 1500);
+    function finish(v) {
+      if (done) return;
+      done = true;
+      clearTimeout(t);
+      dvrSvc = v;
+      if (v || retried) { cb(v); return; }
+      // 18767 没在监听：让车机助手（18766，常驻）把车控互联叫起来，等端口上来再探一次。
+      // 直接访问 18767 的页面不会走到这里 —— 服务没起时浏览器连页面都打不开，
+      // 端口内没有任何代码能执行，所以「访问时自动拉起」只能由 18766 这一侧做。
+      wakeDvr(function () { probeDvr(cb, true); });
+    }
     fetch(DVR_BASE + '/dvr/state?_=' + Date.now(), withTimeout(1500))
+      .then(function (r) { return r.json(); })
+      .then(function (d) { finish(!!(d && d.ok === 1)); })
+      .catch(function () { finish(false); });
+  }
+
+  /* 记录仪 18767 就在车机助手自己的进程里，这个端点只是幂等「确保在跑」，
+     不再去拉起别的 App —— 车机助手活着它就活着，bind 是毫秒级。 */
+  function wakeDvr(after) {
+    setStatus('记录仪服务没起 · 正在重连…', 'warn');
+    var done = false;
+    var t = setTimeout(function () { if (!done) { done = true; after(); } }, 4000);
+    fetch(CAR_BASE + '/dvrwake?_=' + Date.now(), withTimeout(4000))
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (done) return; done = true; clearTimeout(t);
-        dvrSvc = !!(d && d.ok === 1); cb(dvrSvc);
+        if (d && d.now === 1) toast('记录仪服务已就绪');
+        else toast('记录仪端口没起来，到车机上重启车控互联');
+        after();
       })
       .catch(function () {
         if (done) return; done = true; clearTimeout(t);
-        dvrSvc = false; cb(false);
+        after();
       });
   }
 
@@ -1914,8 +1937,8 @@
     el.sFailS.innerHTML = t === 'car'
       ? '到车机上确认「车机助手」在跑（18766），<br>再点右上角的刷新。'
       : (t === 'dvr'
-        ? '确认车机上的桥接包在跑（记录仪服务 18767），<br>再点右上角的刷新。'
-        : '车上跑的是第三方播放器就打开它（18765），<br>跑的是官方网易云就开桥接包（18764）。');
+        ? '确认车机上的车控互联在跑（记录仪服务 18767），<br>再点右上角的刷新。'
+        : '打开网易云音乐车机版（18765）就行，<br>它不是常驻服务，点一下等它起来。');
     // 按钮跟着当前这一路走：点一下只重探自己，不把人甩到别的 tab
     el.sFailGo.textContent = t === 'dvr' ? '重新检测' : '重试';
     el.sFail.className = 'sfail on';
@@ -2072,7 +2095,7 @@
       base: '',
       kvUrl: '/api/status',
       kv: function (d) {
-        if (!d || (d.ok !== 1 && d.ok !== true)) return '音乐端没响应，打开汽水音乐或网易云车机版';
+        if (!d || (d.ok !== 1 && d.ok !== true)) return '音乐端没响应，打开网易云音乐车机版';
         var s = '音乐　端口 ' + (d.port || '—') + ' · ' + (d.running ? '服务在跑' : '服务已停') + '\n'
           + '在线　' + (d.clients || 0) + (d.maxClients ? ' / ' + d.maxClients : '') + '\n'
           + '地址　' + (d.ip || '—');
@@ -2448,7 +2471,7 @@
         if (r && r.ok === 1) { delete segCache[cacheKey(tab, 'log')]; toast('操作记录已清空'); }
         else toast('清空失败');
       })
-      .catch(function () { toast('连不上桥接服务'); });
+      .catch(function () { toast('连不上车控服务'); });
   });
 
   // ---------- 起 ----------

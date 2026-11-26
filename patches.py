@@ -241,6 +241,126 @@ PATCHES = [
              "return-void",
          ],
          tag="挂挡音效兼容裸D挡"),
+
+    # ---------------- 7) 助手不再往桌面塞快捷方式 ----------------
+    # 桌面助手 / 权限助手 / 文件助手三个入口本来是「开启后在桌面多一个图标」，
+    # 图标即 com.navi.tool.FileAssistantActivity / PermissionAssistantActivity /
+    # DesktopAssistantStubActivity 这三个跳板 Activity（点开转真实页面后 finish）。
+    # 用户要求：开关照旧，但别在桌面留图标 —— 三个方法体统一重写成「永久禁用该组件」，
+    # 只做一次（已经是 DISABLED 就不再调 PackageManager），不弹任何提示。
+    # 功能本身不受影响：车机助手内部的入口直接开 DesktopAssistantActivity /
+    # FileManagerActivity / PermissionManagerActivity，不经过这三个跳板。
+    dict(cls="com.navi.tool.ui.extra.AdditionalFeaturesFragment",
+         sig="setFileAssistantComponentEnabled(Z)V", ret="V",
+         regs=7, verify_absent="ToastHelper;->showLong",
+         body=[
+             ":try_start_0",
+             "new-instance v0, Landroid/content/ComponentName;",
+             "invoke-virtual {p0}, Landroidx/fragment/app/z;->requireContext()Landroid/content/Context;",
+             "move-result-object v1",
+             "const-class v2, Lcom/navi/tool/FileAssistantActivity;",
+             "invoke-direct {v0, v1, v2}, Landroid/content/ComponentName;-><init>(Landroid/content/Context;Ljava/lang/Class;)V",
+             "invoke-virtual {p0}, Landroidx/fragment/app/z;->requireContext()Landroid/content/Context;",
+             "move-result-object v1",
+             "invoke-virtual {v1}, Landroid/content/Context;->getPackageManager()Landroid/content/pm/PackageManager;",
+             "move-result-object v1",
+             "invoke-virtual {v1, v0}, Landroid/content/pm/PackageManager;->getComponentEnabledSetting(Landroid/content/ComponentName;)I",
+             "move-result v2",
+             "const/4 v3, 0x2",
+             "if-eq v2, v3, :cond_hidden",
+             "const/4 v4, 0x1",
+             "invoke-virtual {v1, v0, v3, v4}, Landroid/content/pm/PackageManager;->setComponentEnabledSetting(Landroid/content/ComponentName;II)V",
+             ":cond_hidden",
+             ":try_end_0",
+             ".catch Ljava/lang/Exception; {:try_start_0 .. :try_end_0} :catch_0",
+             "return-void",
+             ":catch_0",
+             "move-exception v0",
+             "invoke-virtual {v0}, Ljava/lang/Exception;->printStackTrace()V",
+             "return-void",
+         ],
+         tag="文件助手不留桌面图标"),
+    dict(cls="com.navi.tool.ui.extra.AdditionalFeaturesFragment",
+         sig="setPermissionAssistantComponentEnabled(Z)V", ret="V",
+         regs=7, verify_absent="ToastHelper;->showLong",
+         body=[
+             ":try_start_0",
+             "new-instance v0, Landroid/content/ComponentName;",
+             "invoke-virtual {p0}, Landroidx/fragment/app/z;->requireContext()Landroid/content/Context;",
+             "move-result-object v1",
+             "const-class v2, Lcom/navi/tool/PermissionAssistantActivity;",
+             "invoke-direct {v0, v1, v2}, Landroid/content/ComponentName;-><init>(Landroid/content/Context;Ljava/lang/Class;)V",
+             "invoke-virtual {p0}, Landroidx/fragment/app/z;->requireContext()Landroid/content/Context;",
+             "move-result-object v1",
+             "invoke-virtual {v1}, Landroid/content/Context;->getPackageManager()Landroid/content/pm/PackageManager;",
+             "move-result-object v1",
+             "invoke-virtual {v1, v0}, Landroid/content/pm/PackageManager;->getComponentEnabledSetting(Landroid/content/ComponentName;)I",
+             "move-result v2",
+             "const/4 v3, 0x2",
+             "if-eq v2, v3, :cond_hidden",
+             "const/4 v4, 0x1",
+             "invoke-virtual {v1, v0, v3, v4}, Landroid/content/pm/PackageManager;->setComponentEnabledSetting(Landroid/content/ComponentName;II)V",
+             ":cond_hidden",
+             ":try_end_0",
+             ".catch Ljava/lang/Exception; {:try_start_0 .. :try_end_0} :catch_0",
+             "return-void",
+             ":catch_0",
+             "move-exception v0",
+             "invoke-virtual {v0}, Ljava/lang/Exception;->printStackTrace()V",
+             "return-void",
+         ],
+         tag="权限助手不留桌面图标"),
+    dict(cls="com.navi.tool.ui.extra.DesktopAssistantFragment",
+         sig="toggleDesktopIcon(Z)V", ret="V",
+         regs=7, verify_absent="ToastHelper;->showLong",
+         body=[
+             ":try_start_0",
+             "new-instance v0, Landroid/content/ComponentName;",
+             "invoke-virtual {p0}, Landroidx/fragment/app/z;->requireContext()Landroid/content/Context;",
+             "move-result-object v1",
+             "const-class v2, Lcom/navi/tool/DesktopAssistantStubActivity;",
+             "invoke-direct {v0, v1, v2}, Landroid/content/ComponentName;-><init>(Landroid/content/Context;Ljava/lang/Class;)V",
+             "invoke-virtual {p0}, Landroidx/fragment/app/z;->requireContext()Landroid/content/Context;",
+             "move-result-object v1",
+             "invoke-virtual {v1}, Landroid/content/Context;->getPackageManager()Landroid/content/pm/PackageManager;",
+             "move-result-object v1",
+             "invoke-virtual {v1, v0}, Landroid/content/pm/PackageManager;->getComponentEnabledSetting(Landroid/content/ComponentName;)I",
+             "move-result v2",
+             "const/4 v3, 0x2",
+             "if-eq v2, v3, :cond_hidden",
+             "const/4 v4, 0x1",
+             "invoke-virtual {v1, v0, v3, v4}, Landroid/content/pm/PackageManager;->setComponentEnabledSetting(Landroid/content/ComponentName;II)V",
+             ":cond_hidden",
+             ":try_end_0",
+             ".catch Ljava/lang/Exception; {:try_start_0 .. :try_end_0} :catch_0",
+             "return-void",
+             ":catch_0",
+             "move-exception v0",
+             "invoke-virtual {v0}, Ljava/lang/Exception;->printStackTrace()V",
+             "return-void",
+         ],
+         tag="桌面助手不留桌面图标"),
+
+    # ---------------- 11) 商店清单改读本地（下载仍走 123 网盘） ----------------
+    # 原厂 fetchStoreConfigs() 两次跳转：getStoreUrl（native）→ 返回 JSON 地址 → 拉 JSON。
+    # 去 so 后 getStoreUrl 被桩成空串，商店页直接「商城地址不可用」。
+    # 这里跳过两次网络，直接从 assets/store.json 取清单交给 parseAndDisplayJson()；
+    # 清单里的 download_url 还是 123 网盘 CDN 直链，点「下载并解压」照旧走原厂下载器。
+    # parseAndDisplayJson 是同类 private 方法，DEX 层必须用 invoke-direct。
+    dict(cls="com.navi.tool.ui.main.StoreServiceFragment",
+         sig="fetchStoreConfigs()V", ret="V",
+         regs=7,
+         verify_absent="getStoreUrl",
+         body=[
+             "invoke-virtual {p0}, Landroidx/fragment/app/z;->getContext()Landroid/content/Context;",
+             "move-result-object v0",
+             "invoke-static {v0}, Lcom/navitool/bridge/StoreData;->json(Landroid/content/Context;)Ljava/lang/String;",
+             "move-result-object v0",
+             "invoke-direct {p0, v0}, Lcom/navi/tool/ui/main/StoreServiceFragment;->parseAndDisplayJson(Ljava/lang/String;)V",
+             "return-void",
+         ],
+         tag="商店清单改读本地 123 网盘直链"),
+
 ]
 
 # 去壳要删的文件（相对解包根目录），不存在的跳过。

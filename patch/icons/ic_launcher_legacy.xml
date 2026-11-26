@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 车控 · 方形图标：青绿底 + Tabler steering-wheel（MIT）方向盘 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108.0dip"
+    android:height="108.0dip"
+    android:viewportWidth="108.0"
+    android:viewportHeight="108.0">
+    <path
+        android:fillColor="#FF008476"
+        android:pathData="M17,0 h74 a17,17 0 0 1 17,17 v74 a17,17 0 0 1 -17,17 h-74 a17,17 0 0 1 -17,-17 v-74 a17,17 0 0 1 17,-17 z" />
+
+    <!-- 外圈 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M27,54 A27,27 0 1,1 81,54 A27,27 0 1,1 27,54 Z" />
+    <!-- 轮毂 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M48,54 A6,6 0 1,1 60,54 A6,6 0 1,1 48,54 Z" />
+    <!-- 下辐 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:pathData="M54,60 L54,81" />
+    <!-- 左右辐 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:pathData="M48,54 L27.75,48" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:pathData="M60,54 L80.25,48" />
+</vector>

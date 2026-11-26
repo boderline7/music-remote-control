@@ -1,4 +1,4 @@
-package com.luna.music.car;
+package com.yuhan.dvrcar;
 
 import android.app.Application;
 import android.util.Log;
@@ -6,8 +6,8 @@ import android.util.Log;
 /**
  * 进程一起来就把记录仪服务拉上，不用等人点图标。
  *
- * <p>音乐桥接已经剥离：这里不再启动 {@link Svc}、不再排保活心跳、也不再向第三方同步音源模式。
- * 本包现在只负责首页的文件传输（小绿传）和行车记录仪（18767）。
+ * <p>音乐桥接整块删掉了：这里不再起任何播放器相关的东西，也不向第三方同步音源模式。
+ * 本包只负责文件传输（小绿传）和行车记录仪（18767）。
  */
 public class App extends Application {
 
@@ -18,7 +18,7 @@ public class App extends Application {
             LogCapture.init(this);
             watchCrashes();
             Log.i(Cfg.TAG, "进程启动（文件传输 + 记录仪）");
-            LogCapture.logAlways("APP 启动（音乐桥接未接入）");
+            LogCapture.logAlways("APP 启动（文件传输 + 记录仪）");
             // 行车记录仪独立服务：无条件拉起
             DvrSvc.start(this);
         } catch (Throwable t) {

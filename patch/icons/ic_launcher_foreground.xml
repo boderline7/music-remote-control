@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 车控 · 自适应图标前景：方向盘（Tabler Icons 的 steering-wheel，MIT License）。
+     原图 24x24 / stroke 2 / 圆角端点，这里按 3 倍放到 108 视口（直径 54，居中），
+     描边线宽因此是 6，跟原厂图标的线条粗细一致。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108.0dip"
+    android:height="108.0dip"
+    android:viewportWidth="108.0"
+    android:viewportHeight="108.0">
+    <!-- 外圈 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M27,54 A27,27 0 1,1 81,54 A27,27 0 1,1 27,54 Z" />
+    <!-- 轮毂 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M48,54 A6,6 0 1,1 60,54 A6,6 0 1,1 48,54 Z" />
+    <!-- 下辐 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:pathData="M54,60 L54,81" />
+    <!-- 左右辐 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:pathData="M48,54 L27.75,48" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:pathData="M60,54 L80.25,48" />
+</vector>

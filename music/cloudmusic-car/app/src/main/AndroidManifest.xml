@@ -38,6 +38,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.APP_MUSIC" />
             </intent-filter>
+            <!--
+                外部拉起歌词大屏。车机助手（com.navi.tool）点悬浮音乐卡片时发这个 action，
+                实际是用 setClassName 显式指定的，这条 filter 只是让 am start 之类也能验证。
+            -->
+            <intent-filter>
+                <action android:name="com.cloudmusic.car.OPEN_LYRICS" />
+            </intent-filter>
         </activity>
 
         <service
