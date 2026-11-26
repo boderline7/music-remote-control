@@ -24,7 +24,7 @@
 """
 
 # 目标车型 的 17 位 VIN，改版后所有设备共用这一个值（授权网已断，暂无副作用）
-VIN_DEFAULT = "LVVDB21B2ND000001"
+VIN_DEFAULT = os.environ.get("NAVI_VIN", "LVVDB21B2ND000000")  # 真实车架号走环境变量，不入库
 
 # 离线授权应答：OK | full=1 | block=0 | 到期日
 FAKE_LICENSE = "OK|1|0|2099-12-31"

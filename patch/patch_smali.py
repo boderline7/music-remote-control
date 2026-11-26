@@ -8,10 +8,10 @@
   3. 联网门控       -> requireInternet / requireVerify / fetchLicenseStatus 全部离线化
   4. 签名校验 / OTP -> verifySignature / verifyTotp 恒真，启动门控与试用流程直接短路
 """
-import re, sys, hashlib, pathlib
+import os, re, sys, hashlib, pathlib
 
 ROOT = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "apk_decoded")
-VIN  = sys.argv[2] if len(sys.argv) > 2 else "LVVDB21B2ND000001"
+VIN  = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("NAVI_VIN", "LVVDB21B2ND000000")
 
 NB   = ROOT / "smali/com/navi/tool/utils/NativeBridge.smali"
 SPU  = ROOT / "smali/com/navi/tool/utils/SharedPreferencesUtils.smali"
