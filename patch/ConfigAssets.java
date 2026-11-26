@@ -17,7 +17,7 @@ import java.util.zip.ZipInputStream;
 /**
  * 配置预置（离线自洽）：
  * 进程启动时把 APK assets/navi_configs/ 里的配置包解压到 /sdcard/navitool/，免云端下发。
- * 内含瑞虎9 联动配置 + 7 个通用配置（情景/提示音/免唤醒/语音搜/手势/图标/语音包）。
+ * 内含目标车型 联动配置 + 7 个通用配置（情景/提示音/免唤醒/语音搜/手势/图标/语音包）。
  * 这 8 套之间无同名冲突，直接平铺即可。其它车型的配置不进包。
  * 只首启解压一次（标记文件存在即跳过），不覆盖用户之后手动改过的配置。
  *
@@ -29,7 +29,7 @@ public final class ConfigAssets extends ContentProvider {
     private static final String MARK = "navitool/.config_installed_v1";
 
     private static final String[] PACKS = {
-            "HU90325",        // 瑞虎9 联动配置
+            "HU90325",        // 目标车型 联动配置
             "0421Scenefile",  // 情景模式
             "0317carlink",    // 车联提示音
             "MHX0604",        // 通用免唤醒

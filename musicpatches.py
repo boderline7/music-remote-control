@@ -297,7 +297,7 @@ def apply_music_patches(decoded, inject=True):
     results = []
     cache = {}
 
-    # 汽水广播客户端的混淆名每版会洗牌：19.10 是 Li4/a;，18.62 是 Lk4/a;（方法集完全一致：
+    # 汽水广播客户端的混淆名每版会洗牌：19.10 是 Li4/a;，V18 是 Lk4/a;（方法集完全一致：
     # c 取实例 / b 发控制 / g 起 / h 停 / f 刷状态）。按方法特征探测，不认死类名。
     luna = LUNA
     for cand in ("Li4/a;", "Lk4/a;"):
@@ -313,7 +313,7 @@ def apply_music_patches(decoded, inject=True):
         """把模板里写死的 Li4/a; 换成这一版实际用的类描述符。"""
         return text.replace(LUNA, luna) if luna != LUNA else text
 
-    # 事件类（原厂播放器事件 x/m 的 l:I 字段）的混淆包名每版会变：19.10 是 g4，18.62 是 h4。
+    # 事件类（原厂播放器事件 x/m 的 l:I 字段）的混淆包名每版会变：19.10 是 g4，V18 是 h4。
     # 两个包名在包里同时存在，所以不能按目录猜，直接看接收器里实际引用的是哪一个。
 
     def load(rel):
@@ -339,7 +339,7 @@ def apply_music_patches(decoded, inject=True):
     for t in SWAP_TARGETS:
         s = load(t["file"])
         sig = t["method"]
-        # 混淆名各版本会洗牌（18.62 的悬浮窗启播是 m(I)V，19.10 是 o(I)V），
+        # 混淆名各版本会洗牌（V18 的悬浮窗启播是 m(I)V，19.10 是 o(I)V），
         # 主名不在就用候选名，改的还是同一个方法块。
         if t.get("method_alt") and not re.search(r"\.method[^\n]*" + re.escape(sig), s):
             sig = t["method_alt"]
@@ -399,7 +399,7 @@ def apply_music_patches(decoded, inject=True):
     cache[LYRIC_RX] = s
     results.append(("事件音源号跟随当前音源", "2 处 + 1 个方法"))
 
-    # 6) 通用音源联网搜词（MediaSession 回调 h(MediaMetadataCompat)：19.10 是 j4/e，18.62 是 l4/e；
+    # 6) 通用音源联网搜词（MediaSession 回调 h(MediaMetadataCompat)：19.10 是 j4/e，V18 是 l4/e；
     #    线程包装类同理 x0/n -> y0/n）
     media = MEDIA_SESSION
     thread_cls = "Lx0/n;"
@@ -423,7 +423,7 @@ def apply_music_patches(decoded, inject=True):
     if inject:
         s = load(ACTIVITY)
         if not re.search(r"\.method[^\n]*openLyricsFxPage\(\)V", s):
-            # 18.62 没有 3D 歌词页，也就没有这个入口；不硬塞，记一笔跳过
+            # V18 没有 3D 歌词页，也就没有这个入口；不硬塞，记一笔跳过
             results.append(("内置歌词页入口", "跳过：本版无 openLyricsFxPage"))
         else:
             start, end = _method_span(s, "openLyricsFxPage()V", ACTIVITY)
@@ -435,11 +435,11 @@ def apply_music_patches(decoded, inject=True):
 
     save()
 
-    # 8) 死引用修正（只对 18.62 这类「Li4/a 是 AMap Runnable」的版本生效）
-    #    18.62 的 smali/i4/a 只有 <init> 和 run()，但原厂代码里有 54 处按「汽水客户端」
+    # 8) 死引用修正（只对 V18 这类「Li4/a 是 AMap Runnable」的版本生效）
+    #    V18 的 smali/i4/a 只有 <init> 和 run()，但原厂代码里有 54 处按「汽水客户端」
     #    调它的 c(Context)/b(I)/g()/h()/f()。这些调用一执行就 NoSuchMethodError——
     #    「悬浮音乐」打开后 initMusicService → updateLoopModeState 正好走到，表现就是闪退。
-    #    18.62 真正的客户端是 Lk4/a（方法集完整），所以把这几类调用整体改指过去；
+    #    V18 真正的客户端是 Lk4/a（方法集完整），所以把这几类调用整体改指过去；
     #    new-instance / <init>(BroadcastReceiver,Context,int) 是 AMap 的 Runnable 用法，保持不动。
     i4a = decoded / "smali" / "i4" / "a.smali"
     if i4a.exists() and "->c(Landroid/content/Context;)" not in i4a.read_text(

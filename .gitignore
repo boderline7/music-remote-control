@@ -50,8 +50,6 @@ Thumbs.db
 /_trash/
 
 # ---- 构建时从 web/pages 拷进来的副本（单一真相在 web/pages）----
-music/cloudmusic-car/lunastub/src/main/assets/remote.html
-music/cloudmusic-car/lunastub/src/main/assets/dvr.html
 music/cloudmusic-car/app/src/main/assets/remote.html
 
 # ---- iOS 生成物 ----

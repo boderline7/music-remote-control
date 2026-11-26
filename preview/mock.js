@@ -14,7 +14,7 @@ function withHost(html, req) {
   return html.replace(/\{\{HOST\}\}/g, h);
 }
 
-const PAGE = process.argv[2] || path.join(WEB, 'remote_lunastub.html');
+const PAGE = process.argv[2] || path.join(WEB, 'car.html');
 
 /* 预览用的最小 WebSocket：只回一条 state，够让页面从「断开」变成「已连接」 */
 const crypto = require('crypto');
@@ -141,7 +141,7 @@ const diag = `==== 车机桥接诊断 ====
 最近错误 无
 
 -- 安装包 --
-  com.navi.tool  18.62 (vC 14)  2026-11-16 10:41
+  com.navi.tool  V18 (vC 14)  2026-11-16 10:41
   com.luna.music.car  未安装
 
 -- 桥接日志（进程内存，新→旧倒序不了，按发生顺序）--
@@ -446,7 +446,7 @@ srv66.on('upgrade', (req, socket, head) => {
   socket.on('error', () => up.destroy());
 });
 
-/* 记录仪单独一个口，对应桥接包的 DvrSvc（18767） */
+/* 记录仪单独一个口，对应车控的 DvrSvc（18767） */
 http.createServer((req, res) => {
   const u = req.url.split('?')[0];
   if (u === '/' || u === '/dvr' || u === '/dvr.html') {

@@ -19,7 +19,7 @@ import org.json.JSONObject;
  * 那样这里所有方法都不会被调用，所以两个开关互斥，make.py 里会直接拒绝。
  *
  * 坐标与城市名读 /sdcard/navitool/weather.txt 第一行：纬度,经度,城市名
- * （例如 28.7400,118.6200,江山市）。文件不存在或格式不对就用内置默认。
+ * （例如 28.7400,1V1800,江山市）。文件不存在或格式不对就用内置默认。
  */
 public final class FreeWeatherDesk {
 
@@ -32,7 +32,7 @@ public final class FreeWeatherDesk {
 
     private static String[] config() {
         String lat = "28.7400";
-        String lon = "118.6200";
+        String lon = "1V1800";
         // 不能是「当前位置/正在定位/中国」——这些是占位名，会被原控制器
         // isPlaceholderLocationName 判为无效又掉回「正在定位」。给个和默认
         // 坐标对应的真实城市名，开箱即用；要改就写 weather.txt 第一行。
@@ -68,7 +68,7 @@ public final class FreeWeatherDesk {
         String[] c = config();
         Location loc = new Location("gps");
         loc.setLatitude(FreeWeather.parse(c[0], 28.7400));
-        loc.setLongitude(FreeWeather.parse(c[1], 118.6200));
+        loc.setLongitude(FreeWeather.parse(c[1], 1V1800));
         loc.setTime(System.currentTimeMillis());
         loc.setAccuracy(1f);
         return loc;

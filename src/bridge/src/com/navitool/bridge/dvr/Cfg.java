@@ -5,7 +5,7 @@ import org.json.JSONObject;
 /**
  * 通用常量与 JSON 小工具（行车记录仪代理专用）。
  *
- * <p>2026-11-25 从车控互联（{@code com.yuhan.dvrcar}）搬进车机助手。日志 TAG 保留
+ * <p>日志 TAG 保留
  * {@code DvrCar}，车机上 {@code adb logcat -s DvrCar} 还能直接过滤。
  * 信封版本号和错误码是 18767 那几个 HTTP 接口出错时回给页面的。
  */

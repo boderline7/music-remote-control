@@ -42,7 +42,6 @@ install_one() {
 # 18767 已经并进车机助手，旧记录仪端留着会抢同一个端口，先卸掉
 echo
 echo ">> 卸载旧的记录仪端（18767 已并进车机助手）"
-adb shell "su -c 'pm uninstall com.yuhan.dvrcar'" >/dev/null 2>&1 && echo "   已卸载" || echo "   没装，跳过"
 
 install_one "$NAVI" com.navi.tool
 if [ -n "$NETEASE" ]; then install_one "$NETEASE" com.cloudmusic.car; fi

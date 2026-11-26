@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# 出车机端两个包：
-#   :lunastub -> dist/车控互联_v<版本>.apk（18767 记录仪，文件传输由 merge_xiaolv.py 并入）
-#   :app      -> dist/网易云音乐车机版_v<版本>.apk（com.cloudmusic.car，18765 页面在它的 assets 里）
+# 出网易云音乐车机版：
+#   :app -> dist/网易云音乐车机版_v<版本>.apk（com.cloudmusic.car，18765 页面在它的 assets 里）
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(dirname "$HERE")
@@ -17,12 +16,9 @@ PROJ="music/cloudmusic-car"
 
 echo ">> 同步网页"
 cp -f web/pages/remote.html          "$PROJ/app/src/main/assets/remote.html"
-# 行车记录仪独立页（18767 首页），跟音乐页分开，两个都不受影响
-cp -f web/pages/dvr.html             "$PROJ/lunastub/src/main/assets/dvr.html"
 
 echo ">> 构建"
 cd "$PROJ"
-./gradlew :lunastub:assembleRelease --offline
 # 网易云车机版（com.cloudmusic.car）也要出：18765 那个页面就打在它的 assets 里，
 # 不重出这个包，车上 18765 还是旧页面
 ./gradlew :app:assembleRelease --offline
@@ -30,10 +26,7 @@ cd "$ROOT"
 
 mkdir -p dist
 
-LUNA_VER=$(grep -m1 'versionName' "$PROJ/lunastub/build.gradle.kts" | sed 's/.*"\(.*\)".*/\1/')
 
-cp -f "$PROJ/lunastub/build/outputs/apk/release/lunastub-release.apk" \
-      "dist/车控互联_v${LUNA_VER}.apk"
 
 APP_VER=$(grep -m1 'versionName' "$PROJ/app/build.gradle.kts" | sed 's/.*"\(.*\)".*/\1/')
 cp -f "$PROJ/app/build/outputs/apk/release/app-release.apk" \

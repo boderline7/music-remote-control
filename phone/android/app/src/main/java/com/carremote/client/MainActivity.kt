@@ -415,7 +415,9 @@ class MainActivity : Activity() {
         scope.launch {
             val p = pickPort()
             if (p <= 0) {
-                placeholder.text = "还是不通\n\n车机上确认 18766（车机助手）/ 18764（桥接包）/ 18765（第三方）在跑，再点这里重试"
+                placeholder.text = "还是不通
+
+车机上确认 18766（车控）/ 18765（第三方）在跑，再点这里重试"
                 return@launch
             }
             port = p

@@ -24,7 +24,7 @@
 ```
 src\bridge\             网关源码
 web\pages\              四个页面 + 统一外壳
-music\cloudmusic-car\   音乐端（app / lunastub）
+music\cloudmusic-car\   音乐端（app）
 phone\                  手机端 android / ios
 ```
 
@@ -59,7 +59,7 @@ ANDROID_JAR=<sdk>/platforms/android-35/android.jar
 |---|---|---|
 | **18766** | 助手（网关） | 常驻 |
 | **18765** | 第三方网易云车机版 | 它在跑时 |
-| **18764** | 桥接包 | 官方音源模式 |
-| **18767** | 桥接包 `DvrSvc` | 常驻 |
+
+| **18767** | 车控 `DvrSvc` | 常驻 |
 
 手机和浏览器只连 18766，页面上切三个 tab：车机控制 / 音乐控制 / 行车记录仪。18764 与 18765 互斥。

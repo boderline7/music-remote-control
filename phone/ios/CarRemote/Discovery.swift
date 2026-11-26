@@ -79,7 +79,7 @@ final class BonjourFinder: NSObject, NetServiceBrowserDelegate, NetServiceDelega
 enum Ports {
     static let car = 18766          // 车机助手：车控 + 网关 + 外壳
     static let musicThird = 18765   // 第三方网易云车机版
-    static let musicBridge = 18764  // 桥接包（官方网易云模式）
+    static let legacyBridge = 18764  // 旧端口，已停用
     static let all = [car, musicThird, musicBridge]
 }
 

@@ -224,7 +224,7 @@ def classify(dex_paths):
     keep, drop = [], []
     for it in infos:
         # 判据按「谁是主角」：带业务类的留，带库类的留，两边都不沾的才算壳。
-        # 壳类零星散落在库 dex 里是正常的（18.62 的 dex_2 就有），不能因此丢掉整份。
+        # 壳类零星散落在库 dex 里是正常的（V18 的 dex_2 就有），不能因此丢掉整份。
         if it["navi"] or it["lib"]:
             keep.append(it)
         else:
@@ -283,8 +283,8 @@ def active_patches(decoded):
     """按脱壳源码特征筛选补丁。
 
     带 only_if="v19_gate" 的补丁仅当源码含 V19 独有的
-    getCachedLicenseMask（NativeBridge）时才应用；18.62 没有该方法，
-    自动跳过，保证 18.62 回归基准逐条目不变。
+    getCachedLicenseMask（NativeBridge）时才应用；V18 没有该方法，
+    自动跳过，保证 V18 回归基准逐条目不变。
     """
     out = []
     nb = Path(decoded) / "smali" / "com/navi/tool/utils/NativeBridge.smali"
@@ -557,7 +557,7 @@ def apply_free_weather(decoded):
         return True
 
     def swap_url(block):
-        # 18.62 用 StringBuilder 拼 QWeather 域名；19.00 先 parseDouble 再走
+        # V18 用 StringBuilder 拼 QWeather 域名；19.00 先 parseDouble 再走
         # n1/z.N0 代理。两者的共同结尾都是把 executorService 取出来起线程，
         # 所以按这个锚点整段替换 URL 构造，兼容两版。
         return re.sub(
@@ -576,7 +576,7 @@ def apply_free_weather(decoded):
     patch_method("requestWeatherApi(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
                  swap_url, "URL")
 
-    # 18.62 的 lambda 会先取 QWeather 授权头，空串就不发请求；19.00 已无此步。
+    # V18 的 lambda 会先取 QWeather 授权头，空串就不发请求；19.00 已无此步。
     sig_hdr = "getQWeatherAuthorizationHeader()Ljava/lang/String;"
     def dummy_header(block):
         flags = flags_of(block, sig_hdr)
@@ -1625,7 +1625,7 @@ def main():
     p = sub.add_parser("build", help="出包（可带 18766 注入）")
     p.add_argument("--dex", dest="dex_dir", required=True, help="脱壳 dex 所在目录")
     p.add_argument("--apk", help="原版 APK，不给就按 --version 在 apk/ 里找")
-    p.add_argument("--version", help="版本号，如 18.62；不给就从原版包读")
+    p.add_argument("--version", help="版本号，如 V18；不给就从原版包读")
     p.add_argument("--vin", default=patches.VIN_DEFAULT)
     p.add_argument("--suffix", default="-mod")
     p.add_argument("--out", help="产物路径")
@@ -1635,11 +1635,11 @@ def main():
                         "用于 V19 这类 so 反篡改导致去壳即 SIGKILL 的版本")
     p.add_argument("--no-music-patch", action="store_true",
                    help="跳过 musicpatches.py（音源槽位换第三方网易云）。"
-                        "18.62 的汽水控制接口签名不同，用这个开关出纯车控包")
+                        "V18 的汽水控制接口签名不同，用这个开关出纯车控包")
     p.add_argument("--inject", action="store_true",
                    help="注入 18766 网关：编译 bridge、加清单组件、塞车控页、追加 classes3.dex")
     p.add_argument("--assets-config", action="store_true",
-                   help="随 --inject 打进配置预置（瑞虎9+通用 8 包，首启解压到 /sdcard/navitool/）")
+                   help="随 --inject 打进配置预置（目标车型+通用 8 包，首启解压到 /sdcard/navitool/）")
     p.add_argument("--free-weather", action="store_true",
                    help="目的地天气改用 Open-Meteo 免费接口（无需 key，替代 so 里的和风天气凭据）")
     p.add_argument("--free-desk-weather", action="store_true",

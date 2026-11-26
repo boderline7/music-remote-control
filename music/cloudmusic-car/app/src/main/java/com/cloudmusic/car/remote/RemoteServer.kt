@@ -798,7 +798,7 @@ object RemoteServer : WsServer.Listener {
         )
     )
 
-    /** Web 设置面板顶部的状态行；桥接包 /api/status 的同名精简版。 */
+    /** Web 设置面板顶部的状态行；车控 /api/status 的同名精简版。 */
     fun statusJson(): String = JSONObject().apply {
         val s = _ui.value
         put("ok", 1)

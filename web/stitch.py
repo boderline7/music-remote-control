@@ -4,7 +4,7 @@
 把统一外壳拼进三个页面。
 
 为什么要有这一步：18766 / 18765 / 18764 是三个不同的服务端（车机助手、
-网易云车机版、我们的桥接包），各自下发自己那份 HTML。外壳（状态行 +
+网易云车机版），各自下发自己那份 HTML。外壳（状态行 +
 中文切换 + 设置面板）只应该有一份源码，否则三个端口又会慢慢长歪。
 
 用法：
@@ -33,12 +33,10 @@ PROJ = ROOT / "music" / "cloudmusic-car"
 TARGETS = [
     (PAGES / "car.html", "18.73"),
     (PAGES / "remote.html", None),
-    (PAGES / "remote_lunastub.html", None),
 ]
 
 GRADLE = {
     PAGES / "remote.html": PROJ / "app" / "build.gradle.kts",
-    PAGES / "remote_lunastub.html": PROJ / "lunastub" / "build.gradle.kts",
 }
 
 BOOT_WRAP = "<script>\n%s\n</script>\n"

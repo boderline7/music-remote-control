@@ -3,7 +3,7 @@
 """
 车机助手 V18.49 重打包补丁脚本
 对已 baksmali 的 smali 树做定点修改：
-  1. 机型/VIN 验证  -> getSystemVin 返回固定 VIN（瑞虎9）
+  1. 机型/VIN 验证  -> getSystemVin 返回固定 VIN（目标车型）
   2. VIP/授权验证   -> getLicenseStatus 恒真 + checkLicenseToken 恒返回全功能
   3. 联网门控       -> requireInternet / requireVerify / fetchLicenseStatus 全部离线化
   4. 签名校验 / OTP -> verifySignature / verifyTotp 恒真，启动门控与试用流程直接短路

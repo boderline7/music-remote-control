@@ -23,7 +23,7 @@
 方法体的修饰符、是否 static 都从原方法继承（只去掉 native），所以不需要在表里写。
 """
 
-# 瑞虎9 的 17 位 VIN，改版后所有设备共用这一个值（授权网已断，暂无副作用）
+# 目标车型 的 17 位 VIN，改版后所有设备共用这一个值（授权网已断，暂无副作用）
 VIN_DEFAULT = "LVVDB21B2ND000001"
 
 # 离线授权应答：OK | full=1 | block=0 | 到期日
@@ -100,7 +100,7 @@ PATCHES = [
     # V19 在 MainActivity.onCreate 早期调 initAccessGate()，起后台线程做
     # OTP/版本/网络校验，真机上表现为卡第一屏。空掉入口 + OTP 弹窗兜底。
     # only_if="v19_gate"：仅当脱壳源码含 V19 独有的 getCachedLicenseMask 时应用，
-    # 18.62 没有该方法会自动跳过，保证 18.62 回归基准逐条目不变。
+    # V18 没有该方法会自动跳过，保证 V18 回归基准逐条目不变。
     dict(cls="com.navi.tool.MainActivity",
          sig="initAccessGate()V", ret="V", val=None,
          tag="V19 启动门禁空掉", only_if="v19_gate"),
@@ -109,7 +109,7 @@ PATCHES = [
          tag="V19 OTP弹窗空掉", only_if="v19_gate"),
 
     # ---------------- 6) 挂挡音效兼容裸 D 挡（原厂适配缺陷） ----------------
-    # 原厂 handleGearChange 的音效白名单只认 P/R/N/D1；瑞虎9 前进挡统一上报裸 "D"
+    # 原厂 handleGearChange 的音效白名单只认 P/R/N/D1；目标车型 前进挡统一上报裸 "D"
     # （carinfo/c.java: value 4->"D"，5 才是 "D1"），导致 D→R 不响、挂 D 不响、
     # P 挡自动解童锁失效。整方法体重写：
     #   旧挡判断放宽为 P/R/N 或 startsWith("D")；
