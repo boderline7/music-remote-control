@@ -30,7 +30,7 @@ public final class FreeWeather {
     /** 入参顺序与原 requestWeatherApi 一致：p1=经度, p2=纬度。 */
     public static String url(String lon, String lat) {
         double la = parse(lat, 28.7400);
-        double lo = parse(lon, 1V1800);
+        double lo = parse(lon, 118.6200);
         return ENDPOINT
                 + "?latitude=" + la
                 + "&longitude=" + lo
