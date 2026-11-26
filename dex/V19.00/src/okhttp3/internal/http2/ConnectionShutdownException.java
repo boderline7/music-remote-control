@@ -1,0 +1,7 @@
+package okhttp3.internal.http2;
+
+import java.io.IOException;
+
+/* loaded from: C:\Users\Administrator\Documents\Trae-CN\temp_20261118_01\dump_1900\dex_2_1633180.dex */
+public final class ConnectionShutdownException extends IOException {
+}
