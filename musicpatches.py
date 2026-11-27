@@ -225,35 +225,6 @@ FAVORITE_NEW = """\
     return-void
 .end method"""
 
-# 「打开内置歌词页」的入口。所有进内置歌词页的路径都会走到这里，一处拦全部：
-#   lambda$initViews$57   点歌名
-#   lambda$initViews$53   LyricsAdapter$OnLineClickListener 点歌词行（a0.smali:112）
-#   access$3800           $9 广播唤起
-# 原来只改了 57，点歌词行仍走 53 直接开出 3D 歌词页——这是上一版没生效的原因。
-OPEN_OLD = """\
-.method private openLyricsFxPage()V
-    .registers 14
-
-    invoke-direct {p0}, Lcom/navi/tool/ui/extra/DesktopAssistantActivity;->closeSurfaceForLyricsPage()V"""
-
-OPEN_NEW = """\
-.method private openLyricsFxPage()V
-    .registers 14
-
-    # [MOD] 进内置歌词页（含 3D 歌词）之前先跳云音乐的大歌词屏，
-    # 跳不过去（没装 / 被系统拦）才走原逻辑，不打断桌面。
-    invoke-static {p0}, Lcom/navitool/bridge/MusicJump;->openCloudLyrics(Landroid/content/Context;)Z
-
-    move-result v0
-
-    if-eqz v0, :mod_lyrics_builtin
-
-    return-void
-
-    :mod_lyrics_builtin
-    invoke-direct {p0}, Lcom/navi/tool/ui/extra/DesktopAssistantActivity;->closeSurfaceForLyricsPage()V"""
-
-
 # ---------------------------------------------------------------- 实现
 
 def _read(decoded, rel):
@@ -419,19 +390,6 @@ def apply_music_patches(decoded, inject=True):
     cache[media] = s[:start] + block.replace(thr, "") + s[end:]
     results.append(("断掉通用音源搜词", "1 处"))
 
-    # 7) 内置歌词页入口（依赖注入的 MusicJump，纯 mod 包不加）
-    if inject:
-        s = load(ACTIVITY)
-        if not re.search(r"\.method[^\n]*openLyricsFxPage\(\)V", s):
-            # V18 没有 3D 歌词页，也就没有这个入口；不硬塞，记一笔跳过
-            results.append(("内置歌词页入口", "跳过：本版无 openLyricsFxPage"))
-        else:
-            start, end = _method_span(s, "openLyricsFxPage()V", ACTIVITY)
-            head = s[start:start + len(OPEN_OLD)]
-            if head != OPEN_OLD:
-                raise RuntimeError("[歌词页入口] 方法头与预期不一致")
-            cache[ACTIVITY] = s[:start] + OPEN_NEW + s[start + len(OPEN_OLD):]
-            results.append(("内置歌词页先跳云音乐", "openLyricsFxPage 入口 1 处"))
 
     save()
 
